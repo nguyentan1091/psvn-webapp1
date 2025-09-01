@@ -1,0 +1,93 @@
+<div id="total-list-upload-card" class="card mb-4 d-none">
+    <div class="card-header">
+        <i class="fas fa-file-upload me-1"></i>
+        <span data-translate="total_list_upload_header">Thêm mới danh sách xe (Upload File)</span>
+    </div>
+    <div class="card-body">
+        <p class="form-text" data-translate="total_list_upload_note">Ghi chú: Chỉ chấp nhận file .xlsx, .xls, .csv.</p>
+        <div class="input-group mb-3">
+            <input type="file" class="form-control" id="total-list-fileUploader" accept=".xlsx, .xls, .csv">
+            <button id="total-list-uploadButton" class="btn btn-info" data-translate="preview_data_button">Xem trước dữ liệu</button>
+        </div>
+        <div id="total-list-previewContainer" class="d-none mt-3">
+            <h5 data-translate="preview_data_title">Dữ liệu xem trước</h5>
+            <div class="table-responsive">
+                <table id="total-list-previewDataTable" class="table table-bordered table-striped" style="width:100%"></table>
+            </div>
+            <div class="text-end mt-2">
+                <button id="total-list-saveUploadBtn" class="btn btn-success" data-translate="save_list_button">Lưu danh sách</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <i class="fas fa-table me-1"></i>
+        <span data-translate="total_list_header">Danh sách xe tổng</span>
+    </div>
+    <div class="card-body">
+        <!-- Thanh công cụ gọn gàng, giữ nguyên ID cho JS -->
+        <div class="tl-toolbar mb-3">
+          <div class="tl-toolbar__inner">
+            <div class="tl-actions">
+              <button id="total-list-showDataBtn" class="btn btn-primary btn-slim">
+                <i class="fas fa-sync-alt me-1"></i>
+                <span data-translate="show_update_button">Hiển thị/Cập nhật</span>
+              </button>
+
+              <button id="total-list-deleteBtn" class="btn btn-danger btn-slim d-none">
+                <i class="fas fa-trash-alt me-1"></i>
+                <span data-translate="delete_selected_button">Xóa mục đã chọn</span>
+              </button>
+
+              <button id="total-list-exportBtn" class="btn btn-success btn-slim">
+                <i class="fas fa-file-excel me-1"></i>
+                <span data-translate="export_excel_button">Xuất Excel</span>
+              </button>
+            </div>
+
+            <div class="tl-toolbar__spacer"></div>
+
+            <div class="tl-search">
+              <div class="input-group input-slim">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="text" id="total-list-search-input" class="form-control"
+                      data-translate-placeholder="search_in_list_placeholder">
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div id="total-list-summary" class="mb-2 d-flex justify-content-between p-2 bg-light rounded">
+            <span><strong data-translate="total_vehicles">Tổng số xe</strong>: <span id="total-count-summary">--</span></span>
+            <div>
+                <span class="badge bg-info me-2">RO: <span id="ro-count">--</span></span>
+                <span class="badge bg-warning me-2">ND: <span id="nd-count">--</span></span>
+                <span class="badge bg-success">AC: <span id="ac-count">--</span></span>
+            </div>
+        </div>
+
+        <div class="row align-items-center mb-2">
+            <div class="col-md-auto">
+                <div class="dataTables_length">
+                    <label>
+                        <span data-translate="show_label">Hiển thị</span> 
+                        <select id="total-list-page-length-select" class="form-select form-select-sm d-inline-block w-auto">
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select> 
+                        <span data-translate="entries_label">dòng</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table id="totalListTable" class="table table-bordered table-striped table-sm dt-compact dt-nowrap" style="width:100%;">
+            </table>
+        </div>
+    </div>
+</div>

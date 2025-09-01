@@ -1,0 +1,37 @@
+<div class="login-container d-flex align-items-center justify-content-center">
+  <!-- **MỚI:** Language Switcher -->
+  <div class="language-switcher dropstart">
+    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="languageDropdownLogin" data-bs-toggle="dropdown" aria-expanded="false">
+      <i class="fas fa-globe"></i>
+    </button>
+    <ul class="dropdown-menu" aria-labelledby="languageDropdownLogin">
+      <li><a class="dropdown-item lang-btn" href="#" data-lang="vi"><img src="https://flagcdn.com/w20/vn.png" alt="VI"> Tiếng Việt</a></li>
+      <li><a class="dropdown-item lang-btn" href="#" data-lang="en"><img src="https://flagcdn.com/w20/gb.png" alt="EN"> English</a></li>
+    </ul>
+  </div>
+
+  <div class="login-card card p-4 shadow">
+    <div class="card-body">
+      <h3 class="card-title text-center mb-4" data-translate="login_title">Đăng nhập</h3>
+      <form id="loginForm">
+        <div class="mb-3">
+          <label for="username" class="form-label" data-translate="username_label">Tên đăng nhập</label>
+          <input type="text" class="form-control" id="username" required>
+        </div>
+        <div class="mb-3">
+          <label for="password" class="form-label" data-translate="password_label">Mật khẩu</label>
+          <input type="password" class="form-control" id="password" required>
+        </div>
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary" id="loginBtn">
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <span data-translate="login_button">Đăng nhập</span>
+          </button>
+        </div>
+      </form>
+      <div class="text-center mt-3">
+          <a href="#" id="forgotPasswordLink" data-translate="forgot_password_link">Quên mật khẩu?</a>
+      </div>
+    </div>
+  </div>
+</div>

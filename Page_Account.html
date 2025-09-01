@@ -1,0 +1,46 @@
+<div class="row">
+    <div class="col-lg-5 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="fas fa-key me-1"></i>
+                <span data-translate="change_password_header">Đổi mật khẩu</span>
+            </div>
+            <div class="card-body">
+                <form id="changePasswordForm">
+                    <div class="mb-3">
+                        <label for="currentPassword" class="form-label" data-translate="current_password_label">Mật khẩu hiện tại</label>
+                        <input type="password" class="form-control" id="currentPassword" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newPassword" class="form-label" data-translate="new_password_label">Mật khẩu mới</label>
+                        <input type="password" class="form-control" id="newPassword" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirmNewPassword" class="form-label" data-translate="confirm_new_password_label">Xác nhận mật khẩu mới</label>
+                        <input type="password" class="form-control" id="confirmNewPassword" required>
+                    </div>
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-primary" data-translate="save_changes_button">Lưu thay đổi</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="admin-user-management" class="col-lg-7 d-none">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-users-cog me-1"></i> <span data-translate="user_management_header">Quản lý người dùng</span></span>
+                <button id="addNewUserBtn" class="btn btn-success btn-sm">
+                    <i class="fas fa-user-plus me-1"></i> <span data-translate="add_user_button">Thêm người dùng</span>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table id="usersTable" class="table table-bordered table-striped" style="width:100%;">
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

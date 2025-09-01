@@ -1,0 +1,73 @@
+<div class="container-fluid">
+  <!-- Khung nhập liệu: chỉ hiện cho admin -->
+  <div id="contract-entry-card" class="card mb-3 d-none">
+    <div class="card-header">
+      <i class="fas fa-pencil-alt me-1"></i> Nhập hợp đồng
+    </div>
+    <div class="card-body">
+      <form id="contractForm" class="row g-2 gy-2 compact-form">
+        <div class="col-md-4">
+          <label class="form-label">Contract No</label>
+          <input type="text" class="form-control form-control-sm" id="ct-contractNo" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Customer Name</label>
+          <input type="text" class="form-control form-control-sm" id="ct-customerName" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Transportion Company</label>
+          <select id="ct-company" class="form-control form-control-sm" required></select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Status</label>
+          <select id="ct-status" class="form-control form-control-sm" required>
+            <option value="Active">Active</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </div>
+        <div class="col-12 text-end mt-2">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="fas fa-save me-1"></i> Lưu
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bảng dữ liệu -->
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-table me-1"></i> Hợp đồng
+    </div>
+    <div class="card-body">
+
+      <!-- Thanh công cụ -->
+      <div class="tl-toolbar mb-3">
+        <div class="tl-toolbar__inner">
+          <div class="tl-actions">
+            <button id="ct-reload" class="btn btn-primary btn-slim">
+              <i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật
+            </button>
+            <button id="ct-delete" class="btn btn-danger btn-slim d-none">
+              <i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn
+            </button>
+            <button id="ct-export" class="btn btn-success btn-slim">
+              <i class="fas fa-file-excel me-1"></i> Xuất Excel
+            </button>
+          </div>
+          <div class="tl-toolbar__spacer"></div>
+          <div class="tl-search">
+            <div class="input-group input-slim">
+              <span class="input-group-text"><i class="fas fa-search"></i></span>
+              <input type="text" id="ct-search" class="form-control" placeholder="Tìm trong danh sách...">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table id="contractTable" class="table table-bordered table-striped" style="width:100%"></table>
+      </div>
+    </div>
+  </div>
+</div>

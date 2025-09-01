@@ -1,0 +1,111 @@
+<div class="d-flex" id="wrapper">
+    <style>
+        .sidebar-logo {
+            width: 108px;
+            border: 3px solid white;
+            border-radius: 20px;           /* bo góc lớn hơn hiện tại */
+            padding: 5px;
+            background-color: white;
+            object-fit: contain;
+        }
+           
+                /* Đổi nền sidebar */
+        #sidebar-wrapper {
+            background-color: #36454F !important;
+        }
+
+        /* Đổi nền các item trong sidebar */
+        #sidebar-wrapper .list-group-item {
+            background-color: #36454F !important;
+            border: none;
+        }
+
+        /* Khi hover hoặc active */
+        #sidebar-wrapper .list-group-item:hover,
+        #sidebar-wrapper .list-group-item.active {
+            background-color: #2c3e45 !important;
+        }
+    </style>
+    <!-- Sidebar -->
+    <div class="bg-dark border-right" id="sidebar-wrapper">
+        <div>
+           <!-- <div class="sidebar-logo-container">-->
+            <!-- Brand / Logo -->
+            <div class="sidebar-brand">
+              <img
+                src="https://lh3.googleusercontent.com/pw/AP1GczO5DaSs9m-q3a7LrHMigKuuWmM2FjDVAryBMz5A_yJnzAd2ID8pmMXZwcH_pQTnEOBrcLoO9Ytb8wRJhHejezF--NNE3Ac0falyiVYodjB5F-Xonju3X69YvBRI36qbAYbswxeGr1WObFlYBMVhm6q2=w250-h139-s-no-gm?authuser=0"  
+                alt="PHONESACK VIỆT NAM"
+                class="brand-logo"
+              />
+            </div>          
+            <div class="sidebar-heading text-white" data-translate="sidebar_title">Quản lý Xe</div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white active" data-page="Page_Register" data-title-key="sidebar_register">
+                    <i class="fas fa-plus-circle me-2"></i><span data-translate="sidebar_register">Đăng ký xe</span>
+                </a>
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_View" data-title-key="sidebar_view">
+                    <i class="fas fa-list-alt me-2"></i><span data-translate="sidebar_view">Xe đã đăng ký</span>
+                </a>
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white"
+                   data-page="Page_XuLyXPPL" data-title-key="sidebar_xppl_approval" id="menu-xppl-approval">
+                    <i class="fas fa-clipboard-check me-2"></i><span data-translate="sidebar_xppl_approval">Xử lý xe đăng ký gửi XPPL</span>
+                </a>
+
+
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_TotalList" data-title-key="sidebar_total_list">
+                    <i class="fas fa-truck me-2"></i><span data-translate="sidebar_total_list">Danh sách xe tổng</span>
+                </a>
+
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_Contract" data-title-key="sidebar_contracts">
+                    <i class="fas fa-file-contract me-2"></i><span>Hợp đồng vận chuyển</span>
+                </a>
+
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_Guide" data-title-key="">
+                    <i class="fas fa-book-open me-2"></i><span>Hướng dẫn</span>
+                </a>
+
+                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_Account" data-title-key="sidebar_account">
+                    <i class="fas fa-user-circle me-2"></i><span data-translate="sidebar_account">Tài khoản</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- **SỬA LỖI:** Chuyển bộ chọn ngôn ngữ vào đây -->
+        <div class="sidebar-footer mt-auto">
+            <div class="language-switcher-sidebar dropup w-100">
+                <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle p-3" id="languageDropdownSidebar" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-globe me-2"></i>
+                    <strong data-translate="language_label">Ngôn ngữ</strong>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-dark text-small shadow w-100" aria-labelledby="languageDropdownSidebar">
+                    <li><a class="dropdown-item lang-btn" href="#" data-lang="vi"><img src="https://flagcdn.com/w20/vn.png" alt="VI" class="me-2"> Tiếng Việt</a></li>
+                    <li><a class="dropdown-item lang-btn" href="#" data-lang="en"><img src="https://flagcdn.com/w20/gb.png" alt="EN" class="me-2"> English</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <!-- /#sidebar-wrapper -->
+
+    <!-- Page Content -->
+    <div id="page-content-wrapper">
+        <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
+            <div class="container-fluid">
+                 <button class="btn btn-primary" id="menu-toggle"><i class="fas fa-bars"></i></button>
+                 <div class="ms-auto d-flex align-items-center">
+                    <span id="userInfo" class="me-3 fw-bold"></span>
+                    <button class="btn btn-outline-danger btn-sm" id="logoutBtn">
+                        <i class="fas fa-sign-out-alt me-1"></i><span data-translate="logout_button">Đăng xuất</span>
+                    </button>
+                 </div>
+            </div>
+        </nav>
+
+        <div class="container-fluid p-4">
+            <h3 class="page-title mb-4"></h3>
+            <div id="main-content">
+                <!-- Nội dung trang sẽ được tải vào đây -->
+            </div>
+        </div>
+    </div>
+    <!-- /#page-content-wrapper -->
+</div>

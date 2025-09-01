@@ -1,0 +1,353 @@
+<!-- Bootstrap 5 -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- Font Awesome for Icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
+<!-- DataTables Select CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/select/1.7.0/css/select.bootstrap5.min.css">
+
+
+<style>
+  body, html {
+    height: 100%;
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+  }
+ 
+  #loader-wrapper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 10vh;
+    z-index: 9999;
+    transition: opacity 0.5s ease-out;
+  }
+  .loader-content {
+    text-align: center;
+    padding: 20px;
+  }
+  .loader-logo {
+    max-width: 250px;
+    width: 90%;
+    height: auto;
+    margin-bottom: 20px;
+  }
+  .loader-title {
+    font-size: 1.5rem;
+    color: #333;
+    font-weight: 600;
+  }
+
+  .login-container {
+    //min-height: 100vh;
+    background-color: #e9ecef;
+    display: flex;
+    align-items: flex-start; 
+    justify-content: center;
+    padding-top: 10vh;    
+    position: relative;
+  }
+  .login-card {
+    width: 100%;
+    max-width: 400px;
+  }
+
+  #wrapper {
+    display: flex;
+    min-height: 100vh;
+  }
+  #sidebar-wrapper {
+    min-height: 100vh;
+    width: 250px;
+    transition: margin .25s ease-out;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; /* Pushes footer to bottom */
+  }
+  #sidebar-wrapper .sidebar-heading {
+    padding: 0.875rem 1.25rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+  }
+  #sidebar-wrapper .list-group {
+    width: 250px;
+  }
+  
+  #page-content-wrapper {
+    flex: 1;
+    min-width: 0;
+    transition: margin .25s ease-out;
+  }
+  #wrapper.toggled #sidebar-wrapper {
+    margin-left: -250px;
+  }
+  
+  .disabled-card {
+      pointer-events: none;
+  }
+  
+  .table-responsive {
+      overflow-x: auto;
+  }
+  
+  .edit-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      text-align: left;
+  }
+
+  #previewDataTable,
+  #registeredVehicleTable {
+      font-size: 13px;
+  }
+  #previewDataTable td, 
+  #previewDataTable th,
+  #registeredVehicleTable td,
+  #registeredVehicleTable th {
+      white-space: nowrap;
+  }
+
+  #previewDataTable td.is-invalid {
+      background-color: #f8d7da !important;
+      border-color: #f5c2c7;
+  }
+  
+  .edit-btn i.fa-edit {
+      font-size: 0.8em;
+  }
+
+  #registeredVehicleTable tbody tr.selected {
+      background-color: #e9ecef !important;
+  }
+
+  #registeredVehicleTable thead th {
+      font-weight: 600;
+      font-size: 13px;
+      vertical-align: middle;
+  }
+
+  #manualEntryForm .form-label {
+      font-weight: 600;
+  }
+
+  .alert .fa-2x {
+      font-size: 1.5em;
+  }
+/* ===== Sidebar Brand / Logo ===== */
+.sidebar-brand{
+  height: 114px;                /* chiều cao khung logo */
+  padding: 8px 12px;           /* khoảng đệm cho thoáng */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.04); /* nhẹ nhàng trên nền tối */
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: transparent; 
+  border-bottom: none;
+}
+
+.brand-logo{
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;         /* quan trọng: không méo, giữ tỉ lệ */
+  image-rendering: -webkit-optimize-contrast;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); /* nhìn sắc nét hơn */
+}
+
+/* Khi sidebar hẹp (nếu có trạng thái thu gọn) có thể giảm khung */
+@media (max-width: 1200px){
+  .sidebar-brand{ height: 76px; }
+}
+
+
+  .swal2-html-container {
+      text-align: left !important;
+  }
+  .swal-form-group {
+      margin-bottom: 1rem;
+  }
+  .swal-form-group label {
+      display: block;
+      margin-bottom: .5rem;
+      font-weight: 600;
+  }
+
+  .language-switcher {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10;
+  }
+  .language-switcher .dropdown-toggle::after {
+    display: none;
+  }
+  
+  /* **MỚI:** Language Switcher in Sidebar */
+  .sidebar-footer {
+      border-top: 1px solid #4f5962;
+  }
+  .language-switcher-sidebar .dropdown-menu {
+      position: absolute !important;
+      bottom: 100% !important;
+      top: auto !important;
+  }
+ /* === MÃ CSS CHỈ DÀNH CHO TRANG LOGIN === */
+
+/* Chỉ áp dụng khi body có class 'login-view-active' */
+body.login-view-active .login-container {
+    display: block !important; /* Phá vỡ layout flex cũ */
+    height: auto !important;
+    min-height: 0 !important;
+    padding-top: 8vh !important; /* Thêm khoảng đệm phía trên */
+    background-color: #f8f9fa !important; /* Đồng bộ màu nền */
+}
+
+body.login-view-active .login-card {
+    margin: 0 auto; /* Căn giữa card login theo chiều ngang */
+}
+
+/* Đảm bảo màn hình khởi động cũng nằm ở trên */
+body.login-view-active #loader-wrapper {
+    align-items: flex-start !important;
+    padding-top: 10vh !important;
+}
+
+/* Tô đỏ cho xe mới */
+.hl-new-vehicle {
+  background-color: #66CCFF !important; /* xanh nhạt */
+}
+/* Tô vàng cho xe trùng đơn vị khác */
+.hl-dup-vehicle {
+  background-color: #fff3cd !important; /* vàng nhạt */
+}
+
+table.dataTable tbody tr.hl-new-vehicle > td {
+  background-color: #ffe6e6 !important;
+}
+table.dataTable tbody tr.hl-dup-vehicle > td {
+  background-color: #fff3cd !important;
+}
+
+/* === PATCH: Total List table alignment & compactness === */
+#totalListTable {
+  font-size: 12px;
+}
+#totalListTable th, #totalListTable td {
+  white-space: nowrap;
+  vertical-align: middle;
+  padding-top: .4rem;
+  padding-bottom: .4rem;
+}
+
+/* ===== Toolbar Danh sách xe tổng (giữ nguyên JS cũ) ===== */
+.tl-toolbar {
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: .5rem;
+  padding: 12px 14px;
+  background: #fff;
+}
+.tl-toolbar__inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tl-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tl-toolbar__spacer { flex: 1 1 auto; min-width: 24px; }
+.tl-search { min-width: 260px; width: 360px; max-width: 100%; }
+
+/* Nút và ô tìm kiếm đồng chiều cao */
+.btn-slim {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  font-weight: 600;
+  border-radius: .6rem;
+  box-shadow: 0 1px 0 rgba(0,0,0,.04);
+}
+.input-slim .input-group-text,
+.input-slim .form-control { height: 40px; }
+.input-slim .input-group-text { border-right: 0; }
+.input-slim .form-control { border-left: 0; }
+
+/* Trạng thái nút Xóa khi bị ẩn hoặc disable do JS */
+#total-list-deleteBtn.disabled,
+#total-list-deleteBtn:disabled {
+  pointer-events: none;
+  opacity: .55;
+}
+
+/* ComboBox nhẹ cho Số HĐ */
+.combo-wrap { position: relative; }
+.combo-btn {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; padding: 0 6px; cursor: pointer; line-height: 1;
+  color: #6c757d;
+}
+.combo-menu {
+  position: absolute; left: 0; right: 0; z-index: 2000;
+  max-height: 240px; overflow-y: auto; display: none;
+  background: #fff; border: 1px solid rgba(0,0,0,.15); border-radius: .375rem;
+  box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+}
+.combo-item { padding: .375rem .75rem; cursor: pointer; }
+.combo-item:hover, .combo-item.active { background: #f1f3f5; }
+
+
+
+/* Prevent header/body misalignment with Bootstrap wrapper */
+.dataTables_wrapper .row { align-items: center; }
+
+
+#total-list-previewDataTable,
+#total-list-previewDataTable td,
+#total-list-previewDataTable th { font-size: .875rem; }
+#total-list-previewDataTable td, 
+#total-list-previewDataTable th { padding: .3rem .5rem; }
+.tl-row-error { background-color: #ffe6e6 !important; } /* đỏ nhạt */
+.tl-row-dup   { background-color: #fff8e6 !important; } /* vàng nhạt */
+.td.is-invalid { background-color: #ffecec !important; } /* đỏ ô lỗi */
+
+/* ===== Registered Stats Bar ===== */
+.stats-bar{
+  display:flex; flex-wrap:wrap; gap:16px;
+  font-weight:700;
+}
+.stats-bar .stat-item{
+  display:flex; align-items:center; gap:10px;
+  font-size: 1rem; /* nhãn */
+}
+.stats-bar .label{ color:#111; }
+.stat-num{
+  display:inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 1.15rem; /* số lớn hơn nhãn */
+  line-height: 1.1;
+  color: #fff;
+  min-width: 44px;
+  text-align: center;
+}
+.stat-num--primary{ background:#0d6efd; }  /* xanh dương */
+.stat-num--danger{ background:#dc143c; }   /* đỏ tươi */
+.stat-num--success{ background:#198754; }  /* xanh lá */
+
+
+
+</style>

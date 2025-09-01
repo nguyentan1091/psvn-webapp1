@@ -1,0 +1,164 @@
+<div id="registration-content">
+<style id="compact-register-style">
+/* Compact layout for Register page */
+#registration-content .card { margin-bottom: .75rem; }
+#registration-content .card-header { padding: .5rem .75rem; }
+#registration-content .card-body { padding: .75rem; }
+#registration-content .form-label { margin-bottom: .25rem; font-size: .9rem; }
+#registration-content .form-control,
+#registration-content .form-select { padding: .25rem .5rem; height: calc(1.5em + .5rem + 2px); font-size: .9rem; }
+#registration-content .input-group > .form-control,
+#registration-content .input-group > .form-select { height: calc(1.5em + .5rem + 2px); }
+#registration-content .row.g-3 { --bs-gutter-x: .5rem; --bs-gutter-y: .5rem; }
+#registration-open-notice, #registration-closed-notice { margin-bottom: .75rem !important; }
+#registration-content h4, #registration-content h5 { margin-bottom: .5rem; }
+#registration-content .btn { padding: .3rem .55rem; font-size: .9rem; }
+</style>
+
+    <div id="registration-open-notice" class="alert alert-success d-none mb-2 d-flex align-items-center" role="alert">
+        <i class="fas fa-check-circle fa-2x me-3"></i>
+        <div>
+            <h5 class="alert-heading mb-0" id="open-message"></h5>
+            <p class="mb-0"><span data-translate="reg_time_left">Thời gian còn lại</span>: <strong id="countdown-timer-open" class="fs-5"></strong></p>
+        </div>
+    </div>
+    <div id="registration-closed-notice" class="alert alert-danger d-none mb-2 d-flex align-items-center" role="alert">
+        <i class="fas fa-clock fa-2x me-3"></i>
+        <div>
+            <h5 class="alert-heading mb-0" id="closed-message"></h5>
+            <p class="mb-0"><span data-translate="reg_will_reopen">Sẽ mở lại sau</span>: <strong id="countdown-timer-closed" class="fs-5"></strong></p>
+        </div>
+    </div>
+
+<div class="card mb-4">
+  <div class="card-header">
+    <i class="fas fa-pencil-alt me-1"></i>
+    <span data-translate="reg_manual_header">Thêm mới một xe (Nhập liệu thủ công)</span>
+  </div>
+  <div class="card-body">
+    <form id="manualEntryForm" class="row g-2 gy-2 compact-form">
+      <div class="col-md-3">
+        <label for="formRegisterDate" class="form-label" data-translate="reg_date_label">Ngày đăng ký</label>
+        <select id="formRegisterDate" class="form-select form-select-sm" required></select>
+      </div>
+
+      <div class="col-md-3">
+        <label for="manual-contractNo" class="form-label" data-translate="col_contract_no">Số HĐ</label>
+        <input id="manual-contractNo" class="form-control" list="contractNoList" placeholder="Nhập hoặc chọn Số HĐ">
+        <datalist id="contractNoList"></datalist>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formTruckPlate" class="form-label" data-translate="col_truck_plate">Biển số xe</label>
+        <input type="text" class="form-control form-control-sm" id="formTruckPlate" maxlength="11" required>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formCountry" class="form-label" data-translate="col_country">Quốc gia</label>
+        <select id="formCountry" class="form-select form-select-sm" required>
+          <option value="Vietnam">Vietnam</option>
+          <option value="Laos">Laos</option>
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formWheel" class="form-label" data-translate="col_wheel">Số bánh</label>
+        <input type="number" class="form-control form-control-sm" id="formWheel" max="1000" required>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formTrailerPlate" class="form-label" data-translate="col_trailer_plate">Biển số Mooc</label>
+        <input type="text" class="form-control form-control-sm" id="formTrailerPlate" maxlength="11">
+      </div>
+
+      <div class="col-md-3">
+        <label for="formTruckWeight" class="form-label" data-translate="col_truck_weight">Trọng lượng xe</label>
+        <input type="number" class="form-control form-control-sm" id="formTruckWeight" max="1000" step="0.01" required>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formPayLoad" class="form-label" data-translate="col_payload">Tải trọng xe</label>
+        <input type="number" class="form-control form-control-sm" id="formPayLoad" max="1000" step="0.01" required>
+      </div>
+
+      <div class="col-md-6">
+        <label for="formContainerNo1" class="form-label" data-translate="col_container1">Container 1</label>
+        <input type="text" class="form-control form-control-sm" id="formContainerNo1" maxlength="70">
+      </div>
+
+      <div class="col-md-6">
+        <label for="formContainerNo2" class="form-label" data-translate="col_container2">Container 2</label>
+        <input type="text" class="form-control form-control-sm" id="formContainerNo2" maxlength="70">
+      </div>
+
+      <div class="col-md-3">
+        <label for="formDriverName" class="form-label" data-translate="col_driver_name">Tên lái xe</label>
+        <input type="text" class="form-control form-control-sm" id="formDriverName" maxlength="70" required>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formIdPassport" class="form-label" data-translate="col_id_passport">Số hộ chiếu</label>
+        <input type="text" class="form-control form-control-sm" id="formIdPassport" maxlength="70" required>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formPhoneNumber" class="form-label" data-translate="col_phone_number">Số điện thoại</label>
+        <input type="number" class="form-control form-control-sm" id="formPhoneNumber" max="9999999999" required>
+      </div>
+
+      <div class="col-md-3">
+        <label for="formDestinationEST" class="form-label" data-translate="col_destination">Điểm trả hàng dự kiến</label>
+        <input type="text" class="form-control form-control-sm" id="formDestinationEST" maxlength="70" required>
+      </div>
+
+      <div class="col-md-4">
+        <label for="formTransportionCompany" class="form-label" data-translate="col_transport_company">Đơn vị vận chuyển</label>
+        <select id="formTransportionCompany" class="form-select form-select-sm" required>
+          <option value="" data-translate="select_company_option">Chọn đơn vị</option>
+          <option value="Hoanh Son">Hoanh Son</option>
+          <option value="Nam Tien">Nam Tien</option>
+          <option value="PTS">PTS</option>
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label for="formSubcontractor" class="form-label" data-translate="col_subcontractor">Nhà thầu phụ</label>
+        <input type="text" class="form-control form-control-sm" id="formSubcontractor" maxlength="70" required>
+      </div>
+
+      <div class="col-md-4">
+        <label for="formVehicleStatus" class="form-label" data-translate="col_vehicle_status">Tình trạng xe</label>
+        <select id="formVehicleStatus" class="form-select form-select-sm" required>
+          <option value="RO">RO</option>
+          <option value="CO">CO</option>
+          <option value="PM">PM</option>
+          <option value="CM">CM</option>
+          <option value="AC">AC</option>
+          <option value="ND">ND</option>
+        </select>
+      </div>
+
+      <!-- Nút submit: KHÔNG gán id trùng với form -->
+      <div class="col-12 text-end mt-4">
+        <button type="submit" class="btn btn-primary btn-sm" data-translate="register_vehicle_button">
+          Đăng ký xe
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+    <div class="card">
+        <div class="card-header"><i class="fas fa-file-upload me-1"></i><span data-translate="reg_upload_header">Thêm mới nhiều xe (Upload File)</span></div>
+        <div class="card-body">
+            <p class="form-text" data-translate="reg_upload_note">Ghi chú: Chỉ chấp nhận các file có định dạng .xlsx, .xls, .csv. <span id="upload-date-note" class="fw-bold text-danger"></span></p>
+            <div class="input-group mb-3"><input type="file" class="form-control form-control-sm" id="fileUploader" accept=".xlsx, .xls, .csv"><button id="uploadButton" class="btn btn-info" data-translate="preview_data_button">Xem trước dữ liệu</button></div>
+            <div id="previewContainer" class="d-none mt-3">
+                <h5 data-translate="preview_data_title">Dữ liệu xem trước</h5>
+                <div class="table-responsive"><table id="previewDataTable" class="table table-bordered table-striped" style="width:100%"></table></div>
+                <div class="text-end mt-2"><button id="saveUploadBtn" class="btn btn-success btn-sm" data-translate="save_data_button">Lưu dữ liệu</button></div>
+            </div>
+        </div>
+    </div>
+</div>

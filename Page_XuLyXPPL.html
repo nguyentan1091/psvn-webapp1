@@ -1,0 +1,113 @@
+<style>
+#xppl-contracts[multiple] option:checked{background:#0d6efd;color:#fff}
+#xppl-contracts[multiple] option.approved::after{content:" ✓";color:#198754;font-weight:700}
+#btn-select-all-contracts.btn-primary{color:#fff}
+</style>
+
+<div class="container-fluid px-4" id="xppl-approval-page">
+  <div class="card mb-3">
+    <div class="card-header"><i class="fas fa-check-double me-1"></i> Xác nhận dữ liệu đăng ký gửi XPPL</div>
+    <div class="card-body">
+      <div class="row g-3 align-items-start">
+        <div class="col-lg-3">
+          <label class="form-label mb-1">Ngày đăng ký</label>
+          <input id="xppl-date" type="date" class="form-control">
+        </div>
+
+        <div class="col-lg-5">
+          <label class="form-label mb-1">Hợp đồng đăng ký bốc hàng</label>
+          <select id="xppl-contracts" class="form-select" multiple size="8"></select>
+          <div class="mt-2 d-flex gap-2">
+            <button id="btn-select-all-contracts" class="btn btn-outline-secondary btn-sm">
+              <i class="fas fa-check-square me-1"></i> Chọn tất cả HĐ của ngày
+            </button>
+            <button id="btn-clear-contracts" class="btn btn-light btn-sm">Bỏ chọn</button>
+          </div>
+          <div class="form-text mt-1">HĐ đã Approved sẽ có dấu ✓ màu xanh.</div>
+        </div>
+
+        <div class="col-lg-4">
+          <label class="form-label mb-1">Trạng thái</label>
+          <div class="mb-2">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="xppl-status" id="st-approve" value="Approved" checked>
+              <label class="form-check-label" for="st-approve">Đồng ý</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="xppl-status" id="st-pending" value="Pending approval">
+              <label class="form-check-label" for="st-pending">Chưa đồng ý</label>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="xppl-apply" class="btn btn-primary">
+              <i class="fas fa-check me-1"></i> Xác nhận
+            </button>
+            <button id="xppl-refresh" class="btn btn-outline-primary">
+              <i class="fas fa-sync me-1"></i> Hiển thị/Cập nhật
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <hr/>
+      <div class="row text-center">
+        <div class="col-4">
+          <div>Tổng số đăng ký (Pending approval)</div>
+          <div id="xppl-pending" class="fs-4 text-primary">0</div>
+        </div>
+        <div class="col-4">
+          <div>Tổng số đã phê duyệt (Approved)</div>
+          <div id="xppl-approved" class="fs-4 text-danger">0</div>
+        </div>
+        <div class="col-4">
+          <div>Đã gửi XPPL (tùy chọn)</div>
+          <div id="xppl-sent" class="fs-4">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ===== XPPL OLD FORM EXPORT ===== -->
+<div class="card mb-3" id="xppl-oldform-card">
+  <div class="card-header">
+    <i class="fas fa-file-excel me-1"></i> Xuất dữ liệu mẫu cũ theo yêu cầu XPPL
+  </div>
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-lg-4">
+        <label class="form-label">Contract No</label>
+        <select id="xppl-form-contract" class="form-select"></select>
+      </div>
+      <div class="col-lg-4">
+        <label class="form-label">Customer Name</label>
+        <select id="xppl-form-customer" class="form-select"></select>
+      </div>
+      <div class="col-lg-4 d-flex gap-2">
+        <button id="xppl-form-confirm" class="btn btn-primary flex-fill">
+          <i class="fas fa-lock me-1"></i> Xác nhận
+        </button>
+        <button id="xppl-form-preview" class="btn btn-info flex-fill" disabled>
+          <i class="fas fa-eye me-1"></i> Kiểm tra
+        </button>
+        <button id="xppl-form-export" class="btn btn-success flex-fill" disabled>
+          <i class="fas fa-file-excel me-1"></i> Xuất Excel
+        </button>
+      </div>
+    </div>
+    <div class="form-text mt-2">
+      * Chọn đúng <b>Ngày đăng ký</b> (ở khối trên), <b>Contract No</b> và <b>Customer Name</b>. Chỉ những dòng <b>Approved</b> mới được xuất.
+    </div>
+  </div>
+</div>
+<!-- ===== /XPPL OLD FORM EXPORT ===== -->
+
+
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-table me-1"></i> Dữ liệu xe theo bộ lọc</div>
+    <div class="card-body">
+      <table id="xppl-table" class="table table-striped table-bordered table-sm w-100">
+        <thead></thead><tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
