@@ -1,12 +1,22 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = 'đã ẩn'; 
+const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
 const CONTRACT_SHEET = 'ContractData';
 const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Company', 'Status'];
+// === XPPL Weighing Station database ===
+const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
+const XPPL_DB_SHEET = 'XPPL-Database';
+const XPPL_DB_HEADERS = [
+  'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
+  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
+  'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
+  'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type',
+  'WeighStationCode','Note','CreateUser'
+];
 // === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
 // ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
 const XPPL_TEMPLATE_ID = '1p8n8ffm81NaxSWB5F7Wn1GhsaBrQ21XttaWmX5yvBl4';
@@ -166,6 +176,14 @@ function requireAdmin_(sessionToken) {
   const s = validateSession(sessionToken);
   if (!s || s.role !== 'admin') {
     throw new Error('Bạn không có quyền truy cập chức năng này (Admin only).');
+  }
+  return s;
+}
+
+function requireXpplRole_(sessionToken) {
+  const s = validateSession(sessionToken);
+  if (!s || ['admin','admin-xppl'].indexOf(s.role) === -1) {
+    throw new Error('Bạn không có quyền truy cập chức năng này.');
   }
   return s;
 }
@@ -2262,5 +2280,94 @@ function exportXpplToTemplateDownload(filter, sessionToken) {
     return { ok:false, message: 'Xuất thất bại: ' + (e && e.message) };
   }
 }
+
+// ===== XPPL Weighing Station functions =====
+function saveXpplWeighingData(rows, sessionToken) {
+  const user = requireXpplRole_(sessionToken);
+  if (!rows || !rows.length) throw new Error('Không có dữ liệu.');
+
+  // build valid Contract-Customer set from ContractData
+  const ssMain = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const shCon = ssMain.getSheetByName(CONTRACT_SHEET);
+  const lc = shCon.getLastColumn();
+  const head = shCon.getRange(1,1,1,lc).getValues()[0];
+  const idxCNo = head.indexOf('Contract No');
+  const idxCus = head.indexOf('Customer Name');
+  const validSet = new Set();
+  if (idxCNo !== -1 && idxCus !== -1) {
+    const data = shCon.getRange(2,1,Math.max(0, shCon.getLastRow()-1), lc).getValues();
+    data.forEach(r => {
+      const key = String(r[idxCus]).trim() + '|' + String(r[idxCNo]).trim();
+      validSet.add(key);
+    });
+  }
+
+  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
+  const sh = ss.getSheetByName(XPPL_DB_SHEET);
+  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
+  const prefix = Utilities.formatDate(new Date(), tz, 'dd-MM') + '-';
+
+  const toSave = rows.map(r => {
+    const key = String(r['Customer Name']||'').trim() + '|' + String(r['ContractNo']||'').trim();
+    if (validSet.size && !validSet.has(key)) {
+      throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
+    }
+    const arr = XPPL_DB_HEADERS.map(h => r[h] || '');
+    arr[0] = prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0');
+    arr[35] = user.username || user.user || user.email || '';
+    return arr;
+  });
+
+  if (toSave.length) {
+    sh.getRange(sh.getLastRow()+1,1,toSave.length,XPPL_DB_HEADERS.length).setValues(toSave);
+  }
+  return 'Đã lưu ' + toSave.length + ' dòng.';
+}
+
+function getXpplWeighingData(filter, sessionToken) {
+  requireXpplRole_(sessionToken);
+  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
+  const sh = ss.getSheetByName(XPPL_DB_SHEET);
+  const lr = sh.getLastRow();
+  if (lr < 2) {
+    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
+  }
+  const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
+  const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
+  const idxDate = XPPL_DB_HEADERS.indexOf('Date Out');
+  const idxContract = XPPL_DB_HEADERS.indexOf('ContractNo');
+  const idxCustomer = XPPL_DB_HEADERS.indexOf('Customer Name');
+  const idxNet = XPPL_DB_HEADERS.indexOf('Net Weight');
+
+  const filterDate = s(filter && filter.date);
+  const filterContract = s(filter && filter.contractNo);
+  const filterCustomer = s(filter && filter.customerName);
+  const dateKey = filterDate ? _toDateKey(filterDate) : null;
+
+  const contracts = new Set();
+  const customers = new Set();
+  const rows = [];
+  let totalWeight = 0;
+  data.forEach(r => {
+    const d = _toDateKey(r[idxDate]);
+    const cno = s(r[idxContract]);
+    const cus = s(r[idxCustomer]);
+    const net = Number(r[idxNet]) || 0;
+    contracts.add(cno); customers.add(cus);
+    if (dateKey && d !== dateKey) return;
+    if (filterContract && filterContract !== cno) return;
+    if (filterCustomer && filterCustomer !== cus) return;
+    rows.push(formatRowForClient_(r, XPPL_DB_HEADERS));
+    totalWeight += net;
+  });
+
+  return {
+    data: rows,
+    summary: { trucks: rows.length, weight: totalWeight },
+    contracts: Array.from(contracts).sort(),
+    customers: Array.from(customers).sort()
+  };
+}
+
 
 /*** END ***/
