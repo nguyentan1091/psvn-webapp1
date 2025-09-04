@@ -799,44 +799,69 @@ function handleChangePassword(e) {
 }
 
 function initRegisterPage() {
-    const today = new Date();
-    const tomorrow = new Date();
-    tomorrow.setDate(today.getDate() + 1);
-    const todayStr = getFormattedDate(today);
-    const tomorrowStr = getFormattedDate(tomorrow);
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+  const todayStr = getFormattedDate(today);
+  const tomorrowStr = getFormattedDate(tomorrow);
 
-    const dateSelect = $('#formRegisterDate');
-    
-    google.script.run.withSuccessHandler(status => {
-        if (status.period === 1) {
-            dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
-            $('#upload-date-note').text(`File upload chỉ chấp nhận ngày đăng ký là ${tomorrowStr}.`);
-        } else {
-            dateSelect.html(`
-                <option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>
-            `);
-             $('#upload-date-note').text('');
-        }
-        if (userSession.role === 'admin') {
-            $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
-            $('#registration-content .card').removeClass('opacity-50 disabled-card');
-            $('#registration-content .card').find('input, select, button').prop('disabled', false);
-        } else {
-            startRegistrationTimer();
-        }
-    }).checkRegistrationTime();
+  const dateSelect = $('#formRegisterDate');
 
-
-    $('#manualEntryForm').on('submit', handleManualAdd);
-    $('#uploadButton').on('click', handleFileUpload);
-    $('#saveUploadBtn').on('click', handleSaveUploadedData);
-
-
-    if (userSession.role === 'user') {
-        $('#formTransportionCompany').val(userSession.contractor).prop('disabled', true);
+  google.script.run.withSuccessHandler(status => {
+    if (status.period === 1) {
+      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
+      $('#upload-date-note').text(`File upload chỉ chấp nhận ngày đăng ký là ${tomorrowStr}.`);
+    } else {
+      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
+      $('#upload-date-note').text('');
     }
-loadActiveContractNosForRegister();
+
+    if (userSession.role === 'admin') {
+      $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
+      $('#registration-content .card').removeClass('opacity-50 disabled-card');
+      $('#registration-content .card').find('input, select, button').prop('disabled', false);
+    } else {
+      startRegistrationTimer();
+    }
+  }).checkRegistrationTime();
+
+  $('#manualEntryForm').on('submit', handleManualAdd);
+  $('#uploadButton').on('click', handleFileUpload);
+  $('#saveUploadBtn').on('click', handleSaveUploadedData);
+
+  // === NẠP "Đơn vị vận chuyển" từ ContractData ===
+  google.script.run
+    .withSuccessHandler(list => {
+      const companies = (list || []).filter(Boolean);
+      const $sel = $('#formTransportionCompany');
+
+      if (userSession.role === 'user') {
+        // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
+        const me = String((userSession.contractor || '')).trim();
+        if (me) {
+          $sel.html(`<option value="${me}">${me}</option>`)
+              .val(me)
+              .prop('disabled', true)
+              .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
+        } else {
+          // Không có contractor → vẫn cho chọn (ít gặp)
+          const html = ['<option value="">Chọn đơn vị</option>',
+                        ...companies.map(c => `<option value="${c}">${c}</option>`)].join('');
+          $sel.html(html).prop('disabled', false).removeClass('bg-light');
+        }
+      } else {
+        // Admin: danh sách đầy đủ
+        const html = ['<option value="">Chọn đơn vị</option>',
+                      ...companies.map(c => `<option value="${c}">${c}</option>`)].join('');
+        $sel.html(html).prop('disabled', false).removeClass('bg-light');
+      }
+    })
+    .withFailureHandler(showError)
+    .getContractorOptions();   // <-- đang đọc từ ContractData như bạn yêu cầu
+
+  loadActiveContractNosForRegister();
 }
+
 
 
 function startRegistrationTimer() {
@@ -3169,96 +3194,99 @@ function initXuLyXPPLPage() {
 
   // ===== 3.4. Nút "Kiểm tra" — preview A9:J =====
   $('#xppl-form-preview').off('click.xppl').on('click.xppl', function(){
-    if (!xpplExportState.confirmed){
-      Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info'); return;
-    }
-    const rows = xpplExportState.rows || [];
-    const { dateString, contractNo, customerName } = xpplExportState.filter;
-    if (!rows.length){ Swal.fire('Trống', 'Không có dữ liệu để xem.', 'info'); return; }
+  if (!xpplExportState || !xpplExportState.confirmed) {
+    Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info'); return;
+  }
+  const rows = xpplExportState.rows || [];
+  if (!rows.length){ Swal.fire('Trống', 'Không có dữ liệu để xem.', 'info'); return; }
 
-    const thead = `
-      <tr>
-        <th>A Register date</th>
-        <th>B Customer</th>
-        <th>C Total truck</th>
-        <th>D Contract no</th>
-        <th>E No</th>
-        <th>F Truck plate</th>
-        <th>G Country</th>
-        <th>H Wheel</th>
-        <th>I Trailer plate</th>
-        <th>J Driver name</th>
-      </tr>`;
-    let tbody = '';
-    rows.forEach((r,i)=>{ tbody += `
-      <tr>
-        <td>${dateString}</td>
-        <td>${customerName}</td>
-        <td>${i===0 ? rows.length : ''}</td>
-        <td>${contractNo}</td>
-        <td>${i+1}</td>
-        <td>${r['Truck Plate']||''}</td>
-        <td>${r['Country']||''}</td>
-        <td>${r['Wheel']||''}</td>
-        <td>${r['Trailer Plate']||''}</td>
-        <td>${r['Driver Name']||''}</td>
-      </tr>`; });
+  const { dateString, contractNo, customerName } = xpplExportState.filter;
 
-    Swal.fire({
-      width: '80%',
-      title: 'Xem trước dữ liệu A9:J',
-      html: `
-        <div class="text-start mb-2">
-          <b>Date:</b> ${dateString} &nbsp;&nbsp; <b>Contract:</b> ${contractNo}
-          &nbsp;&nbsp; <b>Customer:</b> ${customerName} &nbsp;&nbsp; <b>Total truck:</b> ${rows.length}
-        </div>
-        <div class="table-responsive" style="max-height:60vh;overflow:auto">
-          <table class="table table-bordered table-sm">
-            <thead>${thead}</thead>
-            <tbody>${tbody}</tbody>
-          </table>
-        </div>`,
-      confirmButtonText: 'Đóng'
-    });
+  const thead = `
+    <tr>
+      <th>No</th>
+      <th>Truck plate</th>
+      <th>Country</th>
+      <th>Wheel</th>
+      <th>Trailer plate</th>
+      <th>Driver name</th>
+      <th>ID/Passport</th>
+      <th>Phone number</th>
+      <th>Transportion Company</th>
+      <th>Subcontractor</th>
+    </tr>`;
+  let tbody = '';
+  rows.forEach((r,i)=>{ tbody += `
+    <tr>
+      <td>${i+1}</td>
+      <td>${r['Truck Plate']||''}</td>
+      <td>${r['Country']||''}</td>
+      <td>${r['Wheel']||''}</td>
+      <td>${r['Trailer Plate']||''}</td>
+      <td>${r['Driver Name']||''}</td>
+      <td>${r['ID/Passport']||''}</td>
+      <td>${r['Phone number']||''}</td>
+      <td>${r['Transportion Company']||''}</td>
+      <td>${r['Subcontractor']||''}</td>
+    </tr>`; });
+
+  Swal.fire({
+    width: '90%',
+    title: 'Xem trước Truck list',
+    html: `
+      <div class="text-start mb-2">
+        <b>Date:</b> ${dateString} &nbsp;&nbsp; <b>Contract:</b> ${contractNo}
+        &nbsp;&nbsp; <b>Customer:</b> ${customerName} &nbsp;&nbsp; <b>Total truck:</b> ${rows.length}
+      </div>
+      <div class="table-responsive" style="max-height:60vh;overflow:auto">
+        <table class="table table-bordered table-sm">
+          <thead>${thead}</thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>`,
+    confirmButtonText: 'Đóng'
   });
+});
 
-  // ===== 3.5. Nút "Xuất Excel" — A9:J + Total truck & No tự động =====
-  $('#xppl-form-export').off('click.xppl').on('click.xppl', function(){
-    if (!xpplExportState.confirmed){
-      Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info'); return;
-    }
-    const rows = xpplExportState.rows || [];
-    const { dateString, contractNo, customerName } = xpplExportState.filter;
-    if (!rows.length){ Swal.fire('Trống', 'Không có dữ liệu để xuất.', 'info'); return; }
 
-    const aoa = rows.map((r,i)=>[
-      dateString,                  // A
-      customerName,                // B
-      '',                          // C -> công thức ở C9
-      contractNo,                  // D
-      i+1,                         // E (No)
-      r['Truck Plate']||'',        // F
-      r['Country']||'',            // G
-      r['Wheel']||'',              // H
-      r['Trailer Plate']||'',      // I
-      r['Driver Name']||''         // J
-    ]);
 
-    const ws = XLSX.utils.aoa_to_sheet([]);
-    XLSX.utils.sheet_add_aoa(ws, aoa, { origin:'A9' });
+// ===== 3.5. Nút "Xuất Excel" — xuất theo Google Sheet mẫu (template) =====
+$('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
+  if (!xpplExportState.confirmed) {
+    Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info');
+    return;
+  }
+  const filter = xpplExportState.filter;
 
-    const endRow = 8 + rows.length;      // C9 = COUNTA(E9:E{8+N})
-    ws['C9'] = { f: `COUNTA(E9:E${endRow})` };
+  showLoading('Đang tạo file…');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      Swal.close();
+      if (!res || !res.ok) {
+        Swal.fire('Không thể xuất', (res && res.message) || 'Lỗi không xác định.', 'error');
+        return;
+      }
 
-    const colMax = new Array(10).fill(0);
-    aoa.forEach(r=>r.forEach((v,i)=>colMax[i]=Math.max(colMax[i], String(v||'').length)));
-    ws['!cols'] = colMax.map(w=>({ wch: Math.max(10, Math.min(40, w+2)) }));
+      // Đặt tên file tải về (ưu tiên server trả về fileName)
+      var filename = (res.fileName || res.name || ('XPPL_' + (filter.contractNo || '') + '_' + (filter.dateString || '') + '.xlsx'))
+        .replace(/[\\\/:\*\?"<>\|]/g, '_'); // sanitize ký tự cấm
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'XPPL');
-    const safeDate = dateString.replace(/\//g,'-');
-    XLSX.writeFile(wb, `XPPL_${contractNo}_${safeDate}.xlsx`);
-  });
+      // Tải về từ base64
+      var a = document.createElement('a');
+      a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + res.base64;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    })
+    .withFailureHandler(function (err) {
+      Swal.close();
+      showError(err && err.message ? err.message : err);
+    })
+    .exportXpplAsXlsx(filter, userSession.token);
+});
+
+
 
   // ====== Admin guard & DataTable ======
   if (!userSession || userSession.role !== 'admin') {
