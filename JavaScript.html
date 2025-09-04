@@ -342,18 +342,23 @@ function loadDashboard() {
         document.body.className = ''; // Xóa "dấu" để trả về layout dashboard mặc định
 
         $('#app-container').html(html);
-                // Ẩn menu XPPL cho user thường
-        if (userSession && userSession.role !== 'admin') {
-          // ẩn item có data-page="Page_XuLyXPPL"
-          $('#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"]')
-            .addClass('d-none disabled')
-            .removeClass('active');
-
-          // nếu default đang trỏ nhầm vào XPPL -> chuyển sang View
-          const active = $('#sidebar-wrapper .list-group-item.active');
-          if (active.data('page') === 'Page_XuLyXPPL') {
-            active.removeClass('active');
-            $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
+        // Ẩn các menu theo phân quyền
+        if (userSession) {
+          if (userSession.role !== 'admin') {
+            $('#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"]')
+              .addClass('d-none disabled')
+              .removeClass('active');
+            // nếu default đang trỏ nhầm vào XPPL -> chuyển sang View
+            const active = $('#sidebar-wrapper .list-group-item.active');
+            if (active.data('page') === 'Page_XuLyXPPL') {
+              active.removeClass('active');
+              $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
+            }
+          }
+          if (!['admin', 'admin-xppl'].includes(userSession.role)) {
+            $('#sidebar-wrapper .list-group-item[data-page="XPPL-WeighingStation"]')
+              .addClass('d-none disabled')
+              .removeClass('active');
           }
         }
         setupDashboardListeners();
@@ -381,6 +386,14 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
       return;
     }
 
+    if (pageName === 'XPPL-WeighingStation' && userSession && !['admin', 'admin-xppl'].includes(userSession.role)) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin hoặc admin-xppl.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
     google.script.run
         .withSuccessHandler(html => {
             $('#main-content').html(html);
@@ -390,7 +403,8 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
                 case 'Page_TotalList': initTotalListPage(); break;
                 case 'Page_Account': initAccountPage(); break;
                 case 'Page_Contract': initContractPage(); break;
-                            case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
+                case 'XPPL-WeighingStation': initXPPLWeighingStationPage(); break;
+                case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
 }
             setLanguage(currentLang); // Dịch nội dung trang mới
             if (!isInitialLoad) Swal.close();
@@ -643,6 +657,7 @@ function handleEditUser(rowData) {
                 <select id="swal-role" class="swal2-select">
                     <option value="user" ${rowData.Role === 'user' ? 'selected' : ''}>user</option>
                     <option value="admin" ${rowData.Role === 'admin' ? 'selected' : ''}>admin</option>
+                    <option value="admin-xppl" ${rowData.Role === 'admin-xppl' ? 'selected' : ''}>admin-xppl</option>
                 </select>
             </div>
             <div class="swal-form-group">
@@ -714,6 +729,7 @@ function handleAddNewUser() {
                 <select id="swal-role" class="swal2-select">
                     <option value="user">user</option>
                     <option value="admin">admin</option>
+                    <option value="admin-xppl">admin-xppl</option>
                 </select>
             </div>
             <div class="swal-form-group">
@@ -3022,14 +3038,144 @@ if (typeof _ === 'undefined') {
 }
 
 
-
-
-
-
 try {
   if (translations && translations.vi) translations.vi['sidebar_xppl_approval'] = translations.vi['sidebar_xppl_approval'] || 'Xử lý xe đăng ký gửi XPPL';
   if (translations && translations.en) translations.en['sidebar_xppl_approval'] = translations.en['sidebar_xppl_approval'] || 'XPPL Registration Approval';
+  if (translations && translations.vi) translations.vi['sidebar_xppl_weighing'] = translations.vi['sidebar_xppl_weighing'] || 'Trạm cân XPPL';
+  if (translations && translations.en) translations.en['sidebar_xppl_weighing'] = translations.en['sidebar_xppl_weighing'] || 'XPPL Weighing Station';
 } catch(e) {}
+
+const XPPL_WEIGHING_HEADERS = [
+  'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
+  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
+  'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
+  'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type',
+  'WeighStationCode','Note','CreateUser'
+];
+let xpplWeighingTable;
+
+function initXPPLWeighingStationPage() {
+  // set default date today
+  const todayISO = new Date().toISOString().substring(0,10);
+  $('#xppl-filter-date').val(todayISO);
+
+  if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+    $('#xppl-weighing-table').DataTable().destroy();
+  }
+  xpplWeighingTable = $('#xppl-weighing-table').DataTable({
+    data: [],
+    columns: XPPL_WEIGHING_HEADERS.map(h => ({ data: h, title: h })),
+    scrollX: true,
+    pageLength: 50,
+    lengthChange: false,
+    searching: true,
+    paging: true
+  });
+
+  $('#xppl-weighing-upload').off('click').on('click', handleXpplWeighingUpload);
+  $('#xppl-filter-date, #xppl-filter-contract, #xppl-filter-customer')
+    .off('change').on('change', loadXpplWeighingData);
+  $('#xppl-search').off('keyup').on('keyup', function(){
+    xpplWeighingTable.search(this.value).draw();
+  });
+  $('#xppl-page-length').off('change').on('change', function(){
+    xpplWeighingTable.page.len($(this).val()).draw();
+  });
+  $('#xppl-refresh').off('click').on('click', loadXpplWeighingData);
+  $('#xppl-export').off('click').on('click', exportXpplWeighingExcel);
+
+  loadXpplWeighingData();
+}
+
+function handleXpplWeighingUpload() {
+  const file = $('#xppl-weighing-file')[0].files[0];
+  if (!file) {
+    Swal.fire('Chưa chọn file', 'Vui lòng chọn file Excel.', 'warning');
+    return;
+  }
+  showLoading('Đang xử lý file...');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const workbook = XLSX.read(e.target.result, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'' });
+      if (rows.length < 2) throw new Error('File không có dữ liệu');
+      const data = rows.slice(1).map(r => {
+        const obj = {};
+        XPPL_WEIGHING_HEADERS.forEach((h, i) => obj[h] = r[i] || '');
+        return obj;
+      });
+      google.script.run
+        .withSuccessHandler(msg => {
+          Swal.close();
+          Swal.fire('Thành công', msg || 'Tải lên thành công', 'success');
+          $('#xppl-weighing-file').val('');
+          loadXpplWeighingData();
+        })
+        .withFailureHandler(err => { Swal.close(); showError(err); })
+        .saveXpplWeighingData(data, userSession.token);
+    } catch(err) {
+      Swal.close();
+      Swal.fire('Lỗi', err.message || String(err), 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function loadXpplWeighingData() {
+  const filter = {
+    date: $('#xppl-filter-date').val(),
+    contractNo: $('#xppl-filter-contract').val(),
+    customerName: $('#xppl-filter-customer').val()
+  };
+  showLoading('Đang tải dữ liệu...');
+  google.script.run
+    .withSuccessHandler(res => {
+      Swal.close();
+      if (!res) res = {};
+      if (res.contracts) {
+        const $c = $('#xppl-filter-contract').empty().append('<option value="">Tất cả</option>');
+        res.contracts.forEach(c => $c.append(`<option value="${c}">${c}</option>`));
+        if (filter.contractNo) $c.val(filter.contractNo);
+      }
+      if (res.customers) {
+        const $c2 = $('#xppl-filter-customer').empty().append('<option value="">Tất cả</option>');
+        res.customers.forEach(c => $c2.append(`<option value="${c}">${c}</option>`));
+        if (filter.customerName) $c2.val(filter.customerName);
+      }
+      $('#xppl-summary-trucks').text(res.summary ? res.summary.trucks || 0 : 0);
+      $('#xppl-summary-weight').text(res.summary ? res.summary.weight || 0 : 0);
+      if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+        xpplWeighingTable.clear().rows.add(res.data || []).draw();
+        const count = (res.data || []).length;
+        $('#xppl-count').html('Tổng số dòng: <span class="badge bg-primary">' + count + '</span>');
+      }
+    })
+    .withFailureHandler(err => { Swal.close(); showError(err); })
+    .getXpplWeighingData(filter, userSession.token);
+}
+
+function exportXpplWeighingExcel() {
+  const rows = xpplWeighingTable.rows({ search: 'applied' }).data().toArray();
+  if (!rows.length) {
+    Swal.fire('Không có dữ liệu', 'Không có dữ liệu để xuất.', 'info');
+    return;
+  }
+  const aoa = [XPPL_WEIGHING_HEADERS];
+  rows.forEach(r => {
+    aoa.push(XPPL_WEIGHING_HEADERS.map(h => r[h] || ''));
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'XPPL');
+  XLSX.writeFile(wb, 'XPPL_Weighing.xlsx');
+}
+
+
+function initXPPLWeighingStationPage() {
+  // TODO: implement XPPL Weighing Station page functionality
+}
 
 // ===== XPPL Approval Page =====
 let xpplDT;
