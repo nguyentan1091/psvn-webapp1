@@ -1,0 +1,88 @@
+<div class="container-fluid px-4" id="xppl-weighing-page">
+  <!-- Upload Section -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="fas fa-file-upload me-1"></i> Upload dữ liệu trạm cân</div>
+    <div class="card-body">
+      <div class="input-group">
+        <input type="file" id="xppl-weighing-file" accept=".xls,.xlsx" class="form-control" />
+        <button type="button" id="xppl-weighing-upload" class="btn btn-primary">Tải lên</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter & Summary Section -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="fas fa-filter me-1"></i> Bộ lọc</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Ngày</label>
+          <input type="date" id="xppl-filter-date" class="form-control" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Số hợp đồng</label>
+          <select id="xppl-filter-contract" class="form-select">
+            <option value="">Tất cả</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Khách hàng</label>
+          <select id="xppl-filter-customer" class="form-select">
+            <option value="">Tất cả</option>
+          </select>
+        </div>
+      </div>
+      <hr />
+      <div class="row text-center">
+        <div class="col">
+          <div>Tổng số xe</div>
+          <div id="xppl-summary-trucks" class="fs-4">0</div>
+        </div>
+        <div class="col">
+          <div>Tổng khối lượng</div>
+          <div id="xppl-summary-weight" class="fs-4">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DataTable Section -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="fas fa-table me-1"></i> Dữ liệu trạm cân</div>
+    <div class="card-body">
+      <div class="row mb-3 align-items-center">
+        <div class="col-md-4">
+          <div class="input-group">
+            <input type="text" id="xppl-search" class="form-control" placeholder="Tìm kiếm trong bảng..." />
+            <span class="input-group-text"><i class="fas fa-search"></i></span>
+          </div>
+        </div>
+        <div class="col-md-8 text-end">
+          <button id="xppl-export" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
+          <button id="xppl-refresh" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> Tải lại</button>
+        </div>
+      </div>
+
+      <div class="row align-items-center mb-2">
+        <div class="col-md-auto">
+          <div id="xppl-count" class="fw-bold"></div>
+          <div class="dataTables_length">
+            <label>
+              Hiển thị
+              <select id="xppl-page-length" class="form-select form-select-sm d-inline-block w-auto">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+              dòng
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive mt-2">
+        <table id="xppl-weighing-table" class="table table-bordered table-striped" style="width:100%;"></table>
+      </div>
+    </div>
+  </div>
+</div>
