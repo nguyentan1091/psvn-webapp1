@@ -7,6 +7,36 @@ const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
 const CONTRACT_SHEET = 'ContractData';
 const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Company', 'Status'];
+// === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
+// ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
+const XPPL_TEMPLATE_ID = '1p8n8ffm81NaxSWB5F7Wn1GhsaBrQ21XttaWmX5yvBl4';
+
+/** ================== XPPL EXPORT – constants ================== **/
+const XPPL_TEMP_PREFIX = 'XPPL_TMP_'; // prefix cho file tạm
+
+// Các alias cho Named Range / Marker
+const XPPL_NR_ALIASES = {
+  SHEET:        ['Data','DATA','Sheet1'],
+  REG_DATE:     ['NR_REG_DATE','REG_DATE'],
+  CUSTOMER:     ['NR_CUSTOMER','CUSTOMER','CUSTOMER_CODE','CustomerCode'],
+  CONTRACT_NO:  ['NR_CONTRACT_NO','CONTRACT_NO','Contract no'],
+  TOTAL_TRUCK:  ['NR_TOTAL_TRUCK','TOTAL_TRUCK'],
+  TABLE_START:  ['NR_TABLE_START','TABLE_START']
+};
+
+
+// Thứ tự cột cần đổ vào bảng (sau cột No)
+const XPPL_TABLE_COLUMNS = [
+  'Truck Plate',           // B
+  'Country',               // C
+  'Wheel',                 // D
+  'Trailer Plate',         // E
+  'Driver Name',           // F
+  'ID/Passport',           // G
+  'Phone number',          // H
+  'Transportion Company',  // I
+  'Subcontractor'          // J
+];
 
 
 const MAX_LOGIN_ATTEMPTS = 10;
@@ -684,138 +714,402 @@ function getXpplExportOptions(filter, sessionToken) {
  *  Return: { ok, errors?, total, headers, rows }
  * ========================= */
 function getXpplExportData(filter, sessionToken) {
-  // Chỉ admin
   if (typeof requireAdmin_ === 'function') requireAdmin_(sessionToken);
 
-  // ----- Helpers -----
+  // helpers
   const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
-  const normH = x => s(x).toLowerCase().replace(/\s+/g, '');
-  const findIdx = (headers, variants) => {
-    const H = headers.map(normH);
-    for (const v of variants) { const i = H.indexOf(v); if (i !== -1) return i; }
-    return -1;
-  };
 
+  // validate input
+  const dateIn       = s(filter && filter.dateString);
+  const contractNo   = s(filter && filter.contractNo);
+  const customerName = s(filter && filter.customerName);
+  const inputErr = [];
+  if (!dateIn)       inputErr.push('Thiếu Register Date.');
+  if (!contractNo)   inputErr.push('Thiếu Contract No.');
+  if (!customerName) inputErr.push('Thiếu Customer Name.');
+  if (inputErr.length) return { ok:false, errors: inputErr };
+
+  // open SS + normalize date
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const tz = (typeof ss.getSpreadsheetTimeZone === 'function' && ss.getSpreadsheetTimeZone()) ||
-             (typeof Session !== 'undefined' && Session.getScriptTimeZone && Session.getScriptTimeZone()) ||
-             'Asia/Ho_Chi_Minh';
-
-  // Dùng _toDateKey nếu đã có; nếu không thì fallback
+  const tz = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || 'Asia/Ho_Chi_Minh';
   const toDateKey = (v) => {
-    if (typeof _toDateKey === 'function') return _toDateKey(v);
-    if (v == null || v === '') return '';
-    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-      return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
-    }
-    let str = String(v).trim().replace(/^'+/, '');
+    if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
+    let str = String(v||'').trim().replace(/^'+/, '');
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
     if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
       const d = new Date(str); if (!isNaN(d)) return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
     }
-    if (/^\d{2}-\d{2}-\d{4}$/.test(str)) {
-      const [d,m,y] = str.split('-').map(Number);
-      const dt = new Date(y, m-1, d);
-      if (!isNaN(dt)) return Utilities.formatDate(dt, tz, 'dd/MM/yyyy');
-    }
     return str;
   };
-
-  // ----- Inputs & validate -----
-  const dateIn       = s(filter && filter.dateString);
-  const contractNo   = s(filter && filter.contractNo);
-  const customerName = s(filter && filter.customerName);
-
-  const errors = [];
-  if (!dateIn)       errors.push('Thiếu Register Date.');
-  if (!contractNo)   errors.push('Thiếu Contract No.');
-  if (!customerName) errors.push('Thiếu Customer Name.');
-  if (errors.length) return { ok:false, errors };
-
   const dateKey = toDateKey(dateIn);
-  if (!dateKey) return { ok:false, errors:['Ngày không hợp lệ.'] };
 
-  // ----- 1) Xác thực cặp Contract–Customer trong ContractData (ưu tiên Active) -----
-  const shC = ss.getSheetByName(CONTRACT_SHEET); // 'ContractData'
+  // 1) Xác thực Contract–Customer (nếu có sheet ContractData)
+  const shC = ss.getSheetByName(CONTRACT_SHEET);
   if (shC && shC.getLastRow() > 1) {
-    const lcC      = shC.getLastColumn();
-    const headCRaw = shC.getRange(1,1,1,lcC).getValues()[0];
-    const idxCNo     = findIdx(headCRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const idxCus     = findIdx(headCRaw, ['customername','customer','kháchhàng','khachhang']);
-    const idxCStatus = findIdx(headCRaw, ['status','trạngthái','trangthai']);
+    const lc = shC.getLastColumn();
+    const H  = shC.getRange(1,1,1,lc).getValues()[0];
+    const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
+    const findIndex = (hdr, keys) => {
+      const HH = hdr.map(normalizeHeader);
+      for (const k of keys) { const i = HH.indexOf(k); if (i !== -1) return i; }
+      return -1;
+    };
+    const iNo  = findIndex(H, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
+    const iCus = findIndex(H, ['customername','customer','kháchhàng','khachhang']);
+    const iStt = findIndex(H, ['status','trạngthái','trangthai']);
 
-    if (idxCNo !== -1 && idxCus !== -1) {
-      const rowsC = shC.getRange(2,1,shC.getLastRow()-1,lcC).getValues();
-      const okPair = rowsC.some(r => {
-        const ok = (s(r[idxCNo]) === contractNo && s(r[idxCus]) === customerName);
-        if (!ok) return false;
-        if (idxCStatus === -1) return true; // không có cột Status thì bỏ qua
-        const st = s(r[idxCStatus]).toLowerCase();
-        return (st === '' || st === 'active');
+    if (iNo !== -1 && iCus !== -1) {
+      const ok = shC.getRange(2,1,shC.getLastRow()-1,lc).getValues().some(r => {
+        if (s(r[iNo]) !== contractNo || s(r[iCus]) !== customerName) return false;
+        if (iStt === -1) return true;
+        const st = s(r[iStt]).toLowerCase();
+        return st === '' || st === 'active';
       });
-      if (!okPair) {
+      if (!ok) {
         return { ok:false, errors:['Customer Name không khớp với Contract No (hoặc hợp đồng không Active).'] };
       }
     }
   }
 
-  // ----- 2) Lọc VehicleData theo ngày + Contract No + (nếu có) chỉ Approved -----
-  const shV = ss.getSheetByName(DATA_SHEET); // 'VehicleData'
+  // 2) Lọc VehicleData
+  const shV = ss.getSheetByName(DATA_SHEET);
   if (!shV || shV.getLastRow() < 2) return { ok:false, errors:['Không có dữ liệu VehicleData.'] };
 
-  const lcV      = shV.getLastColumn();
-  const headVRaw = shV.getRange(1,1,1,lcV).getValues()[0];
+  const lcV = shV.getLastColumn();
+  const HV  = shV.getRange(1,1,1,lcV).getValues()[0];
 
-  const idxDate   = findIdx(headVRaw, ['registerdate','ngàydăngký','date','register']);
-  const idxNo     = findIdx(headVRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const idxStatus = findIdx(headVRaw, ['registrationstatus','status','trạngtháiđăngký','trangthai']);
-  const idxTruck  = findIdx(headVRaw, ['truckplate','biểnxe','biensoxe','truck plate']);
-  const idxCountry= findIdx(headVRaw, ['country','quốcgia','quocgia']);
-  const idxWheel  = findIdx(headVRaw, ['wheel','sốtrục','sotruc']);
-  const idxTrailer= findIdx(headVRaw, ['trailerplate','biểnromooc','bienromooc','trailer plate']);
-  const idxDriver = findIdx(headVRaw, ['drivername','tênlái','tenlai','driver name']);
+  // chuẩn hóa header + tìm index (có fuzzy)
+  const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
+  const findIdx = (keys) => {
+    const H = HV.map(normalizeHeader);
+    // exact
+    for (const k of keys) {
+      const i = H.indexOf(k);
+      if (i !== -1) return i;
+    }
+    // fuzzy: keys[0] chứa các từ cần có
+    if (keys.length) {
+      const need = keys[0].split(' ').filter(Boolean);
+      for (let i = 0; i < H.length; i++) {
+        const h = H[i];
+        if (need.every(w => h.includes(w))) return i;
+      }
+    }
+    return -1;
+  };
 
-  if (idxDate === -1 || idxNo === -1) {
-    return { ok:false, errors:['Thiếu cột bắt buộc trong VehicleData. (cần Register Date, Contract No)'] };
+  const iDate   = findIdx(['registerdate','ngàydăngký','date','register']);
+  const iNo2    = findIdx(['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
+  const iStReg  = findIdx(['registrationstatus','status','trạngtháiđăngký','trangthai']);
+
+  const iTruck  = findIdx(['truckplate','truck plate','biểnxe','biensoxe']);
+  const iCountry= findIdx(['country','quốcgia','quocgia']);
+  const iWheel  = findIdx(['wheel','sốtrục','sotruc']);
+  const iTrailer= findIdx(['trailerplate','trailer plate','biểnromooc','bienromooc']);
+  const iDriver = findIdx(['drivername','driver name','tênlái','tenlai']);
+  const iID     = findIdx(['id/passport','idpassport','passport','id']);
+  const iPhone  = findIdx(['phone number','phonenumber','điệnthoại','dienthoai']);
+
+  // CHÚ Ý: bắt mọi biến thể "transportion/transportation/transport company"
+  const iTrans  = findIdx([
+    'transportion company',
+    'transport company',
+    'transportation company',
+    'transportationcompany',
+    'transportioncompany',
+    'transportcompany'
+  ]);
+
+  const iSub    = findIdx(['subcontractor','thầuphụ','thaophu']);
+
+  if (iDate === -1 || iNo2 === -1) {
+    return { ok:false, errors:['Thiếu cột bắt buộc trong VehicleData (Register Date / Contract No).'] };
   }
 
-  const data = shV.getRange(2,1,shV.getLastRow()-1,lcV).getValues();
-
+  const all = shV.getRange(2,1,shV.getLastRow()-1,lcV).getValues();
   const rows = [];
-  for (const r of data) {
-    // khớp ngày
-    if (toDateKey(r[idxDate]) !== dateKey) continue;
-    // khớp hợp đồng
-    if (s(r[idxNo]) !== contractNo) continue;
-    // nếu có cột trạng thái → chỉ lấy Approved
-    if (idxStatus !== -1) {
-      const st = s(r[idxStatus]).toLowerCase();
-      if (st !== 'approved') continue;
-    }
-    // gom các cột phục vụ xuất A–J
+  for (const r of all) {
+    if (toDateKey(r[iDate]) !== dateKey) continue;
+    if (s(r[iNo2]) !== contractNo) continue;
+    if (iStReg !== -1 && s(r[iStReg]).toLowerCase() !== 'approved') continue;
+
     rows.push({
-      'Truck Plate':   idxTruck  !== -1 ? s(r[idxTruck])  : '',
-      'Country':       idxCountry!== -1 ? s(r[idxCountry]): '',
-      'Wheel':         idxWheel  !== -1 ? s(r[idxWheel])  : '',
-      'Trailer Plate': idxTrailer!== -1 ? s(r[idxTrailer]): '',
-      'Driver Name':   idxDriver !== -1 ? s(r[idxDriver]) : ''
+      'Truck Plate':            iTruck  !== -1 ? s(r[iTruck])  : '',
+      'Country':                iCountry!== -1 ? s(r[iCountry]): '',
+      'Wheel':                  iWheel  !== -1 ? s(r[iWheel])  : '',
+      'Trailer Plate':          iTrailer!== -1 ? s(r[iTrailer]): '',
+      'Driver Name':            iDriver !== -1 ? s(r[iDriver]) : '',
+      'ID/Passport':            iID     !== -1 ? s(r[iID])     : '',
+      'Phone number':           iPhone  !== -1 ? s(r[iPhone])  : '',
+      'Transportion Company':   iTrans  !== -1 ? s(r[iTrans])  : '',
+      'Subcontractor':          iSub    !== -1 ? s(r[iSub])    : ''
     });
   }
 
-  if (rows.length === 0) {
-    // Cho message rõ ràng để client hiển thị chi tiết
-    const msg = (idxStatus === -1)
-      ? 'Không có dòng nào phù hợp (sai ngày/hợp đồng).'
-      : 'Không có dòng nào Approved phù hợp để xuất.';
-    return { ok:false, errors:[msg] };
+  if (!rows.length) return { ok:false, errors:['Không có dòng Approved phù hợp để xuất.'] };
+
+  return { ok:true, filter:{ dateString: dateKey, contractNo, customerName }, total: rows.length, rows };
+}
+
+
+// Tìm range theo danh sách NamedRange / nếu không có thì fallback tìm marker text
+function _getRangeByAnyName_(ss, aliases){
+  const names = Array.isArray(aliases) ? aliases : [aliases];
+  const nr = ss.getNamedRanges();
+  const low = {};
+  nr.forEach(n => low[String(n.getName()).toLowerCase()] = n.getRange());
+
+  for (const n of names) {
+    const k = String(n).toLowerCase().trim();
+    if (low[k]) return low[k];
   }
+  // fallback: tìm ô chứa đúng chuỗi marker
+  return _findMarkerCell_(ss, names);
+}
+
+/** Tìm ô có chữ 'NR_TABLE_START' trên sheet (fallback khi thiếu named-range). */
+function _findMarkerCell_(ss, names){
+  const shNames = XPPL_NR_ALIASES.SHEET;
+  for (const sn of shNames){
+    const sh = ss.getSheetByName(sn);
+    if (!sh) continue;
+    const lastR = Math.max(1, sh.getLastRow());
+    const lastC = Math.max(1, sh.getLastColumn());
+    const values = sh.getRange(1,1,lastR,lastC).getValues();
+
+    for (let r=0;r<values.length;r++){
+      for (let c=0;c<values[r].length;c++){
+        const v = String(values[r][c]||'').trim();
+        if (names.some(n => String(n).trim()===v)){
+          return sh.getRange(r+1, c+1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+
+// Copy template và ép CONVERT thành Google Sheets trước khi open
+function _copyTemplateAsGoogleSheet_(templateFileId, newTitle) {
+  var meta = Drive.Files.get(templateFileId); // cần Advanced Drive Service
+  if (meta.mimeType === 'application/vnd.google-apps.spreadsheet') {
+    // Template là Google Sheet -> copy trực tiếp
+    return DriveApp.getFileById(templateFileId).makeCopy(newTitle).getId();
+  } else {
+    // Template là .xlsx -> convert sang Google Sheet
+    var blob = DriveApp.getFileById(templateFileId).getBlob();
+    var file = Drive.Files.insert(
+      { title: newTitle, mimeType: 'application/vnd.google-apps.spreadsheet' },
+      blob,
+      { convert: true }
+    );
+    return file.id;
+  }
+}
+
+
+
+/** Ghi dữ liệu vào bản sao template (Google Sheet). Trả về {ok, fileId, name}. */
+function _exportXpplToTemplate_(sheetId, filter, rows) {
+  const ss = SpreadsheetApp.openById(sheetId);
+
+  // --- Header ---
+  const rDate = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.REG_DATE);
+  if (rDate) rDate.setValue(filter.dateString);
+  const rCus = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CUSTOMER);
+  if (rCus) rCus.setValue(filter.customerName);
+  const rCon = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CONTRACT_NO);
+  if (rCon) rCon.setValue(filter.contractNo);
+  const rTot = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TOTAL_TRUCK);
+  if (rTot) rTot.setValue(rows.length);
+
+  // --- Table ---
+  const start = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TABLE_START);
+  if (!start) throw new Error('Không tìm thấy named range TABLE_START / NR_TABLE_START');
+
+  const sh = start.getSheet();
+  const r0 = start.getRow();     // ví dụ: 9
+  const c0 = start.getColumn();  // ví dụ: 1 (cột A)
+
+  // map 10 cột A..J
+  const data = rows.map(o => ([
+    '', // A - No (đổ sau)
+    o['Truck Plate'] || '',
+    o['Country'] || '',
+    o['Wheel'] || '',
+    o['Trailer Plate'] || '',
+    o['Driver Name'] || '',
+    o['ID/Passport'] || '',
+    o['Phone number'] || '',
+    o['Transportion Company'] || '',
+    o['Subcontractor'] || ''
+  ]));
+
+  if (data.length) {
+    // Ghi ĐÈ trực tiếp tại TABLE_START để dòng 9 là bản ghi #1
+    sh.getRange(r0, c0, data.length, data[0].length).setValues(data);
+
+    // Cột A: No = 1..N
+    const nos = Array.from({ length: data.length }, (_, i) => [i + 1]);
+    sh.getRange(r0, c0, data.length, 1).setValues(nos);
+  }
+
+  // ---------- ĐỊNH DẠNG ----------
+  // Row 1 cao ~27.6px => 28px
+  sh.setRowHeight(1, 28);
+  // Row 3 cao ~31.2px => 31px
+  sh.setRowHeight(3, 31);
+
+  if (data.length) {
+    // Kẻ ALL BORDERS cho vùng dữ liệu A..J từ dòng r0
+    const tableRange = sh.getRange(r0, c0, data.length, 10);
+    tableRange
+      .setBorder(true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.SOLID)
+      .setWrap(true); // chữ xuống dòng nếu dài
+
+    // (Tuỳ chọn) Font Times New Roman cho bảng
+    // tableRange.setFontFamily('Times New Roman');
+  }
+
+  SpreadsheetApp.flush();
+}
+
+
+
+/**
+ * Xuất ra XLSX (base64) rồi xóa bản sao Google Sheet để không phình dung lượng.
+ * YÊU CẦU: bật Advanced Drive Service (Drive API v2).
+ */
+function exportXpplAsXlsx(payload, sessionToken) {
+  const res = getXpplExportData(payload, sessionToken);
+  if (!res || !res.ok) {
+    return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
+  }
+  const { dateString, contractNo, customerName } = res.filter;
+  const rows = res.rows || [];
+  if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
+
+  // 1) Copy template -> Google Sheet
+  const nameSuffix = dateString.replace(/\//g, '-');
+
+  // QUAN TRỌNG: thêm prefix để sweeper tìm và xoá
+  const copyName = `${XPPL_TEMP_PREFIX}(${contractNo}_${nameSuffix})-XPPL FORM`;
+  const copiedId = _copyTemplateAsGoogleSheet_(XPPL_TEMPLATE_ID, copyName);
+
+  // 2) Ghi dữ liệu vào bản copy
+  _exportXpplToTemplate_(copiedId, { dateString, contractNo, customerName }, rows);
+
+  // 3) Flush + đợi 1 nhịp rồi export đúng bản copy
+  SpreadsheetApp.flush();
+  Utilities.sleep(800);
+
+  const url  = `https://docs.google.com/spreadsheets/d/${copiedId}/export?format=xlsx`;
+  const resp = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200) {
+    return { ok:false, message:'Export lỗi: ' + resp.getContentText() };
+  }
+
+  // 4) Tên file tải về -> làm sạch ký tự cấm
+  const safeName = (copyName + '.xlsx').replace(/[\\\/:\*\?"<>\|]/g, '_');
+
+  // 5) (BỎ) trigger one-shot sau 3 phút — không cần nữa
+  // try { ScriptApp.newTrigger('cleanupXpplTempFiles').timeBased().after(3*60*1000).create(); } catch(e){}
+
+  // 6) ĐẢM BẢO đã có sweeper chạy định kỳ (nếu chưa có thì tạo 1 lần)
+  try { ensureXpplSweeper(); } catch (e) { /* ignore */ }
 
   return {
     ok: true,
-    filter: { dateString: dateKey, contractNo, customerName },
-    total: rows.length,
-    rows
+    fileName: safeName,
+    base64: Utilities.base64Encode(resp.getBlob().getBytes())
   };
+}
+
+
+// ====== Sweeper dọn file tạm XPPL ======
+
+// Tạo 1 time-based trigger chạy cleanupXpplTempFiles mỗi 5 phút (chỉ tạo 1 lần)
+function ensureXpplSweeper() {
+  var key = 'XPPL_SWEEPER_CREATED';
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(key)) return;
+
+  ScriptApp.newTrigger('cleanupXpplTempFiles')
+    .timeBased()
+    .everyMinutes(5)   // 5 phút/lần
+    .create();
+
+  props.setProperty(key, '1');
+}
+
+// Hàm dọn rác: xóa các file có tên bắt đầu bằng XPPL_TEMP_PREFIX và cũ > 3 phút
+function cleanupXpplTempFiles() {
+  var prefix = XPPL_TEMP_PREFIX || 'XPPL_TMP-';
+  var cutoff = new Date(Date.now() - 3 * 60 * 1000); // 3 phút trước
+
+  var it = DriveApp.searchFiles('title contains "' + prefix + '" and trashed = false');
+  var removed = 0;
+  while (it.hasNext()) {
+    try {
+      var f = it.next();
+      if (f.getName().indexOf(prefix) === 0 && f.getDateCreated() < cutoff) {
+        f.setTrashed(true);
+        removed++;
+      }
+    } catch (e) {}
+  }
+  return removed;
+}
+
+// (Khuyến nghị) Bảo đảm sweeper tồn tại ngay khi mở project
+function onOpen() {
+  try { ensureXpplSweeper(); } catch (e) {}
+}
+
+
+
+// Tạo 1 trigger một-lần chạy vào/ sau thời điểm due sớm nhất
+function _ensureCleanupTrigger_(dueTs) {
+  var exists = ScriptApp.getProjectTriggers()
+    .some(function(t){ return t.getHandlerFunction() === 'xpplCleanupDueFiles'; });
+  if (!exists) {
+    var now = Date.now();
+    var when = Math.max(dueTs, now + 60 * 1000); // luôn >= 1 phút để an toàn
+    ScriptApp.newTrigger('xpplCleanupDueFiles').timeBased().at(new Date(when)).create();
+  }
+}
+
+// Xoá vĩnh viễn tất cả file copy đã đến hạn; nếu còn file chưa đến hạn -> hẹn trigger lần sau
+function xpplCleanupDueFiles() {
+  var props = PropertiesService.getScriptProperties();
+  var all   = props.getProperties();
+  var now   = Date.now();
+  var prefix = 'xppl_delete_';
+  var nextDue = null;
+
+  for (var k in all) {
+    if (k.indexOf(prefix) !== 0) continue;
+    var fileId = k.substring(prefix.length);
+    var due = parseInt(all[k], 10) || 0;
+
+    if (now >= due) {
+      // đã đến hạn -> xoá vĩnh viễn
+      try { Drive.Files.remove(fileId); } 
+      catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (_) {} }
+      // xoá key
+      props.deleteProperty(k);
+    } else {
+      // chưa đến hạn -> giữ lại và ghi nhận mốc sớm nhất
+      if (nextDue === null || due < nextDue) nextDue = due;
+    }
+  }
+
+  // Nếu vẫn còn file cần xoá trong tương lai -> đặt lại trigger đến mốc sớm nhất
+  if (nextDue !== null) _ensureCleanupTrigger_(nextDue);
 }
 
 
@@ -1900,3 +2194,73 @@ function exportRegisteredVehicles(params) {
   const rows = allData.map(row => formatRowForClient_(row, headers));
   return { headers: headers, rows: rows };
 }
+
+
+
+function exportXpplToTemplateDownload(filter, sessionToken) {
+  const res = getXpplExportData(filter, sessionToken);
+  if (!res || !res.ok) return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
+
+  const { dateString, contractNo, customerName } = res.filter;
+  const rows  = res.rows || [];
+  if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
+
+  // 1) Copy + convert template -> Google Sheet (dễ ghi định dạng)
+  const name = `(${contractNo}_${dateString.replace(/\//g,'-')})-XPPL FORM`;
+  const copied = Drive.Files.copy({ title:name, mimeType: MimeType.GOOGLE_SHEETS }, XPPL_TEMPLATE_ID);
+  const fileId = copied.id;
+  const ss = SpreadsheetApp.openById(fileId);
+
+  try {
+    // Ghi header
+    const rDate = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.REG_DATE);
+    if (rDate) rDate.setValue(dateString);
+
+    const rCus  = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CUSTOMER_NAME);
+    if (rCus) rCus.setValue(customerName);
+
+    const rCon  = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CONTRACT_NO);
+    if (rCon) rCon.setValue(contractNo);
+
+    const rTotal= _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TOTAL_TRUCK);
+    if (rTotal) rTotal.setValue(rows.length);
+
+    // Ghi bảng Truck list
+    const start = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TABLE_START);
+    if (!start) throw new Error('Không tìm thấy TABLE_START / NR_TABLE_START');
+
+    const sh = start.getSheet();
+    const r0 = start.getRow();
+    const c0 = start.getColumn();
+
+    const aoa = rows.map((r,i)=>[
+      i+1,
+      r['Truck Plate']||'',
+      r['Country']||'',
+      r['Wheel']||'',
+      r['Trailer Plate']||'',
+      r['Driver Name']||'',
+      r['ID/Passport']||'',
+      r['Phone number']||'',
+      r['Transportion Company']||'',
+      r['Subcontractor']||''
+    ]);
+    if (aoa.length) sh.getRange(r0, c0, aoa.length, 10).setValues(aoa);
+
+    // 2) Export về XLSX (blob) rồi xoá file tạm để không tăng dung lượng
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx`;
+    const resp = UrlFetchApp.fetch(exportUrl, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions:true });
+    const blob = resp.getBlob().setName(name + '.xlsx');
+
+    // Xoá vĩnh viễn file Google Sheet tạm
+    try { Drive.Files.remove(fileId); } catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(_){ } }
+
+    return { ok:true, filename: blob.getName(), base64: Utilities.base64Encode(blob.getBytes()) };
+
+  } catch (e) {
+    try { Drive.Files.remove(fileId); } catch(_){}
+    return { ok:false, message: 'Xuất thất bại: ' + (e && e.message) };
+  }
+}
+
+/*** END ***/
