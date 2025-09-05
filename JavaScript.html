@@ -824,19 +824,21 @@ function initRegisterPage() {
   const dateSelect = $('#formRegisterDate');
 
   google.script.run.withSuccessHandler(status => {
-    if (status.period === 1) {
-      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
-      $('#upload-date-note').text(`File upload chỉ chấp nhận ngày đăng ký là ${tomorrowStr}.`);
-    } else {
-      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
-      $('#upload-date-note').text('');
-    }
 
     if (userSession.role === 'admin') {
+      const todayInput = today.toISOString().split('T')[0];
+      dateSelect.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
+      $('#upload-date-note').text('');
       $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
       $('#registration-content .card').removeClass('opacity-50 disabled-card');
       $('#registration-content .card').find('input, select, button').prop('disabled', false);
     } else {
+            dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
+      if (status.period === 1) {
+        $('#upload-date-note').text(`File upload chỉ chấp nhận ngày đăng ký là ${tomorrowStr}.`);
+      } else {
+        $('#upload-date-note').text('');
+      }
       startRegistrationTimer();
     }
   }).checkRegistrationTime();
@@ -931,7 +933,10 @@ function handleManualAdd(e) {
   e.preventDefault();
 
   // Lấy đúng id các input trên Page_Register.html
-  const registerDate        = $('#formRegisterDate').val();               // KHÔNG thêm dấu ' ở client
+  const rawRegisterDate     = $('#formRegisterDate').val();
+  const registerDate        = rawRegisterDate && rawRegisterDate.includes('-')
+                                ? getFormattedDate(new Date(rawRegisterDate))
+                                : rawRegisterDate;               // KHÔNG thêm dấu ' ở client
   const contractNo          = $('#manual-contractNo').val().trim();
   const truckPlate          = $('#formTruckPlate').val().trim();
   const country             = $('#formCountry').val();
@@ -1133,10 +1138,12 @@ function validateAndTransformData(dataRows) {
             rowErrors['Register Date'] = `- Cột '${columnNames['Register Date']}' có định dạng ngày không hợp lệ.`;
         } else {
             const dateStr = getFormattedDate(parsedDate);
-            const currentHour = new Date().getHours();
-            if (currentHour >= 8 && currentHour < 16) {
-                if (dateStr !== tomorrowStr) { 
-                    rowErrors['Register Date'] = `- Cột '${columnNames['Register Date']}' chỉ chấp nhận ngày mai.`;
+            if (userSession.role !== 'admin') {
+                const currentHour = new Date().getHours();
+                if (currentHour >= 8 && currentHour < 16) {
+                    if (dateStr !== tomorrowStr) {
+                        rowErrors['Register Date'] = `- Cột '${columnNames['Register Date']}' chỉ chấp nhận ngày mai.`;
+                    }
                 }
             }
             record['Register Date'] = dateStr;
