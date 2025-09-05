@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = 'đã ẩn'; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -106,6 +106,47 @@ function formatTimeForClient(v) {
   return stripLeadingApostrophe(v);
 }
 
+function parseExcelDate_(v) {
+  if (v == null || v === '') return '';
+  var d;
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
+    d = v;
+  } else if (typeof v === 'number') {
+    d = new Date(Math.round((v - 25569) * 86400 * 1000));
+  } else {
+    var s = String(v).replace(/"/g, '');
+    d = new Date(s);
+    if (isNaN(d)) {
+      var m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m) d = new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
+    }
+  }
+  if (!d || isNaN(d)) return '';
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function parseExcelTime_(v) {
+  if (v == null || v === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
+    return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+  }
+  if (typeof v === 'number') {
+    var total = Math.round((v % 1) * 86400);
+    var hh = Math.floor(total/3600);
+    var mm = Math.floor((total%3600)/60);
+    var ss = total%60;
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+  }
+  var m = String(v).match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+  if (m) {
+    var hh = parseInt(m[1],10);
+    var mm = parseInt(m[2],10);
+    var ss = m[3]?parseInt(m[3],10):0;
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+  }
+  return String(v);
+}
+
 function ensureDateTimeFormats(sheet, headers) {
   var dateCol = headers.indexOf('Register Date') + 1;
   var timeCol = headers.indexOf('Time') + 1;
@@ -118,8 +159,14 @@ function formatRowForClient_(rowArray, headers) {
   for (var i=0;i<headers.length;i++){
     var key = headers[i];
     var val = rowArray[i];
-    if (key === 'Register Date') { out[key] = formatDateForClient(val); continue; }
-    if (key === 'Time') { out[key] = formatTimeForClient(val); continue; }
+    if (key === 'Register Date' || key === 'Date In' || key === 'Date Out') {
+      out[key] = formatDateForClient(val);
+      continue;
+    }
+    if (key === 'Time' || key === 'Time In' || key === 'Time Out') {
+      out[key] = formatTimeForClient(val);
+      continue;
+    }
     out[key] = stripLeadingApostrophe(val);
   }
   return out;
@@ -187,7 +234,6 @@ function requireXpplRole_(sessionToken) {
   }
   return s;
 }
-
 
 function logLoginAttempt(username, status) {
   try {
@@ -282,14 +328,6 @@ function checkLogin(credentials) {
   }
 }
 
-function getUserSession() {
-  const userCache = CacheService.getUserCache();
-  const sessionData = userCache.get('user_session');
-  if (sessionData) {
-    return JSON.parse(sessionData);
-  }
-  return { isLoggedIn: false, role: null, contractor: null };
-}
 
 function logout() {
   const userCache = CacheService.getUserCache();
@@ -1701,9 +1739,14 @@ function validateSession(sessionToken) {
 // THAY THẾ getUserSession()
 // ==========================
 function getUserSession() {
-  // Ưu tiên cache, nếu cache lỗi thì trả false thay vì nổ INTERNAL
-  let session = safeGetUserCacheJSON('user_session');
-  if (session) return session;
+  try {
+    // Ưu tiên cache user nếu có
+    var userCache = CacheService.getUserCache();
+    var sessionData = userCache.get('user_session');
+    if (sessionData) return JSON.parse(sessionData);
+  } catch (e) {
+    // Bỏ qua lỗi cache, trả về khách ẩn danh
+  }
   return { isLoggedIn: false, role: null, contractor: null };
 }
 
@@ -2306,20 +2349,41 @@ function saveXpplWeighingData(rows, sessionToken) {
   const sh = ss.getSheetByName(XPPL_DB_SHEET);
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const prefix = Utilities.formatDate(new Date(), tz, 'dd-MM') + '-';
+  const dateCols = ['Date In','Date Out'];
+  const timeCols = ['Time In','Time Out'];
+  let lr = sh.getLastRow();
+  if (lr === 0) {
+    sh.getRange(1, 1, 1, XPPL_DB_HEADERS.length).setValues([XPPL_DB_HEADERS]);
+    lr = 1;
+  }
 
   const toSave = rows.map(r => {
     const key = String(r['Customer Name']||'').trim() + '|' + String(r['ContractNo']||'').trim();
     if (validSet.size && !validSet.has(key)) {
       throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
     }
-    const arr = XPPL_DB_HEADERS.map(h => r[h] || '');
+    const arr = XPPL_DB_HEADERS.map(h => {
+      let v = r[h] || '';
+      if (dateCols.indexOf(h) !== -1) v = parseExcelDate_(v);
+      else if (timeCols.indexOf(h) !== -1) v = parseExcelTime_(v);
+      return v;
+    });
     arr[0] = prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0');
     arr[35] = user.username || user.user || user.email || '';
     return arr;
   });
 
   if (toSave.length) {
-    sh.getRange(sh.getLastRow()+1,1,toSave.length,XPPL_DB_HEADERS.length).setValues(toSave);
+    const startRow = lr + 1;
+    sh.getRange(startRow, 1, toSave.length, XPPL_DB_HEADERS.length).setValues(toSave);
+    dateCols.forEach(col => {
+      const c = XPPL_DB_HEADERS.indexOf(col) + 1;
+      if (c > 0) sh.getRange(startRow, c, toSave.length, 1).setNumberFormat('dd/MM/yyyy');
+    });
+    timeCols.forEach(col => {
+      const c = XPPL_DB_HEADERS.indexOf(col) + 1;
+      if (c > 0) sh.getRange(startRow, c, toSave.length, 1).setNumberFormat('HH:mm:ss');
+    });
   }
   return 'Đã lưu ' + toSave.length + ' dòng.';
 }
@@ -2332,17 +2396,21 @@ function getXpplWeighingData(filter, sessionToken) {
   if (lr < 2) {
     return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
   }
-  const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
   const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
+  const filterDate = s(filter && filter.date);
+  const dateKey = filterDate ? _toDateKey(filterDate) : null;
+  if (!dateKey) {
+    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
+  }
+
+  const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
   const idxDate = XPPL_DB_HEADERS.indexOf('Date Out');
   const idxContract = XPPL_DB_HEADERS.indexOf('ContractNo');
   const idxCustomer = XPPL_DB_HEADERS.indexOf('Customer Name');
   const idxNet = XPPL_DB_HEADERS.indexOf('Net Weight');
 
-  const filterDate = s(filter && filter.date);
   const filterContract = s(filter && filter.contractNo);
   const filterCustomer = s(filter && filter.customerName);
-  const dateKey = filterDate ? _toDateKey(filterDate) : null;
 
   const contracts = new Set();
   const customers = new Set();
@@ -2350,11 +2418,12 @@ function getXpplWeighingData(filter, sessionToken) {
   let totalWeight = 0;
   data.forEach(r => {
     const d = _toDateKey(r[idxDate]);
+    if (d !== dateKey) return;
     const cno = s(r[idxContract]);
     const cus = s(r[idxCustomer]);
     const net = Number(r[idxNet]) || 0;
-    contracts.add(cno); customers.add(cus);
-    if (dateKey && d !== dateKey) return;
+    contracts.add(cno);
+    customers.add(cus);
     if (filterContract && filterContract !== cno) return;
     if (filterCustomer && filterCustomer !== cus) return;
     rows.push(formatRowForClient_(r, XPPL_DB_HEADERS));
@@ -2368,6 +2437,7 @@ function getXpplWeighingData(filter, sessionToken) {
     customers: Array.from(customers).sort()
   };
 }
+
 
 
 /*** END ***/
