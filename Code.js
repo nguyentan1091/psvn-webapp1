@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = 'ẩn đi'; 
+const SPREADSHEET_ID = 'Ẩn đi'; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -1367,7 +1367,15 @@ function saveData(dataToSave, sessionToken) {
     }
   })();
 
-  const existingDuplicates = checkForExistingRegistrations(dataToSave, sessionToken);
+  const dupCheckRecords = dataToSave.map(r => {
+    const obj = Object.assign({}, r);
+    if (userSession.role === 'user') {
+      obj['Transportion Company'] = userSession.contractor;
+    }
+    return obj;
+  });
+
+  const existingDuplicates = checkForExistingRegistrations(dupCheckRecords, sessionToken);
   if (existingDuplicates && existingDuplicates.length > 0) {
       throw new Error(`Các xe sau đã được đăng ký trong ngày: ${existingDuplicates.join(', ')}. Vui lòng kiểm tra lại.`);
   }
@@ -1464,31 +1472,40 @@ function deleteMultipleData(ids,sessionToken) {
 }
 
 function checkForExistingRegistrations(recordsToCheck, sessionToken) {
-    validateSession(sessionToken);
-  if (!recordsToCheck || recordsToCheck.length === 0) {
-    return [];
-  }
+  validateSession(sessionToken);
+  if (!recordsToCheck || recordsToCheck.length === 0) return [];
+
   try {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      return [];
+
+    // Thu thập các bản ghi đã tồn tại trong ngày
+    const existingKeys = new Set();
+    if (lastRow >= 2) {
+      const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
+      allData.forEach(row => {
+        const dateStr = Utilities.formatDate(new Date(row[1]), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
+        const plate = String(row[3] || '').toUpperCase().replace(/\s/g, '');
+        const company = String(row[15] || '').trim().toUpperCase();
+        existingKeys.add(`${dateStr}-${plate}-${company}`);
+      });
     }
-    
-    const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
-    
-    const existingRecords = new Set();
-    allData.forEach(row => {
-      const key = `${String(row[1]).replace("'", "")}-${row[3]}-${row[15]}`;
-      existingRecords.add(key);
-    });
+
+    // Kiểm tra dữ liệu đầu vào (bao gồm cả trùng lặp trong file)
+    const seen = new Set();
     
     const duplicates = [];
-    recordsToCheck.forEach(record => {
-      const key = `${record['Register Date']}-${record['Truck Plate']}-${record['Transportion Company']}`;
-      if (existingRecords.has(key)) {
-        duplicates.push(record['Truck Plate']);
+    recordsToCheck.forEach(rec => {
+      const regDate = normalizeDate(rec['Register Date']);
+      const dateStr = regDate ? Utilities.formatDate(regDate, "Asia/Ho_Chi_Minh", "yyyy-MM-dd") : '';
+      const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
+      const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
+      const key = `${dateStr}-${plate}-${company}`;
+
+      if (existingKeys.has(key) || seen.has(key)) {
+        duplicates.push(plate);
       }
+      seen.add(key);
     });
     
     return duplicates;
@@ -1900,6 +1917,26 @@ function getContractorOptions() {
   // Cột Contractor là cột D (index 4) theo cấu trúc bạn đang dùng
   const vals = sh.getRange(2, 4, n - 1, 1).getValues().flat();
   const set  = new Set();
+  vals.forEach(v => {
+    const s = String(v || '').trim();
+    if (s) set.add(s);
+  });
+  return Array.from(set).sort();
+}
+
+
+
+//Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
+function getTransportCompanies() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sh) return [];
+  const n = sh.getLastRow();
+  if (n < 2) return [];
+  const idx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
+  if (idx <= 0) return [];
+  const vals = sh.getRange(2, idx, n - 1, 1).getValues().flat();
+  const set = new Set();
   vals.forEach(v => {
     const s = String(v || '').trim();
     if (s) set.add(s);
