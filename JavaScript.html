@@ -21,7 +21,9 @@ let inactivityTimer;
 let registeredVehicleTable, totalListTable, usersTable;
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
+let allowedCompanies = [];
 let currentLang = 'vi'; // Ngôn ngữ mặc định
+
 
 // =================================================================
 // **MỚI:** HỆ THỐNG DỊCH
@@ -294,6 +296,10 @@ function initializeApp() {
             if (userSession.isLoggedIn) {
                 loadDashboard();
                 setupInactivityTimer();
+                google.script.run
+                  .withSuccessHandler(list => { allowedCompanies = (list || []).filter(Boolean); })
+                  .withFailureHandler(showError)
+                  .getTransportCompanies();
             } else {
                 loadLoginPage();
             }
@@ -847,10 +853,10 @@ function initRegisterPage() {
   $('#uploadButton').on('click', handleFileUpload);
   $('#saveUploadBtn').on('click', handleSaveUploadedData);
 
-  // === NẠP "Đơn vị vận chuyển" từ ContractData ===
+  // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
   google.script.run
     .withSuccessHandler(list => {
-      const companies = (list || []).filter(Boolean);
+      allowedCompanies = (list || []).filter(Boolean);
       const $sel = $('#formTransportionCompany');
 
       if (userSession.role === 'user') {
@@ -864,18 +870,18 @@ function initRegisterPage() {
         } else {
           // Không có contractor → vẫn cho chọn (ít gặp)
           const html = ['<option value="">Chọn đơn vị</option>',
-                        ...companies.map(c => `<option value="${c}">${c}</option>`)].join('');
+                        ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
           $sel.html(html).prop('disabled', false).removeClass('bg-light');
         }
       } else {
         // Admin: danh sách đầy đủ
         const html = ['<option value="">Chọn đơn vị</option>',
-                      ...companies.map(c => `<option value="${c}">${c}</option>`)].join('');
+                      ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
         $sel.html(html).prop('disabled', false).removeClass('bg-light');
       }
     })
     .withFailureHandler(showError)
-    .getContractorOptions();   // <-- đang đọc từ ContractData như bạn yêu cầu
+    .getTransportCompanies();   // <-- đang đọc từ ContractData như bạn yêu cầu
 
   loadActiveContractNosForRegister();
 }
@@ -1098,7 +1104,6 @@ function validateAndTransformData(dataRows) {
     const allErrors = [];
     
     const allowedStatus = ['RO', 'CO', 'PM', 'CM', 'AC', 'ND'];
-    const allowedCompanies = ['Hoanh Son', 'Nam Tien', 'PTS'];
     const allowedCountries = ['Vietnam', 'Laos'];
 
     const columnNames = {
@@ -1679,7 +1684,7 @@ function handleEdit(rowData) {
             <div class="form-group"><label>Điểm trả hàng dự kiến</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
             <div class="form-group"><label>Đơn vị vận chuyển</label>
                 <select class="form-select" id="editTransportionCompany" ${userSession.role === 'user' ? 'disabled' : ''}>
-                    ${createOptions(['Hoanh Son', 'Nam Tien', 'PTS'], rowData['Transportion Company'])}
+                    ${createOptions(allowedCompanies, rowData['Transportion Company'])}
                 </select>
             </div>
             <div class="form-group"><label>Nhà thầu phụ</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
@@ -2313,7 +2318,7 @@ function handleEditTotalListVehicle(rowData) {
             <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" required></div>
             <div class="form-group"><label>Đơn vị vận chuyển</label>
                 <select class="form-select" id="editTransportionCompany">
-                    ${createOptions(['Hoanh Son', 'Nam Tien', 'PTS'], rowData['Transportion Company'])}
+                    ${createOptions(allowedCompanies, rowData['Transportion Company'])}
                 </select>
             </div>
             <div class="form-group"><label>Nhà thầu phụ</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
