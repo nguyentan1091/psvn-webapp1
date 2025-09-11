@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = 'Ẩn đi'; 
+const SPREADSHEET_ID = 'ẩn đi'; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -1671,7 +1671,9 @@ function updateTotalListVehicle(rowData, sessionToken) {
 
     if (rowToUpdate === -1) throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
 
-    rowData['Time'] = "'" + Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss");
+    const now = new Date();
+    rowData['Register Date'] = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
+    rowData['Time'] = "'" + Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "HH:mm:ss");
     const dataArray = HEADERS_TOTAL_LIST.map(header => rowData[header] || "");
     sheet.getRange(rowToUpdate, 1, 1, HEADERS_TOTAL_LIST.length).setValues([dataArray]);
     return 'Cập nhật thông tin xe thành công!';
