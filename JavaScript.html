@@ -350,15 +350,21 @@ function loadDashboard() {
         $('#app-container').html(html);
         // Ẩn các menu theo phân quyền
         if (userSession) {
-          if (userSession.role !== 'admin') {
-            $('#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"]')
-              .addClass('d-none disabled')
-              .removeClass('active');
-            // nếu default đang trỏ nhầm vào XPPL -> chuyển sang View
-            const active = $('#sidebar-wrapper .list-group-item.active');
-            if (active.data('page') === 'Page_XuLyXPPL') {
-              active.removeClass('active');
-              $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
+          if (userSession.role === 'admin-xppl') {
+            $('#sidebar-wrapper .list-group-item[data-page="Page_Register"],\
+#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"],\
+#sidebar-wrapper .list-group-item[data-page="Page_Contract"]').addClass('d-none disabled').removeClass('active');
+            $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
+          } else {
+            if (userSession.role !== 'admin') {
+              $('#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"]')
+                .addClass('d-none disabled')
+                .removeClass('active');
+              const active = $('#sidebar-wrapper .list-group-item.active');
+              if (active.data('page') === 'Page_XuLyXPPL') {
+                active.removeClass('active');
+                $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
+              }
             }
           }
           if (!['admin', 'admin-xppl'].includes(userSession.role)) {
@@ -386,7 +392,14 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
     if (pageName === 'Page_XuLyXPPL' && userSession && userSession.role !== 'admin') {
       if (!isInitialLoad) Swal.close();
       Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin.', 'info');
-      // Optional: điều hướng mềm về trang "Xe đã đăng ký"
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
+    if (userSession && userSession.role === 'admin-xppl' && ['Page_Register','Page_Contract'].includes(pageName)) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Chức năng này không khả dụng với tài khoản hiện tại.', 'info');
       $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
       loadPage('Page_View', 'view_header', true);
       return;
@@ -1246,7 +1259,8 @@ function initializeDataTable(config) {
         searchControl,
         lengthControl,
         deleteButton,
-        selectAllCheckbox
+        selectAllCheckbox,
+        enableSelect = true
     } = config;
 
     if ($.fn.DataTable.isDataTable(`#${tableId}`)) {
@@ -1276,7 +1290,7 @@ function initializeDataTable(config) {
         autoWidth: false,
         deferRender: true,
         scrollX: true,
-        select: { style: 'multi', selector: 'td:first-child .row-checkbox' },
+        select: enableSelect ? { style: 'multi', selector: 'td:first-child .row-checkbox' } : false,
         pageLength: 50,
         language: {
             "processing": translations[currentLang].dt_processing || "Đang xử lý...",
@@ -1356,7 +1370,7 @@ function initViewPage() {
   const todayStr = getFormattedDate(today);
   const tomorrowStr = getFormattedDate(tomorrow);
 
-  if (userSession.role === 'admin') {
+  if (['admin', 'admin-xppl'].includes(userSession.role)) {
     dateFilterContainer.html(
       `<div class="input-group">
          <span class="input-group-text">Xem ngày</span>
@@ -1364,6 +1378,8 @@ function initViewPage() {
        </div>`
     );
     $('#date-filter-input').val(today.toISOString().split('T')[0]);
+  } else if (userSession.role === 'admin-xppl') {
+    dateFilterContainer.html('');    
   } else {
     dateFilterContainer.html(
       `<div class="input-group">
@@ -1379,9 +1395,7 @@ function initViewPage() {
   $('#date-filter-container').on('change', () => registeredVehicleTable.draw());
 
   const t = translations[currentLang];
-  const columns = [
-    { data: null, title: '<input type="checkbox" id="selectAllCheckbox">', orderable: false, defaultContent: `<input type="checkbox" class="row-checkbox">` },
-    { data: null, title: t.action_column, orderable: false, defaultContent: `<button class="btn btn-warning btn-sm edit-btn" title="${t.edit_button}"><i class="fas fa-edit"></i></button>` },
+  const baseColumns = [
     { data: 'ID', title: t.col_id },
     { data: 'Register Date', title: t.col_register_date },
     { data: 'Contract No', title: t.col_contract_no },
@@ -1404,6 +1418,14 @@ function initViewPage() {
     { data: 'Time', title: t.col_time }
   ];
 
+  const columns = (userSession.role !== 'admin-xppl')
+    ? [
+        { data: null, title: '<input type="checkbox" id="selectAllCheckbox">', orderable: false, render: () => '<input type="checkbox" class="row-checkbox">' },
+        { data: null, title: t.action_column, orderable: false, render: () => `<button class="btn btn-warning btn-sm edit-btn" title="${t.edit_button}"><i class="fas fa-edit"></i></button>` },
+        ...baseColumns
+      ]
+    : baseColumns;
+
   // --- Khởi tạo DataTable ---
   registeredVehicleTable = initializeDataTable({
     tableId: 'registeredVehicleTable',
@@ -1414,18 +1436,21 @@ function initViewPage() {
         .withFailureHandler(showError)
         .getRegisteredDataServerSide(params);
     },
-    getExtraParams: () => ({
-      dateString:
-        userSession.role === 'admin'
-          ? ($('#date-filter-input').val()
-              ? getFormattedDate(new Date($('#date-filter-input').val()))
-              : getFormattedDate(new Date()))
-          : $('#date-filter-select').val()
-    }),
+    getExtraParams: () => {
+      if (['admin', 'admin-xppl'].includes(userSession.role)) {
+        return {
+          dateString: $('#date-filter-input').val()
+            ? getFormattedDate(new Date($('#date-filter-input').val()))
+            : getFormattedDate(new Date())
+        };
+      }
+      return { dateString: $('#date-filter-select').val() };
+    },
     searchControl: '#table-search-input',
     lengthControl: '#page-length-select',
-    deleteButton: '#deleteSelectedBtn',
-    selectAllCheckbox: '#selectAllCheckbox'
+    deleteButton: userSession.role !== 'admin-xppl' ? '#deleteSelectedBtn' : null,
+    selectAllCheckbox: userSession.role !== 'admin-xppl' ? '#selectAllCheckbox' : null,
+    enableSelect: userSession.role !== 'admin-xppl'
   });
 
 // ===== Tổng số xe đã đăng ký (theo ngày lọc) =====
@@ -1514,18 +1539,17 @@ $('#registeredVehicleTable')
     notice.html(`${t.edit_rules_notice_line1}<br>${t.edit_rules_notice_line2}`);
   }
 
-  $('#refreshBtn').on('click', () => registeredVehicleTable.draw(false));
-  $('#deleteSelectedBtn').on('click', handleDeleteSelected);
+  $('#refreshBtn').on('click', () => registeredVehicleTable.ajax.reload(null, false));
+  if (userSession.role !== 'admin-xppl') {
+    $('#deleteSelectedBtn').on('click', handleDeleteSelected);
+  } else {
+    $('#deleteSelectedBtn').addClass('d-none');
+  }
   $('#exportBtn').off('click').on('click', handleExportExcel);
 
-  $('#registeredVehicleTable tbody').on('click', '.edit-btn', function (e) {
-    e.stopPropagation();
-    const rowData = registeredVehicleTable.row($(this).closest('tr')).data();
-    handleEdit(rowData);
-  });
 
   // === Visibility & permissions for Registered Vehicles table (Admin vs User) ===
-  if (typeof registeredVehicleTable !== 'undefined') {
+  if (typeof registeredVehicleTable !== 'undefined' && userSession.role !== 'admin-xppl') {
     const SELECT_COL = 0;
     const ACTION_COL = 1;
 
@@ -1541,6 +1565,12 @@ $('#registeredVehicleTable')
           registeredVehicleTable.column(SELECT_COL).visible(true);
           registeredVehicleTable.column(ACTION_COL).visible(true);
         } catch (_e) {}
+      } else if (userSession && userSession.role === 'admin-xppl') {
+        try {
+          registeredVehicleTable.column(SELECT_COL).visible(false);
+          registeredVehicleTable.column(ACTION_COL).visible(false);
+        } catch (_e) {}
+        $('#deleteSelectedBtn').addClass('d-none');        
       } else {
         const allow = isWithinUserEditWindow();
         try {
@@ -1559,13 +1589,11 @@ $('#registeredVehicleTable')
       window.__rvVisInterval = setInterval(applyRegisteredColumnsVisibility, 60000);
     }
 
-    $('#registeredVehicleTable tbody')
-      .off('click', '.edit-btn')
-      .on('click', '.edit-btn', function (e) {
-        e.stopPropagation();
-        const rowData = registeredVehicleTable.row($(this).closest('tr')).data();
-        if (rowData) handleEdit(rowData);
-      });
+    $('#registeredVehicleTable tbody').off('click', '.edit-btn').on('click', '.edit-btn', function (e) {
+      e.stopPropagation();
+      const rowData = registeredVehicleTable.row($(this).closest('tr')).data();
+      if (rowData) handleEdit(rowData);
+    });
   }
 }
 
@@ -1573,11 +1601,11 @@ const $btn = $('#exportBtn').prop('disabled', true);
 
 function handleExportExcel() {
   // Lấy ngày theo đúng logic cũ
-  var selectedDateStr = (userSession.role === 'admin')
+  var selectedDateStr = (['admin', 'admin-xppl'].includes(userSession.role))
     ? ($('#date-filter-input').val()
         ? getFormattedDate(new Date($('#date-filter-input').val()))
         : getFormattedDate(new Date()))
-    : $('#date-filter-select').val();
+    : (userSession.role === 'admin-xppl' ? '' : $('#date-filter-select').val());
 
   var table = registeredVehicleTable;
 
