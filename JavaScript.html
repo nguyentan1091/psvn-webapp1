@@ -101,7 +101,7 @@ const translations = {
     // DataTables Columns
     "col_id": "ID",
     "col_register_date": "Ngày đăng ký",
-    "col_contract_no": "Số HĐ",
+    "col_contract_no": "Số hợp đồng",
     "col_truck_plate": "Biển số xe",
     "col_country": "Quốc gia",
     "col_wheel": "Số bánh",
@@ -974,7 +974,7 @@ function handleManualAdd(e) {
   const vehicleStatus       = $('#formVehicleStatus').val();
 
   if (!registerDate || !contractNo || !truckPlate) {
-    Swal.fire('Thiếu dữ liệu', 'Vui lòng nhập Ngày đăng ký, Số HĐ và Biển số xe.', 'warning');
+    Swal.fire('Thiếu dữ liệu', 'Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.', 'warning');
     return;
   }
 
@@ -1038,7 +1038,7 @@ function handleFileUpload() {
                 const columns = [
                     { data: 'ID', title: 'ID' },
                     { data: 'Register Date', title: 'Ngày ĐK' },
-                    { data: 'Contract No', title: 'Số HĐ' },
+                    { data: 'Contract No', title: 'Số hợp đồng' },
                     { data: 'Truck Plate', title: 'Biển số xe' },
                     { data: 'Country', title: 'Quốc gia' },
                     { data: 'Wheel', title: 'Số bánh' },
@@ -1120,7 +1120,7 @@ function validateAndTransformData(dataRows) {
     const allowedCountries = ['Vietnam', 'Laos'];
 
     const columnNames = {
-        'Register Date': 'Ngày đăng ký', 'Contract No': 'Số HĐ', 'Truck Plate': 'Biển số xe',
+        'Register Date': 'Ngày đăng ký', 'Contract No': 'Số hợp đồng', 'Truck Plate': 'Biển số xe',
         'Country': 'Quốc gia', 'Wheel': 'Số bánh', 'Trailer Plate': 'Biển số Mooc',
         'Truck weight': 'Trọng lượng xe', 'Pay load': 'Tải trọng xe', 'Container No1': 'Container 1',
         'Container No2': 'Container 2', 'Driver Name': 'Tên lái xe', 'ID/Passport': 'Số hộ chiếu',
@@ -1695,7 +1695,7 @@ function handleEdit(rowData) {
         <form id="editForm" class="edit-form-grid">
             <div class="form-group"><label>ID</label><input type="text" class="form-control" value="${rowData.ID}" readonly></div>
             <div class="form-group"><label>Ngày đăng ký</label><input type="text" class="form-control" value="${rowData['Register Date']}" readonly></div>
-            <div class="form-group"><label>Số HĐ</label><input type="text" id="editContractNo" class="form-control" value="${rowData['Contract No'] || ''}" required></div>
+            <div class="form-group"><label>Số hợp đồng</label><input type="text" id="editContractNo" class="form-control" value="${rowData['Contract No'] || ''}" required></div>
             <div class="form-group"><label>Biển số xe</label><input type="text" id="editTruckPlate" class="form-control" value="${rowData['Truck Plate'] || ''}" maxlength="11" required></div>
             <div class="form-group"><label>Quốc gia</label>
                 <select id="editCountry" class="form-select">${createOptions(['Vietnam', 'Laos'], rowData['Country'])}</select>
