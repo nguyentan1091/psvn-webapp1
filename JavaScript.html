@@ -1133,7 +1133,7 @@ function validateAndTransformData(dataRows) {
             'Vehicle Status': String(row[17] || '').toUpperCase()
         };
 
-        const requiredFields = ['Contract No', 'Truck Plate', 'Country', 'Wheel', 'Truck weight', 'Pay load', 'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST', 'Transportion Company', 'Subcontractor', 'Vehicle Status'];
+        const requiredFields = ['Contract No', 'Truck Plate', 'Country', 'Wheel', 'Truck weight', 'Pay load', 'Driver Name', 'ID/Passport', 'Destination EST', 'Transportion Company', 'Subcontractor', 'Vehicle Status'];
         requiredFields.forEach(field => {
             if (!record[field]) { rowErrors[field] = `- Cột '${columnNames[field]}' không được để trống.`; }
         });
@@ -1680,7 +1680,7 @@ function handleEdit(rowData) {
             <div class="form-group"><label>Container 2</label><input type="text" id="editContainerNo2" class="form-control" value="${rowData['Container No2'] || ''}" maxlength="70"></div>
             <div class="form-group"><label>Tên lái xe</label><input type="text" id="editDriverName" class="form-control" value="${rowData['Driver Name'] || ''}" maxlength="70" required></div>
             <div class="form-group"><label>Số hộ chiếu</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" required></div>
+            <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" ></div>
             <div class="form-group"><label>Điểm trả hàng dự kiến</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
             <div class="form-group"><label>Đơn vị vận chuyển</label>
                 <select class="form-select" id="editTransportionCompany" ${userSession.role === 'user' ? 'disabled' : ''}>
@@ -1938,11 +1938,17 @@ function initTotalListPage() {
         $('#total-list-upload-card').removeClass('d-none');
     }
 
-    // Tìm kiếm nhanh
-    $('#total-list-search-input').off('keyup').on('keyup', function () {
-        totalListTable.search(this.value).draw();
+    // Tìm kiếm
+    const doTotalListSearch = () => {
+        totalListTable.search($('#total-list-search-input').val()).draw();
+    };
+    $('#total-list-search-btn').off('click').on('click', doTotalListSearch);
+    $('#total-list-search-input').off('keypress').on('keypress', function (e) {
+        if (e.which === 13) {
+            doTotalListSearch();
+        }
     });
-
+    
     // Page length
     $('#total-list-page-length-select').off('change').on('change', function () {
         const len = parseInt(this.value || '50', 10);
@@ -2315,7 +2321,7 @@ function handleEditTotalListVehicle(rowData) {
             <div class="form-group"><label>Container 2</label><input type="text" id="editContainerNo2" class="form-control" value="${rowData['Container No2'] || ''}" maxlength="70"></div>
             <div class="form-group"><label>Tên lái xe</label><input type="text" id="editDriverName" class="form-control" value="${rowData['Driver Name'] || ''}" maxlength="70" required></div>
             <div class="form-group"><label>Số hộ chiếu</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" required></div>
+            <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}"></div>
             <div class="form-group"><label>Đơn vị vận chuyển</label>
                 <select class="form-select" id="editTransportionCompany">
                     ${createOptions(allowedCompanies, rowData['Transportion Company'])}
@@ -2357,6 +2363,9 @@ function handleEditTotalListVehicle(rowData) {
             updatedRecord['Transportion Company'] = $('#editTransportionCompany').val();
             updatedRecord['Subcontractor'] = $('#editSubcontractor').val();
             updatedRecord['Vehicle Status'] = $('#editVehicleStatus').val();
+            const now = new Date();
+            updatedRecord['Register Date'] = getFormattedDate(now);
+            updatedRecord['Time'] = now.toTimeString().split(' ')[0];            
             return updatedRecord;
         }
     }).then((result) => {
