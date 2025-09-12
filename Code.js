@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = ' '; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -180,10 +180,10 @@ const HEADERS_REGISTER = [
   'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
 ];
 const HEADERS_TOTAL_LIST = [
-  'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight', 
-  'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport', 
-  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status', 
-  'Register Date', 'Time'
+  'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
+  'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
+  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
+  'Activity Status', 'Register Date', 'Time'
 ];
 
 
@@ -601,6 +601,10 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     if (companyColumnIndex !== -1) {
         allData = allData.filter(row => row[companyColumnIndex] === userSession.contractor);
     }
+    const activityColumnIndex = headers.indexOf('Activity Status');
+    if (activityColumnIndex !== -1) {
+        allData = allData.filter(row => String(row[activityColumnIndex]).toUpperCase() === 'ACTIVE');
+    }    
   }
 
   if (params.dateString) {
@@ -1526,7 +1530,7 @@ function getTotalListSummary(sessionToken) {
     const lastRow = sheet.getLastRow();
     
     if (lastRow < 2) {
-      return { total: 0, ro: 0, nd: 0, ac: 0 };
+      return { total: 0, active: 0, banned: 0 };
     }
 
     const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_TOTAL_LIST.length).getValues();
@@ -1534,17 +1538,18 @@ function getTotalListSummary(sessionToken) {
     let filteredData = allData;
     if (userSession.role === 'user') {
       const companyIndex = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
-      filteredData = allData.filter(row => row[companyIndex] === userSession.contractor);
+      const activityIndex = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+      filteredData = allData.filter(row => row[companyIndex] === userSession.contractor &&
+        String(row[activityIndex]).toUpperCase() === 'ACTIVE');
     }
 
-    const summary = { total: filteredData.length, ro: 0, nd: 0, ac: 0 };
-    const statusIndex = HEADERS_TOTAL_LIST.indexOf('Vehicle Status');
+    const summary = { total: filteredData.length, active: 0, banned: 0 };
+    const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
 
     filteredData.forEach(row => {
-      const status = String(row[statusIndex]).toUpperCase();
-      if (status === 'RO') summary.ro++;
-      else if (status === 'ND') summary.nd++;
-      else if (status === 'AC') summary.ac++;
+      const act = String(row[activityIdx]).toUpperCase();
+      if (act === 'ACTIVE') summary.active++;
+      else if (act === 'BANNED') summary.banned++;
     });
     
     return summary;
