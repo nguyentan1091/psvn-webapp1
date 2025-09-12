@@ -102,6 +102,8 @@ const translations = {
     "delete_selected_button": "Xóa mục đã chọn",
     "search_in_list_placeholder": "Tìm kiếm trong danh sách...",
     "total_vehicles": "Tổng số xe",
+    "active_vehicles": "Xe đang hoạt động",
+    "banned_vehicles": "Xe đang bị cấm",    
 
     // DataTables Columns
     "col_id": "ID",
@@ -122,6 +124,7 @@ const translations = {
     "col_transport_company": "Đơn vị vận chuyển",
     "col_subcontractor": "Nhà thầu phụ",
     "col_vehicle_status": "Tình trạng xe",
+    "col_activity_status": "Trạng thái hoạt động",    
     "col_registration_status": "Trạng thái đăng ký",
     "col_time": "Thời gian đăng ký",
     "col_creation_date": "Ngày tạo",
@@ -214,6 +217,8 @@ const translations = {
     "delete_selected_button": "Delete Selected",
     "search_in_list_placeholder": "Search in list...",
     "total_vehicles": "Total Vehicles",
+    "active_vehicles": "Active Vehicles",
+    "banned_vehicles": "Banned Vehicles",    
 
     // DataTables Columns (Shared)
     "col_id": "ID",
@@ -234,6 +239,7 @@ const translations = {
     "col_transport_company": "Transport Company",
     "col_subcontractor": "Subcontractor",
     "col_vehicle_status": "Vehicle Status",
+    "col_activity_status": "Activity Status",    
     "col_registration_status": "Registration Status",
     "col_time": "Registration Time",
     "col_creation_date": "Creation Date",
@@ -1737,6 +1743,11 @@ function handleEdit(rowData) {
                     ${createOptions(['RO', 'CO', 'PM', 'CM', 'AC', 'ND'], rowData['Vehicle Status'])}
                 </select>
             </div>
+            <div class="form-group"><label>Trạng thái hoạt động</label>
+                <select class="form-select" id="editActivityStatus" required>
+                    ${createOptions(['Active', 'Banned'], rowData['Activity Status'])}
+                </select>
+            </div>            
         </form>`;
 
     Swal.fire({
@@ -1833,6 +1844,7 @@ function initTotalListPage() {
         { data: 'Transportion Company', title: t.col_transport_company },
         { data: 'Subcontractor', title: t.col_subcontractor },
         { data: 'Vehicle Status', title: t.col_vehicle_status },
+        { data: 'Activity Status', title: t.col_activity_status },        
         { data: 'Register Date', title: t.col_register_date },
         { data: 'Time', title: t.col_time }
     );
@@ -2024,9 +2036,8 @@ function fetchTotalListSummary() {
     google.script.run
         .withSuccessHandler(summary => {
             $('#total-count-summary').text(summary.total);
-            $('#ro-count').text(summary.ro);
-            $('#nd-count').text(summary.nd);
-            $('#ac-count').text(summary.ac);
+            $('#active-count').text(summary.active);
+            $('#banned-count').text(summary.banned);
         })
         .withFailureHandler(showError)
         .getTotalListSummary(userSession.token);
@@ -2077,6 +2088,7 @@ function handleTotalListFileUpload() {
                 'Transportion Company': r['Transportion Company'] || '',
                 'Subcontractor': r['Subcontractor'] || '',
                 'Vehicle Status': (r['Vehicle Status'] || '').toString().toUpperCase(),
+                'Activity Status': r['Activity Status'] || '',                
                 'Register Date': r['Register Date'] || '',
                 'Time': r['Time'] || '',
                 _duplicate: typeof r._duplicate === 'boolean'
@@ -2107,6 +2119,7 @@ function handleTotalListFileUpload() {
                 { data: 'Transportion Company', title: 'Đơn vị vận chuyển', defaultContent: '' },
                 { data: 'Subcontractor', title: 'Nhà thầu phụ', defaultContent: '' },
                 { data: 'Vehicle Status', title: 'Tình trạng xe', defaultContent: '' },
+                { data: 'Activity Status', title: 'Trạng thái hoạt động', defaultContent: '' },                
                 { data: 'Register Date', title: 'Ngày tạo', defaultContent: '' },
                 { data: 'Time', title: 'Thời gian tạo', defaultContent: '' }
               ];
@@ -2208,6 +2221,8 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
     if (row.length === 0 || row.every(cell => cell === "")) return;
     const plate = String(row[1] || '').replace(/\s/g, '').toUpperCase();
 
+    const activityRaw = String(row[15] || '').trim();
+    const activityUpper = activityRaw.toUpperCase();
     const record = {
       'ID': generateCustomId(),
       'Truck Plate': plate,
@@ -2224,9 +2239,20 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
       'Transportion Company': row[12] || '',
       'Subcontractor': row[13] || '',
       'Vehicle Status': String(row[14] || '').toUpperCase(),
+      'Activity Status': activityRaw,      
       _duplicate: existingPlates.has(plate)  // đánh dấu nếu trùng
     };
 
+    const errors = {};
+    if (!activityRaw) {
+      errors['Activity Status'] = "- Cột 'Activity Status' không được để trống.";
+    } else if (!['ACTIVE', 'BANNED'].includes(activityUpper)) {
+      errors['Activity Status'] = "- Cột 'Activity Status' chỉ chấp nhận: Active, Banned.";
+    }
+
+    if (Object.keys(errors).length) {
+      record.errors = errors;
+    }
     if (record._duplicate) {
       duplicateList.push(plate);
     }
@@ -2298,6 +2324,7 @@ function handleSaveTotalListUploadedData() {
       if ($.fn.DataTable.isDataTable('#totalListTable')) {
         $('#totalListTable').DataTable().ajax.reload(null, false);
       }
+      fetchTotalListSummary();      
 
       // Dọn preview
       totalListPreviewData = [];
@@ -2407,9 +2434,10 @@ function handleEditTotalListVehicle(rowData) {
             updatedRecord['Transportion Company'] = $('#editTransportionCompany').val();
             updatedRecord['Subcontractor'] = $('#editSubcontractor').val();
             updatedRecord['Vehicle Status'] = $('#editVehicleStatus').val();
+            updatedRecord['Activity Status'] = $('#editActivityStatus').val();            
             const now = new Date();
             updatedRecord['Register Date'] = getFormattedDate(now);
-            updatedRecord['Time'] = now.toTimeString().split(' ')[0];            
+            updatedRecord['Time'] = now.toTimeString().split(' ')[0];      
             return updatedRecord;
         }
     }).then((result) => {
@@ -2419,6 +2447,7 @@ function handleEditTotalListVehicle(rowData) {
                 .withSuccessHandler(message => {
                     Swal.fire('Thành công!', message, 'success');
                     totalListTable.draw(false);
+                    fetchTotalListSummary();                    
                 })
                 .withFailureHandler(showError)
                 .updateTotalListVehicle(result.value, userSession.token);
@@ -3733,8 +3762,6 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
   // load lần đầu bảng + counters
   refreshSnapshot();
 }
-
-
 
 
 
