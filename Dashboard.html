@@ -40,37 +40,57 @@
             </div>          
             <div class="sidebar-heading text-white" data-translate="sidebar_title">Quản lý Xe</div>
             <div class="list-group list-group-flush">
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white active" data-page="Page_Register" data-title-key="sidebar_register">
-                    <i class="fas fa-plus-circle me-2"></i><span data-translate="sidebar_register">Đăng ký xe</span>
+                <a href="#submenu-register" class="list-group-item list-group-item-action bg-dark text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="true">
+                    <span><i class="fas fa-truck me-2"></i><span data-translate="sidebar_vehicle">Đăng Ký Xe</span></span>
+                    <i class="fas fa-caret-down"></i>
                 </a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_View" data-title-key="sidebar_view">
-                    <i class="fas fa-list-alt me-2"></i><span data-translate="sidebar_view">Xe đã đăng ký</span>
-                </a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white"
-                   data-page="Page_XuLyXPPL" data-title-key="sidebar_xppl_approval" id="menu-xppl-approval">
-                    <i class="fas fa-clipboard-check me-2"></i><span data-translate="sidebar_xppl_approval">Xử lý xe đăng ký gửi XPPL</span>
-                </a>
+                <div class="collapse show" id="submenu-register">
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5 active" data-page="Page_Register" data-title-key="sidebar_register">
+                        <span data-translate="sidebar_register">Đăng ký mới</span>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="Page_View" data-title-key="sidebar_view">
+                        <span data-translate="sidebar_view">Xe đã đăng ký</span>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="Page_TotalList" data-title-key="sidebar_total_list">
+                        <span data-translate="sidebar_total_list">Danh sách xe tổng</span>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="Page_Contract" data-title-key="sidebar_contracts">
+                        <span data-translate="sidebar_contracts">Hợp đồng vận chuyển</span>
+                    </a>                    
+                </div>
 
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white"
-                   data-page="XPPL-WeighingStation" data-title-key="sidebar_xppl_weighing" id="menu-xppl-weighing">
-                    <i class="fas fa-weight-hanging me-2"></i><span data-translate="sidebar_xppl_weighing">Trạm cân XPPL</span>
+                <a href="#submenu-approval" class="list-group-item list-group-item-action bg-dark text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false">
+                    <span><i class="fas fa-check me-2"></i><span data-translate="sidebar_approval">Phê Duyệt</span></span>
+                    <i class="fas fa-caret-down"></i>
                 </a>
+                <div class="collapse" id="submenu-approval">
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="Page_XuLyXPPL" data-title-key="sidebar_xppl_approval" id="menu-xppl-approval">
+                        <span data-translate="sidebar_xppl_approval">Xử lý xe đăng ký gửi XPPL</span>
+                    </a>
+                </div>
 
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_TotalList" data-title-key="sidebar_total_list">
-                    <i class="fas fa-truck me-2"></i><span data-translate="sidebar_total_list">Danh sách xe tổng</span>
+                <a href="#submenu-weigh" class="list-group-item list-group-item-action bg-dark text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false">
+                    <span><i class="fas fa-balance-scale me-2"></i><span data-translate="sidebar_weighing">Trạm Cân</span></span>
+                    <i class="fas fa-caret-down"></i>
                 </a>
+                <div class="collapse" id="submenu-weigh">
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="XPPL-WeighingStation" data-title-key="sidebar_xppl_weighing" id="menu-xppl-weighing">
+                        <span data-translate="sidebar_xppl_weighing">Trạm cân XPPL</span>
+                    </a>
+                </div>                
 
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_Contract" data-title-key="sidebar_contracts">
-                    <i class="fas fa-file-contract me-2"></i><span>Hợp đồng vận chuyển</span>
+                <a href="#submenu-account" class="list-group-item list-group-item-action bg-dark text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false">
+                    <span><i class="fas fa-user me-2"></i><span data-translate="sidebar_account_parent">Tài Khoản</span></span>
+                    <i class="fas fa-caret-down"></i>
                 </a>
-
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_Guide" data-title-key="">
-                    <i class="fas fa-book-open me-2"></i><span>Hướng dẫn</span>
-                </a>
-
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="Page_Account" data-title-key="sidebar_account">
-                    <i class="fas fa-user-circle me-2"></i><span data-translate="sidebar_account">Tài khoản</span>
-                </a>
+                <div class="collapse" id="submenu-account">
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="Page_Account" data-title-key="sidebar_account">
+                        <span data-translate="sidebar_account">Quản lý User</span>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action bg-dark text-white ps-5" data-page="Page_Guide" data-title-key="sidebar_guide">
+                        <span data-translate="sidebar_guide">Hướng dẫn</span>
+                    </a>
+                </div>
             </div>
         </div>
 
