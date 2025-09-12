@@ -42,6 +42,11 @@ const translations = {
     "show_label": "Hiển thị",
     "entries_label": "dòng",
     "sidebar_contracts": "Hợp đồng vận chuyển",
+    "sidebar_vehicle": "Đăng Ký Xe",
+    "sidebar_approval": "Phê Duyệt",
+    "sidebar_weighing": "Trạm Cân",
+    "sidebar_account_parent": "Tài khoản",
+    "sidebar_guide": "Hướng dẫn",    
 
     // Login Page
     "login_title": "Đăng nhập",
@@ -52,11 +57,11 @@ const translations = {
     
     // Dashboard & Sidebar
     "sidebar_title": "Quản lý Xe",
-    "sidebar_register": "Đăng ký xe",
+    "sidebar_register": "Đăng ký mới",
     "sidebar_view": "Xe đã đăng ký",
 																 
     "sidebar_total_list": "Danh sách xe tổng",
-    "sidebar_account": "Tài khoản",
+    "sidebar_account": "Quản lý User",
 
     // Account Page
     "change_password_header": "Đổi mật khẩu",
@@ -159,11 +164,16 @@ const translations = {
 
     // Dashboard & Sidebar
     "sidebar_title": "Vehicle Management",
-    "sidebar_register": "Register Vehicle",
+    "sidebar_register": "New Registration",
     "sidebar_view": "Registered Vehicles",
-														  
+    "sidebar_contracts": "Transport Contracts",														  
     "sidebar_total_list": "Total Vehicle List",
-    "sidebar_account": "Account",
+     "sidebar_account": "User Management",
+    "sidebar_vehicle": "Vehicle Registration",
+    "sidebar_approval": "Approval",
+    "sidebar_weighing": "Weighing Station",
+    "sidebar_account_parent": "Account",
+    "sidebar_guide": "Guide",
 
     // Account Page
     "change_password_header": "Change Password",
@@ -350,31 +360,36 @@ function loadDashboard() {
         $('#app-container').html(html);
         // Ẩn các menu theo phân quyền
         if (userSession) {
+          const hideMenuItem = page => {
+            const item = $(`#sidebar-wrapper .list-group-item[data-page="${page}"]`);
+            item.addClass('d-none disabled').removeClass('active');
+            const parent = item.closest('.collapse');
+            if (parent.length && parent.find('.list-group-item[data-page]:not(.d-none)').length === 0) {
+              parent.addClass('d-none');
+              parent.prev('a').addClass('d-none');
+            }
+          };
+
           if (userSession.role === 'admin-xppl') {
-            $('#sidebar-wrapper .list-group-item[data-page="Page_Register"],\
-#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"],\
-#sidebar-wrapper .list-group-item[data-page="Page_Contract"]').addClass('d-none disabled').removeClass('active');
-            $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
-          } else {
-            if (userSession.role !== 'admin') {
-              $('#sidebar-wrapper .list-group-item[data-page="Page_XuLyXPPL"]')
-                .addClass('d-none disabled')
-                .removeClass('active');
-              const active = $('#sidebar-wrapper .list-group-item.active');
-              if (active.data('page') === 'Page_XuLyXPPL') {
-                active.removeClass('active');
-                $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active');
-              }
+            hideMenuItem('Page_Register');
+            hideMenuItem('Page_Contract');
+            hideMenuItem('Page_XuLyXPPL');
+            $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
+          } else if (userSession.role !== 'admin') {
+            hideMenuItem('Page_XuLyXPPL');
+            const active = $('#sidebar-wrapper .list-group-item[data-page].active');
+            if (active.data('page') === 'Page_XuLyXPPL') {
+              active.removeClass('active');
+              $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
             }
           }
           if (!['admin', 'admin-xppl'].includes(userSession.role)) {
-            $('#sidebar-wrapper .list-group-item[data-page="XPPL-WeighingStation"]')
-              .addClass('d-none disabled')
-              .removeClass('active');
+            hideMenuItem('XPPL-WeighingStation');
           }
         }
         setupDashboardListeners();
-        const defaultPageLink = $('#sidebar-wrapper .list-group-item.active');
+        const defaultPageLink = $('#sidebar-wrapper .list-group-item[data-page].active');
+        defaultPageLink.closest('.collapse').addClass('show');
         const pageTitleKey = defaultPageLink.data('title-key');
         loadPage(defaultPageLink.data('page'), pageTitleKey, true);
         showApp();
@@ -433,13 +448,14 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
 }
 
 function setupDashboardListeners() {
-    $('#sidebar-wrapper .list-group-item').on('click', function(e) {
+    $('#sidebar-wrapper .list-group-item[data-page]').on('click', function(e) {
         e.preventDefault();
         const link = $(this);
         if (link.hasClass('disabled')) return;
         
-        $('#sidebar-wrapper .list-group-item').removeClass('active');
+        $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
         link.addClass('active');
+        link.closest('.collapse').addClass('show');
         
         const page = link.data('page');
         const titleKey = link.data('title-key');
