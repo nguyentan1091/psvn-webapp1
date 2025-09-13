@@ -1286,7 +1286,49 @@ function checkVehiclesAgainstTotalList(vehicles) {
   return { isValid: true };
 }
 
+// =================================================================
+// LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
+// =================================================================
+function checkVehicleActivityStatus(vehicles) {
+  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (totalListSheet.getLastRow() < 2) {
+    return { isValid: false, message: 'Danh sách xe tổng chưa có dữ liệu. Không thể đăng ký. Vui lòng liên hệ PSVN.' };
+  }
 
+  const totalListData = totalListSheet.getRange(
+    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
+  ).getValues();
+
+  const plateIdx    = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
+  const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+
+  const activityMap = new Map();
+  totalListData.forEach(row => {
+    const plate = row[plateIdx];
+    if (plate) {
+      activityMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[activityIdx]);
+    }
+  });
+
+  const bannedPlates = [];
+  vehicles.forEach(v => {
+    const plate = String(v['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
+    if (!plate) return;
+    const status = activityMap.get(plate);
+    if (status && String(status).toLowerCase() === 'banned') {
+      bannedPlates.push(plate);
+    }
+  });
+
+  if (bannedPlates.length > 0) {
+    return {
+      isValid: false,
+      message: `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`
+    };
+  }
+
+  return { isValid: true };
+}
 
 
 function getAllDataForExport(dateString, sessionToken, searchQuery) {
@@ -1343,6 +1385,11 @@ function saveData(dataToSave, sessionToken) {
   if (userSession.role !== 'admin') {
     const timeStatus = checkRegistrationTime();
     if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép đăng ký dữ liệu trong ngày.');
+  }
+
+  const activityResult = checkVehicleActivityStatus(dataToSave);
+  if (!activityResult.isValid) {
+    throw new Error(activityResult.message);
   }
 
   const validationResult = checkVehiclesAgainstTotalList(dataToSave);
@@ -2074,6 +2121,11 @@ function addManualVehicle(record, sessionToken) {
       rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
     }
 
+    const activityCheck = checkVehicleActivityStatus([{ 'Truck Plate': rowObj['Truck Plate'] }]);
+    if (!activityCheck.isValid) {
+      throw new Error(activityCheck.message);
+    }
+
     // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
     const precheck = checkVehiclesAgainstTotalList([{
       'Truck Plate'         : String(rowObj['Truck Plate'] || '').toUpperCase().replace(/\s/g, ''),
@@ -2413,7 +2465,7 @@ function saveXpplWeighingData(rows, sessionToken) {
       return v;
     });
     arr[0] = prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0');
-    arr[35] = user.username || user.user || user.email || '';
+    arr[39] = user.username || user.user || user.email || '';
     return arr;
   });
 
