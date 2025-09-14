@@ -45,8 +45,9 @@ const translations = {
     "sidebar_vehicle": "Đăng Ký Xe",
     "sidebar_approval": "Phê Duyệt",
     "sidebar_weighing": "Trạm Cân",
+    "sidebar_weighing_result": "Kết quả bốc hàng",    
     "sidebar_account_parent": "Tài khoản",
-    "sidebar_guide": "Hướng dẫn",    
+    "sidebar_guide": "Hướng dẫn",
 
     // Login Page
     "login_title": "Đăng nhập",
@@ -175,6 +176,7 @@ const translations = {
     "sidebar_vehicle": "Vehicle Registration",
     "sidebar_approval": "Approval",
     "sidebar_weighing": "Weighing Station",
+    "sidebar_weighing_result": "Weighing Results",    
     "sidebar_account_parent": "Account",
     "sidebar_guide": "Guide",
 
@@ -444,6 +446,7 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
                 case 'Page_Account': initAccountPage(); break;
                 case 'Page_Contract': initContractPage(); break;
                 case 'XPPL-WeighingStation': initXPPLWeighingStationPage(); break;
+                case 'Page_WeighResult': initWeighResultPage(); break;                
                 case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
 }
             setLanguage(currentLang); // Dịch nội dung trang mới
@@ -1742,12 +1745,7 @@ function handleEdit(rowData) {
                 <select class="form-select" id="editVehicleStatus" required>
                     ${createOptions(['RO', 'CO', 'PM', 'CM', 'AC', 'ND'], rowData['Vehicle Status'])}
                 </select>
-            </div>
-            <div class="form-group"><label>Trạng thái hoạt động</label>
-                <select class="form-select" id="editActivityStatus" required>
-                    ${createOptions(['Active', 'Banned'], rowData['Activity Status'])}
-                </select>
-            </div>            
+            </div>                      
         </form>`;
 
     Swal.fire({
@@ -2404,6 +2402,11 @@ function handleEditTotalListVehicle(rowData) {
                     ${createOptions(['RO', 'CO', 'PM', 'CM', 'AC', 'ND'], rowData['Vehicle Status'])}
                 </select>
             </div>
+            <div class="form-group"><label>Trạng thái hoạt động</label>
+                <select class="form-select" id="editActivityStatus" required>
+                    ${createOptions(['Active', 'Banned'], rowData['Activity Status'])}
+                </select>
+            </div>         
         </form>`;
 
     Swal.fire({
@@ -3140,6 +3143,10 @@ try {
     translations.vi['sidebar_xppl_weighing'] = translations.vi['sidebar_xppl_weighing'] || 'Trạm cân XPPL';
   if (translations && translations.en)
     translations.en['sidebar_xppl_weighing'] = translations.en['sidebar_xppl_weighing'] || 'XPPL Weighing Station';
+  if (translations && translations.vi)
+    translations.vi['sidebar_weighing_result'] = translations.vi['sidebar_weighing_result'] || 'Kết quả bốc hàng';
+  if (translations && translations.en)
+    translations.en['sidebar_weighing_result'] = translations.en['sidebar_weighing_result'] || 'Weighing Results';    
 } catch (e) {}
 
 const XPPL_WEIGHING_HEADERS = [
@@ -3147,7 +3154,7 @@ const XPPL_WEIGHING_HEADERS = [
   'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
   'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
   'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type',
-  'WeighStationCode','Note','CreateUser'
+  'WeighStationCode','Note','CreateUser','Transportion Company','Changed Date','Changed Time','Username'
 ];
 // Excel files from the weighing station do not include the leading ID column
 const XPPL_FILE_HEADERS = XPPL_WEIGHING_HEADERS.slice(1);
@@ -3763,7 +3770,252 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
   refreshSnapshot();
 }
 
+// ====================== WEIGHING RESULT PAGE ======================
+function initWeighResultPage() {
+  const role = userSession?.role || '';
+  const isAdmin = (role === 'admin');
+  const isAdminXppl = (role === 'admin-xppl');
 
+  $('#wr-unknown-card').toggle(isAdmin);
+  $('#wr-delete').toggleClass('d-none', !isAdmin);
+  $('#wr-unknown-delete').toggleClass('d-none', !isAdmin);
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  $('#wr-date-from').val(formatDateInput(yesterday));
+  $('#wr-date-to').val(formatDateInput(yesterday));
+  $('#wr-quick button').removeClass('active');
+  $('#wr-quick button[data-range="yesterday"]').addClass('active');
+
+  google.script.run
+    .withSuccessHandler(list => {
+      window.__wrCompanyList = list || [];
+      const $sel = $('#wr-companies').empty();
+      (list || []).forEach(v => $sel.append(new Option(v, v)));
+    })
+    .withFailureHandler(showError)
+    .getContractorOptions();
+
+  google.script.run
+    .withSuccessHandler(list => {
+      const $sel = $('#wr-contracts').empty();
+      (list || []).forEach(v => $sel.append(new Option(v, v)));
+    })
+    .withFailureHandler(showError)
+    .getActiveContractNos(userSession.token);
+
+  buildWeighResultTables(isAdmin);
+
+  $('#wr-adv-toggle').off('click').on('click', function(e){
+    e.preventDefault();
+    $('#wr-advanced').toggleClass('d-none');
+  });
+
+  $('#wr-match-company').off('click').on('click', function(e){
+    e.preventDefault();
+    showLoading('Đang đối chiếu...');
+    google.script.run
+      .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
+      .withFailureHandler(showError)
+      .matchTransportionCompanies(userSession.token);
+  });
+
+  $('#wr-search').off('keyup').on('keyup', function(){
+    const val = this.value;
+    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.search(val).draw();
+    if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
+  });
+
+  $('#wr-quick button').off('click').on('click', function(){
+    $('#wr-quick button').removeClass('active');
+    $(this).addClass('active');
+    const range = $(this).data('range');
+    const today = new Date();
+    let from, to;
+    if (range === 'today') { from = to = today; }
+    else if (range === 'yesterday') { from = to = new Date(today.getTime() - 86400000); }
+    else { to = today; from = new Date(today.getTime() - 4*86400000); }
+    $('#wr-date-from').val(formatDateInput(from));
+    $('#wr-date-to').val(formatDateInput(to));
+    reloadWrTables();
+  });
+
+  $('#wr-date-from, #wr-date-to, #wr-contracts, #wr-companies').off('change').on('change', reloadWrTables);
+
+  $('#wr-reload').off('click').on('click', function(e){ e.preventDefault(); wrResultTable.ajax.reload(); });
+  if (isAdmin) $('#wr-unknown-reload').off('click').on('click', function(e){ e.preventDefault(); wrUnknownTable.ajax.reload(); });
+
+  if (isAdmin) {
+    $('#wr-delete').off('click').on('click', function(e){ e.preventDefault(); deleteWrRows(wrResultTable); });
+    $('#wr-unknown-delete').off('click').on('click', function(e){ e.preventDefault(); deleteWrRows(wrUnknownTable); });
+  }
+
+  $('#wr-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrResultTable, 'WeighResults'); });
+  if (isAdmin) $('#wr-unknown-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrUnknownTable, 'UnknownVehicles'); });
+}
+
+function formatDateInput(d){ return d.toISOString().slice(0,10); }
+
+function getWrFilters(){
+  return {
+    dateFrom: $('#wr-date-from').val(),
+    dateTo: $('#wr-date-to').val(),
+    contracts: $('#wr-contracts').val() || [],
+    companies: $('#wr-companies').val() || []
+  };
+}
+
+function reloadWrTables(){
+  if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
+  if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload();
+}
+
+function deleteWrRows(table){
+  const ids = [];
+  table.rows('.selected').every(function(){ const d=this.data(); if(d && d.ID) ids.push(d.ID); });
+  if (!ids.length) { Swal.fire('Chưa chọn dòng', 'Hãy tick các dòng cần xoá.', 'info'); return; }
+  Swal.fire({icon:'warning', title:'Xoá các mục đã chọn?', showCancelButton:true})
+    .then(r => {
+      if (!r.isConfirmed) return;
+      showLoading('Đang xoá...');
+      google.script.run
+        .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
+        .withFailureHandler(showError)
+        .deleteWeighResults(ids, userSession.token);
+    });
+}
+
+function exportWrTable(table, name){
+  const colDefs = table.settings().init().columns;
+  const visibleIdx = table.columns(':visible').indexes().toArray()
+    .filter(i => !$(table.column(i).header()).hasClass('no-export'));
+  const headers = visibleIdx.map(i => $(table.column(i).header()).text().trim());
+  const data = table.rows({search:'applied'}).data().toArray()
+    .map(row => visibleIdx.map(i => { const key = colDefs[i].data; return key ? (row[key] ?? '') : ''; }));
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet, name);
+  XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function buildWeighResultTables(isAdmin) {
+  if ($.fn.DataTable.isDataTable('#wr-result-table')) $('#wr-result-table').DataTable().destroy();
+
+  const columns = [
+    { data: null, title: 'Select', orderable:false, className:'no-export text-center', visible:isAdmin,
+      render: () => `<input type="checkbox" class="row-checkbox form-check-input">` },
+    { data: null, title: translations[currentLang].action_column || 'Hành động', orderable:false,
+      className:'no-export text-center', visible:isAdmin,
+      render: () => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>` },
+
+    { data:'ID', title:'ID' },
+    { data:'No.', title:'No.' },
+    { data:'W.ID', title:'W.ID' },
+    { data:'Truck No', title:'Truck No' },
+    { data:'Date Out', title:'Date Out' },
+    { data:'Net Weight', title:'Net Weight' },
+    { data:'Customer Name', title:'Customer Name' },
+    { data:'ContractNo', title:'ContractNo' },
+    { data:'Transportion Company', title:'Transportion Company' },
+    { data:'Changed Date', title:'Changed Date' },
+    { data:'Changed Time', title:'Changed Time' },
+    { data:'Username', title:'Username' }
+  ];
+
+  wrResultTable = $('#wr-result-table').DataTable({
+    processing:true,
+    serverSide:true,
+    pageLength:50,
+    scrollX:true,
+    ajax: function(dtReq, callback){
+      dtReq.sessionToken = userSession.token;
+      dtReq.filter = getWrFilters();
+      google.script.run
+        .withSuccessHandler(res => callback(res))
+        .withFailureHandler(err => { showError(err); callback({draw:dtReq.draw,recordsTotal:0,recordsFiltered:0,data:[]}); })
+        .getWeighResultData(dtReq);
+    },
+    columns: columns
+  });
+
+  $('#wr-result-table tbody').off('change', '.row-checkbox').on('change', '.row-checkbox', function(){
+    $(this).closest('tr').toggleClass('selected', this.checked);
+  });
+
+  $('#wr-result-table tbody').off('click', '.wr-edit').on('click', '.wr-edit', function(){
+    if (!isAdmin) return;
+    const row = wrResultTable.row($(this).closest('tr')).data();
+    if (!row) return;
+    showWrEditDialog(row);
+  });
+
+  if (isAdmin) {
+    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) $('#wr-unknown-table').DataTable().destroy();
+    const uCols = [
+      { data: null, title: 'Select', orderable:false, className:'no-export text-center',
+        render: () => `<input type="checkbox" class="row-checkbox form-check-input">` },
+      { data: null, title: translations[currentLang].action_column || 'Hành động', orderable:false,
+        className:'no-export text-center',
+        render: () => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>` },
+      { data:'ID', title:'ID' },
+      { data:'Truck No', title:'Truck No' },
+      { data:'Date Out', title:'Date Out' },
+      { data:'Net Weight', title:'Net Weight' },
+      { data:'Customer Name', title:'Customer Name' },
+      { data:'ContractNo', title:'ContractNo' },
+      { data:'Transportion Company', title:'Transportion Company' },
+      { data:'Changed Date', title:'Changed Date' },
+      { data:'Changed Time', title:'Changed Time' },
+      { data:'Username', title:'Username' }
+    ];
+
+    wrUnknownTable = $('#wr-unknown-table').DataTable({
+      processing:true,
+      serverSide:true,
+      pageLength:50,
+      scrollX:true,
+      ajax: function(dtReq, callback){
+        dtReq.sessionToken = userSession.token;
+        dtReq.filter = getWrFilters();
+        dtReq.onlyUnknown = true;
+        google.script.run
+          .withSuccessHandler(res => callback(res))
+          .withFailureHandler(err => { showError(err); callback({draw:dtReq.draw,recordsTotal:0,recordsFiltered:0,data:[]}); })
+          .getWeighResultData(dtReq);
+      },
+      columns: uCols
+    });
+
+    $('#wr-unknown-table tbody').off('change', '.row-checkbox').on('change', '.row-checkbox', function(){
+      $(this).closest('tr').toggleClass('selected', this.checked);
+    });
+
+    $('#wr-unknown-table tbody').off('click', '.wru-edit').on('click', '.wru-edit', function(){
+      const row = wrUnknownTable.row($(this).closest('tr')).data();
+      if (!row) return;
+      showWrEditDialog(row);
+    });
+  }
+}
+
+function showWrEditDialog(row){
+  const opts = ['Unknown', ...(window.__wrCompanyList || [])]
+    .map(v => `<option value="${esc(v)}" ${v === (row['Transportion Company']||'') ? 'selected' : ''}>${esc(v)}</option>`)
+    .join('');
+  Swal.fire({
+    title: 'Cập nhật đơn vị vận chuyển',
+    html: `<select id="sw-wr-company" class="form-select">${opts}</select>`,
+    focusConfirm:false,
+    preConfirm: () => $('#sw-wr-company').val()
+  }).then(res => {
+    if (!res.isConfirmed) return;
+    showLoading('Đang cập nhật...');
+    google.script.run
+      .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
+      .withFailureHandler(showError)
+      .updateWeighResultCompany({ ID: row.ID, 'Transportion Company': res.value }, userSession.token);
+  });
+}
 
 
 $(document).off('click', '#total-list-exportBtn').on('click', '#total-list-exportBtn', exportTotalListExcel);
