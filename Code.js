@@ -15,7 +15,7 @@ const XPPL_DB_HEADERS = [
   'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
   'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
   'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type',
-  'WeighStationCode','Note','CreateUser'
+  'WeighStationCode','Note','CreateUser','Transportion Company','Changed Date','Changed Time','Username'
 ];
 // === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
 // ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
@@ -2534,6 +2534,157 @@ function getXpplWeighingData(filter, sessionToken) {
   };
 }
 
+// ===== WEIGHING RESULT HELPERS =====
+function matchTransportionCompanies(sessionToken) {
+  const user = requireXpplRole_(sessionToken);
+  const main = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  const totalLast = totalSh.getLastRow();
+  const totalHead = totalLast > 0 ? totalSh.getRange(1,1,1,totalSh.getLastColumn()).getValues()[0] : [];
+  const idxPlateTL = totalHead.indexOf('Truck Plate');
+  const idxCompTL = totalHead.indexOf('Transportion Company');
+  const plateMap = new Map();
+  if (idxPlateTL > -1 && idxCompTL > -1 && totalLast > 1) {
+    const vals = totalSh.getRange(2,1,totalLast-1,totalSh.getLastColumn()).getValues();
+    vals.forEach(r => {
+      const plate = String(r[idxPlateTL]||'').replace(/\s/g,'').toUpperCase();
+      if (plate) plateMap.set(plate, String(r[idxCompTL]||'').trim());
+    });
+  }
 
+  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
+  const sh = ss.getSheetByName(XPPL_DB_SHEET);
+  const lr = sh.getLastRow();
+  if (lr < 2) return 'Không có dữ liệu.';
+
+  const headers = XPPL_DB_HEADERS;
+  const idxTruck = headers.indexOf('Truck No');
+  const idxComp = headers.indexOf('Transportion Company');
+  const idxDate = headers.indexOf('Changed Date');
+  const idxTime = headers.indexOf('Changed Time');
+  const idxUser = headers.indexOf('Username');
+
+  const data = sh.getRange(2,1,lr-1,headers.length).getValues();
+  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
+  const now = new Date();
+  const dStr = Utilities.formatDate(now, tz, 'dd/MM/yyyy');
+  const tStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
+  const uname = user.username || user.user || user.email || '';
+
+  data.forEach(r => {
+    const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
+    r[idxComp] = plateMap.get(plate) || 'Unknown';
+    r[idxDate] = dStr;
+    r[idxTime] = tStr;
+    r[idxUser] = uname;
+  });
+
+  sh.getRange(2,1,data.length,headers.length).setValues(data);
+  return 'Đã đối chiếu ' + data.length + ' dòng.';
+}
+
+function getWeighResultData(params) {
+  const session = validateSession(params.sessionToken);
+  const sh = SpreadsheetApp.openById(XPPL_DB_ID).getSheetByName(XPPL_DB_SHEET);
+  const lr = sh.getLastRow();
+  const rows = lr < 2 ? [] : sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
+  let data = rows.map(r => formatRowForClient_(r, XPPL_DB_HEADERS));
+
+  if (session.role === 'user') {
+    data = data.filter(o => String(o['Transportion Company']||'') === String(session.contractor||''));
+  }
+
+  const totalRecords = data.length;
+
+  const f = params.filter || {};
+  const from = _toDateKey(f.dateFrom);
+  const to = _toDateKey(f.dateTo);
+  const contracts = Array.isArray(f.contracts) && f.contracts.length ? f.contracts : null;
+  const companies = Array.isArray(f.companies) && f.companies.length ? f.companies : null;
+
+  if (from || to) {
+    data = data.filter(o => {
+      const dk = _toDateKey(o['Date Out']);
+      if (from && dk < from) return false;
+      if (to && dk > to) return false;
+      return true;
+    });
+  }
+  if (contracts) {
+    const set = new Set(contracts);
+    data = data.filter(o => set.has(o['ContractNo']||''));
+  }
+  if (companies) {
+    const set = new Set(companies);
+    data = data.filter(o => set.has(o['Transportion Company']||''));
+  }
+  if (params.onlyUnknown) {
+    data = data.filter(o => String(o['Transportion Company']||'').toLowerCase() === 'unknown');
+  }
+
+  const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
+  let filtered = q ? data.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(q))) : data;
+
+  const order = Array.isArray(params.order) ? params.order[0] : null;
+  if (order && order.column != null) {
+    const cols = ['ID','No.','W.ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
+    const key = cols[order.column >= cols.length ? cols.length-1 : order.column];
+    const dir = (order.dir || 'asc').toLowerCase();
+    filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true})) * (dir === 'desc' ? -1 : 1));
+  }
+
+  const start = Number(params.start || 0);
+  const length = Number(params.length || 50);
+  const page = filtered.slice(start, start + length);
+
+  return {
+    draw: Number(params.draw || 1),
+    recordsTotal: totalRecords,
+    recordsFiltered: filtered.length,
+    data: page
+  };
+}
+
+function updateWeighResultCompany(payload, sessionToken) {
+  const user = requireAdmin_(sessionToken);
+  const { ID, 'Transportion Company': company } = payload || {};
+  if (!ID) throw new Error('Thiếu ID.');
+
+  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
+  const sh = ss.getSheetByName(XPPL_DB_SHEET);
+  const lr = sh.getLastRow();
+  if (lr < 2) throw new Error('Không có dữ liệu.');
+
+  const ids = sh.getRange(2,1,lr-1,1).getValues().flat();
+  const rowIdx = ids.indexOf(ID);
+  if (rowIdx === -1) throw new Error('Không tìm thấy ID.');
+
+  const idxComp = XPPL_DB_HEADERS.indexOf('Transportion Company') + 1;
+  const idxDate = XPPL_DB_HEADERS.indexOf('Changed Date') + 1;
+  const idxTime = XPPL_DB_HEADERS.indexOf('Changed Time') + 1;
+  const idxUser = XPPL_DB_HEADERS.indexOf('Username') + 1;
+  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
+  const now = new Date();
+
+  sh.getRange(rowIdx + 2, idxComp).setValue(company);
+  sh.getRange(rowIdx + 2, idxDate).setValue(Utilities.formatDate(now, tz, 'dd/MM/yyyy'));
+  sh.getRange(rowIdx + 2, idxTime).setValue(Utilities.formatDate(now, tz, 'HH:mm:ss'));
+  sh.getRange(rowIdx + 2, idxUser).setValue(user.username || user.user || user.email || '');
+
+  return 'Đã cập nhật.';
+}
+
+function deleteWeighResults(ids, sessionToken) {
+  const user = requireAdmin_(sessionToken);
+  if (!Array.isArray(ids) || !ids.length) return 'Không có ID.';
+  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
+  const sh = ss.getSheetByName(XPPL_DB_SHEET);
+  const lr = sh.getLastRow();
+  if (lr < 2) return 'Không có dữ liệu.';
+  const idList = sh.getRange(2,1,lr-1,1).getValues().flat();
+  const rows = ids.map(id => idList.indexOf(id)).filter(i => i !== -1).map(i => i + 2).sort((a,b) => b - a);
+  rows.forEach(r => sh.deleteRow(r));
+  return 'Đã xoá ' + rows.length + ' dòng.';
+}
 
 /*** END ***/
