@@ -1,4 +1,11 @@
 <div class="container-fluid">
+  <style>
+    #wr-result-table th, #wr-result-table td,
+    #wr-unknown-table th, #wr-unknown-table td {
+      font-size: 0.875rem;
+      white-space: nowrap;
+    }
+  </style>  
   <!-- Filter Bar -->
   <div class="card mb-3">
     <div class="card-header"><i class="fas fa-filter me-1"></i> Bộ lọc</div>
@@ -43,24 +50,32 @@
   <!-- Action Button -->
   <div class="text-center mb-3">
     <button id="wr-match-company" class="btn btn-primary btn-sm">Tìm và gắn dữ liệu đơn vị vận chuyển</button>
+    <button id="wr-unknown-btn" class="btn btn-warning btn-sm ms-2 d-none">Xe không xác định đơn vị vận chuyển</button>
   </div>
 
-  <!-- Unknown Vehicles Table -->
-  <div id="wr-unknown-card" class="card mb-4 d-none">
-    <div class="card-header"><i class="fas fa-exclamation-triangle me-1"></i> Xe không xác định đơn vị vận chuyển</div>
-    <div class="card-body">
-      <div class="tl-toolbar mb-3">
-        <div class="tl-toolbar__inner">
-          <div class="tl-actions">
-            <button id="wr-unknown-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật</button>
-            <button id="wr-unknown-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn</button>
-            <button id="wr-unknown-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
-          </div>
-          <div class="tl-toolbar__spacer"></div>
+  <!-- Unknown Vehicles Modal -->
+  <div class="modal fade" id="wr-unknown-modal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-1"></i> Xe không xác định đơn vị vận chuyển</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-      </div>
-      <div class="table-responsive">
-        <table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"></table>
+        <div class="modal-body">
+          <div class="tl-toolbar mb-3">
+            <div class="tl-toolbar__inner">
+              <div class="tl-actions">
+                <button id="wr-unknown-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật</button>
+                <button id="wr-unknown-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn</button>
+                <button id="wr-unknown-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
+              </div>
+              <div class="tl-toolbar__spacer"></div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"></table>
+          </div>
+        </div>
       </div>
     </div>
   </div>
