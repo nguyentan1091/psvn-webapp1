@@ -159,11 +159,11 @@ function formatRowForClient_(rowArray, headers) {
   for (var i=0;i<headers.length;i++){
     var key = headers[i];
     var val = rowArray[i];
-    if (key === 'Register Date' || key === 'Date In' || key === 'Date Out') {
+    if (key === 'Register Date' || key === 'Date In' || key === 'Date Out' || key === 'Changed Date') {
       out[key] = formatDateForClient(val);
       continue;
     }
-    if (key === 'Time' || key === 'Time In' || key === 'Time Out') {
+    if (key === 'Time' || key === 'Time In' || key === 'Time Out' || key === 'Changed Time') {
       out[key] = formatTimeForClient(val);
       continue;
     }
@@ -2620,6 +2620,8 @@ function getWeighResultData(params) {
   }
   if (params.onlyUnknown) {
     data = data.filter(o => String(o['Transportion Company']||'').toLowerCase() === 'unknown');
+  } else if (params.excludeUnknown) {
+    data = data.filter(o => String(o['Transportion Company']||'').toLowerCase() !== 'unknown');
   }
 
   const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
@@ -2627,10 +2629,13 @@ function getWeighResultData(params) {
 
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
-    const cols = ['ID','No.','W.ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
-    const key = cols[order.column >= cols.length ? cols.length-1 : order.column];
-    const dir = (order.dir || 'asc').toLowerCase();
-    filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true})) * (dir === 'desc' ? -1 : 1));
+    const offset = session.role === 'admin' ? 2 : 0;
+    const idx = Number(order.column) - offset;
+    if (idx >= 0 && idx < XPPL_DB_HEADERS.length) {
+      const key = XPPL_DB_HEADERS[idx];
+      const dir = (order.dir || 'asc').toLowerCase();
+      filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true})) * (dir === 'desc' ? -1 : 1));
+    }
   }
 
   const start = Number(params.start || 0);
@@ -2639,8 +2644,8 @@ function getWeighResultData(params) {
 
   return {
     draw: Number(params.draw || 1),
-    recordsTotal: totalRecords,
-    recordsFiltered: filtered.length,
+    recordsTotal: Number(totalRecords) || 0,
+    recordsFiltered: Number(filtered.length) || 0,
     data: page
   };
 }
