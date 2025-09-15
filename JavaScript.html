@@ -3785,8 +3785,7 @@ function initWeighResultPage() {
   yesterday.setDate(yesterday.getDate() - 1);
   $('#wr-date-from').val(formatDateInput(yesterday));
   $('#wr-date-to').val(formatDateInput(yesterday));
-  $('#wr-quick button').removeClass('active');
-  $('#wr-quick button[data-range="yesterday"]').addClass('active');
+  $('#wr-adv-toggle').attr('aria-expanded', 'false');
 
   google.script.run
     .withSuccessHandler(list => {
@@ -3820,36 +3819,26 @@ function initWeighResultPage() {
 
   $('#wr-adv-toggle').off('click').on('click', function(e){
     e.preventDefault();
-    $('#wr-advanced').toggleClass('d-none');
+    const $adv = $('#wr-advanced');
+    const isHidden = $adv.toggleClass('d-none').hasClass('d-none');
+    $(this).text(isHidden ? 'Bộ lọc nâng cao' : 'Ẩn bộ lọc nâng cao');
+    $(this).attr('aria-expanded', String(!isHidden));
   });
 
   $('#wr-match-company').off('click').on('click', function(e){
     e.preventDefault();
     showLoading('Đang đối chiếu...');
+    const filter = getWrFilters();
     google.script.run
       .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
       .withFailureHandler(showError)
-      .matchTransportionCompanies(userSession.token);
+      .matchTransportionCompanies(filter, userSession.token);
   });
 
   $('#wr-search').off('keyup').on('keyup', function(){
     const val = this.value;
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.search(val).draw();
     if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
-  });
-
-  $('#wr-quick button').off('click').on('click', function(){
-    $('#wr-quick button').removeClass('active');
-    $(this).addClass('active');
-    const range = $(this).data('range');
-    const today = new Date();
-    let from, to;
-    if (range === 'today') { from = to = today; }
-    else if (range === 'yesterday') { from = to = new Date(today.getTime() - 86400000); }
-    else { to = today; from = new Date(today.getTime() - 4*86400000); }
-    $('#wr-date-from').val(formatDateInput(from));
-    $('#wr-date-to').val(formatDateInput(to));
-    reloadWrTables();
   });
 
   $('#wr-date-from, #wr-date-to, #wr-contracts, #wr-companies').off('change').on('change', reloadWrTables);
@@ -3904,20 +3893,106 @@ function deleteWrRows(table){
 }
 
 function exportWrTable(table, name){
-  const colDefs = table.settings().init().columns;
+  if (!table) return;
+  const settings = table.settings();
+  if (!settings || !settings.length) return;
+
+  const init = typeof table.settings().init === 'function' ? table.settings().init() : null;
+  let colDefs = [];
+  if (init && Array.isArray(init.columns)) {
+    colDefs = init.columns;
+  } else {
+    colDefs = $(table.table().node()).data('wrColumns') || [];
+  }
   const visibleIdx = table.columns(':visible').indexes().toArray()
     .filter(i => !$(table.column(i).header()).hasClass('no-export'));
+  if (!visibleIdx.length) {
+    Swal.fire('Không có cột để xuất', 'Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.', 'info');
+    return;
+  }
+
   const headers = visibleIdx.map(i => $(table.column(i).header()).text().trim());
-  const data = table.rows({search:'applied'}).data().toArray()
-    .map(row => visibleIdx.map(i => {
-      const key = colDefs[i].data;
-      if (typeof key === 'function') return key(row);
-      return key ? (row[key] ?? '') : '';
-    }));
-  const sheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, sheet, name);
-  XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const searchValue = table.search() || '';
+  const order = (table.order() || []).map(([column, dir]) => ({ column, dir }));
+
+  const extra = {};
+  const tableId = table.table().node().id;
+  if (tableId === 'wr-unknown-table') {
+    extra.onlyUnknown = true;
+  } else if (tableId === 'wr-result-table') {
+    extra.excludeUnknown = true;
+  }
+
+  showLoading('Đang xuất dữ liệu...');
+
+  const req = {
+    draw: 0,
+    start: 0,
+    length: -1,
+    search: { value: searchValue },
+    order: order,
+    sessionToken: userSession.token,
+    filter: getWrFilters(),
+    ...extra
+  };
+
+  google.script.run
+    .withSuccessHandler(res => {
+      Swal.close();
+      const rows = (res && Array.isArray(res.data)) ? res.data : [];
+      if (!rows.length) {
+        Swal.fire('Không có dữ liệu', 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
+        return;
+      }
+
+      const data = rows.map(row => visibleIdx.map(i => {
+        const def = colDefs[i] || {};
+        const key = def.data;
+        if (typeof key === 'function') {
+          try { return key(row); }
+          catch (err) { return ''; }
+        }
+        return key ? (row[key] ?? '') : '';
+      }));
+
+      const sheetData = [headers, ...data];
+      const sheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+      const range = XLSX.utils.decode_range(sheet['!ref']);
+      const border = {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } }
+      };
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = sheet[cellRef];
+          if (!cell) continue;
+          cell.s = cell.s || {};
+          cell.s.border = border;
+        }
+      }
+
+      const colWidths = headers.map((header, idx) => {
+        let maxLen = header ? header.length : 0;
+        for (let r = 0; r < data.length; r++) {
+          const val = data[r][idx];
+          const len = (val == null) ? 0 : String(val).length;
+          if (len > maxLen) maxLen = len;
+        }
+        const wch = Math.min(Math.max(maxLen + 2, 10), 60);
+        return { wch };
+      });
+      sheet['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, sheet, name);
+      XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    })
+    .withFailureHandler(err => { Swal.close(); showError(err); })
+    .getWeighResultData(req);
 }
 
 function normalizeDtResponse(res, draw){
@@ -3947,6 +4022,7 @@ function buildWeighResultTables(isAdmin) {
 
   const resTable = `<table id="wr-result-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${cols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
   resWrap.html(resTable);
+  $('#wr-result-table').data('wrColumns', cols);  
 
   wrResultTable = $('#wr-result-table').DataTable({
     processing:true,
@@ -3968,6 +4044,7 @@ function buildWeighResultTables(isAdmin) {
       };
       google.script.run
         .withSuccessHandler(res => {
+          updateWrSummary(res.counts);          
           res = {
             draw: Number(res.draw) || dtReq.draw || 0,
             recordsTotal: Number(res.recordsTotal) || 0,
@@ -4009,6 +4086,7 @@ function buildWeighResultTables(isAdmin) {
     uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
     const uTable = `<table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${uCols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
     uWrap.html(uTable);
+    $('#wr-unknown-table').data('wrColumns', uCols);
 
     wrUnknownTable = $('#wr-unknown-table').DataTable({
       processing:true,
@@ -4031,6 +4109,7 @@ function buildWeighResultTables(isAdmin) {
         };
         google.script.run
           .withSuccessHandler(res => {
+            updateWrSummary(res.counts);            
             res = {
               draw: Number(res.draw) || dtReq.draw || 0,
               recordsTotal: Number(res.recordsTotal) || 0,
