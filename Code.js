@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = ' '; 
+const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -2535,7 +2535,7 @@ function getXpplWeighingData(filter, sessionToken) {
 }
 
 // ===== WEIGHING RESULT HELPERS =====
-function matchTransportionCompanies(sessionToken) {
+function matchTransportionCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
   const main = SpreadsheetApp.openById(SPREADSHEET_ID);
   const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
@@ -2560,9 +2560,14 @@ function matchTransportionCompanies(sessionToken) {
   const headers = XPPL_DB_HEADERS;
   const idxTruck = headers.indexOf('Truck No');
   const idxComp = headers.indexOf('Transportion Company');
+  const idxDateOut = headers.indexOf('Date Out');
   const idxDate = headers.indexOf('Changed Date');
   const idxTime = headers.indexOf('Changed Time');
   const idxUser = headers.indexOf('Username');
+
+  const f = filter || {};
+  const from = _toDateKey(f.dateFrom);
+  const to = _toDateKey(f.dateTo);
 
   const data = sh.getRange(2,1,lr-1,headers.length).getValues();
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
@@ -2571,16 +2576,22 @@ function matchTransportionCompanies(sessionToken) {
   const tStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
   const uname = user.username || user.user || user.email || '';
 
+  let count = 0;
   data.forEach(r => {
+    const dk = _toDateKey(r[idxDateOut]);
+    if (from && dk < from) return;
+    if (to && dk > to) return;
     const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
+    if (!plate) return;
     r[idxComp] = plateMap.get(plate) || 'Unknown';
     r[idxDate] = dStr;
     r[idxTime] = tStr;
     r[idxUser] = uname;
+    count++;
   });
 
   sh.getRange(2,1,data.length,headers.length).setValues(data);
-  return 'Đã đối chiếu ' + data.length + ' dòng.';
+  return 'Đã đối chiếu ' + count + ' dòng.';
 }
 
 function getWeighResultData(params) {
@@ -2618,14 +2629,22 @@ function getWeighResultData(params) {
     const set = new Set(companies);
     data = data.filter(o => set.has(o['Transportion Company']||''));
   }
-  if (params.onlyUnknown) {
-    data = data.filter(o => String(o['Transportion Company']||'').toLowerCase() === 'unknown');
-  } else if (params.excludeUnknown) {
-    data = data.filter(o => String(o['Transportion Company']||'').toLowerCase() !== 'unknown');
-  }
-
   const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
   let filtered = q ? data.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(q))) : data;
+
+  const counts = { unassigned:0, unknown:0, assigned:0 };
+  filtered.forEach(o => {
+    const comp = String(o['Transportion Company'] || '').trim();
+    if (!comp) counts.unassigned++;
+    else if (comp.toLowerCase() === 'unknown') counts.unknown++;
+    else counts.assigned++;
+  });
+
+  if (params.onlyUnknown) {
+    filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() === 'unknown');
+  } else if (params.excludeUnknown) {
+    filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() !== 'unknown');
+  }
 
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
@@ -2646,7 +2665,8 @@ function getWeighResultData(params) {
     draw: Number(params.draw || 1),
     recordsTotal: Number(totalRecords) || 0,
     recordsFiltered: Number(filtered.length) || 0,
-    data: page
+    data: page,
+    counts: counts
   };
 }
 
