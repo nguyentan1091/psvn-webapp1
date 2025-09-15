@@ -2535,7 +2535,7 @@ function getXpplWeighingData(filter, sessionToken) {
 }
 
 // ===== WEIGHING RESULT HELPERS =====
-function matchTransportionCompanies(sessionToken) {
+function matchTransportionCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
   const main = SpreadsheetApp.openById(SPREADSHEET_ID);
   const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
@@ -2563,6 +2563,11 @@ function matchTransportionCompanies(sessionToken) {
   const idxDate = headers.indexOf('Changed Date');
   const idxTime = headers.indexOf('Changed Time');
   const idxUser = headers.indexOf('Username');
+  const idxDateOut = headers.indexOf('Date Out');
+
+  const f = filter || {};
+  const from = _toDateKey(f.dateFrom);
+  const to = _toDateKey(f.dateTo);  
 
   const data = sh.getRange(2,1,lr-1,headers.length).getValues();
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
@@ -2571,36 +2576,81 @@ function matchTransportionCompanies(sessionToken) {
   const tStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
   const uname = user.username || user.user || user.email || '';
 
-  data.forEach(r => {
+  const updates = [];
+  data.forEach((r,i) => {
+    const dk = _toDateKey(r[idxDateOut]);
+    if (from && dk < from) return;
+    if (to && dk > to) return;
     const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
     r[idxComp] = plateMap.get(plate) || 'Unknown';
     r[idxDate] = dStr;
     r[idxTime] = tStr;
     r[idxUser] = uname;
+    updates.push({row: i+2, values: r});
   });
 
-  sh.getRange(2,1,data.length,headers.length).setValues(data);
-  return 'Đã đối chiếu ' + data.length + ' dòng.';
+  if (!updates.length) return 'Không tìm thấy dữ liệu phù hợp.';
+
+  updates.sort((a,b) => a.row - b.row);
+  let start = updates[0].row;
+  let block = [updates[0].values];
+  for (let j = 1; j < updates.length; j++) {
+    const cur = updates[j];
+    const prev = updates[j-1];
+    if (cur.row === prev.row + 1) {
+      block.push(cur.values);
+    } else {
+      sh.getRange(start,1,block.length,headers.length).setValues(block);
+      start = cur.row;
+      block = [cur.values];
+    }
+  }
+  sh.getRange(start,1,block.length,headers.length).setValues(block);
+
+  return 'Đã đối chiếu ' + updates.length + ' dòng.';
 }
 
 function getWeighResultData(params) {
   const session = validateSession(params.sessionToken);
   const sh = SpreadsheetApp.openById(XPPL_DB_ID).getSheetByName(XPPL_DB_SHEET);
   const lr = sh.getLastRow();
-  const rows = lr < 2 ? [] : sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
-  let data = rows.map(r => formatRowForClient_(r, XPPL_DB_HEADERS));
-
-  if (session.role === 'user') {
-    data = data.filter(o => String(o['Transportion Company']||'') === String(session.contractor||''));
-  }
-
-  const totalRecords = data.length;
-
+  const headers = XPPL_DB_HEADERS;
   const f = params.filter || {};
   const from = _toDateKey(f.dateFrom);
   const to = _toDateKey(f.dateTo);
   const contracts = Array.isArray(f.contracts) && f.contracts.length ? f.contracts : null;
   const companies = Array.isArray(f.companies) && f.companies.length ? f.companies : null;
+
+  if (!from && !to && !contracts && !companies && !(params.search && params.search.value)) {
+    return { draw:Number(params.draw||1), recordsTotal:0, recordsFiltered:0, data:[], counts:{unassigned:0, unknown:0, assigned:0} };
+  }
+
+  let rows = [];
+  if (lr >= 2) {
+    if (from || to) {
+      const idxDateOut = headers.indexOf('Date Out') + 1;
+      const dates = sh.getRange(2, idxDateOut, lr-1, 1).getValues().map(r => r[0]);
+      let start = 0, end = dates.length - 1;
+      if (from) {
+        while (start <= end && _toDateKey(dates[start]) < from) start++;
+      }
+      if (to) {
+        while (end >= start && _toDateKey(dates[end]) > to) end--;
+      }
+      if (end >= start) {
+        rows = sh.getRange(start + 2, 1, end - start + 1, headers.length).getValues();
+      }
+    } else {
+      rows = sh.getRange(2,1,lr-1,headers.length).getValues();
+    }
+  }
+
+  let data = rows.map(r => formatRowForClient_(r, headers));
+  if (session.role === 'user') {
+    data = data.filter(o => String(o['Transportion Company']||'') === String(session.contractor||''));
+  }
+
+  let totalRecords = data.length;
 
   if (from || to) {
     data = data.filter(o => {
@@ -2609,7 +2659,9 @@ function getWeighResultData(params) {
       if (to && dk > to) return false;
       return true;
     });
+    totalRecords = data.length;
   }
+  
   if (contracts) {
     const set = new Set(contracts);
     data = data.filter(o => set.has(o['ContractNo']||''));
