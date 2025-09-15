@@ -2535,7 +2535,7 @@ function getXpplWeighingData(filter, sessionToken) {
 }
 
 // ===== WEIGHING RESULT HELPERS =====
-function matchTransportionCompanies(filter, sessionToken) {
+function matchTransportionCompanies(sessionToken) {
   const user = requireXpplRole_(sessionToken);
   const main = SpreadsheetApp.openById(SPREADSHEET_ID);
   const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
@@ -2560,14 +2560,9 @@ function matchTransportionCompanies(filter, sessionToken) {
   const headers = XPPL_DB_HEADERS;
   const idxTruck = headers.indexOf('Truck No');
   const idxComp = headers.indexOf('Transportion Company');
-  const idxDateOut = headers.indexOf('Date Out');
   const idxDate = headers.indexOf('Changed Date');
   const idxTime = headers.indexOf('Changed Time');
   const idxUser = headers.indexOf('Username');
-
-  const f = filter || {};
-  const from = _toDateKey(f.dateFrom);
-  const to = _toDateKey(f.dateTo);
 
   const data = sh.getRange(2,1,lr-1,headers.length).getValues();
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
@@ -2576,22 +2571,16 @@ function matchTransportionCompanies(filter, sessionToken) {
   const tStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
   const uname = user.username || user.user || user.email || '';
 
-  let count = 0;
   data.forEach(r => {
-    const dk = _toDateKey(r[idxDateOut]);
-    if (from && dk < from) return;
-    if (to && dk > to) return;
     const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
-    if (!plate) return;
     r[idxComp] = plateMap.get(plate) || 'Unknown';
     r[idxDate] = dStr;
     r[idxTime] = tStr;
     r[idxUser] = uname;
-    count++;
   });
 
   sh.getRange(2,1,data.length,headers.length).setValues(data);
-  return 'Đã đối chiếu ' + count + ' dòng.';
+  return 'Đã đối chiếu ' + data.length + ' dòng.';
 }
 
 function getWeighResultData(params) {
@@ -2643,7 +2632,7 @@ function getWeighResultData(params) {
   if (params.onlyUnknown) {
     filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() === 'unknown');
   } else if (params.excludeUnknown) {
-    filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() !== 'unknown');
+   filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() !== 'unknown');
   }
 
   const order = Array.isArray(params.order) ? params.order[0] : null;
