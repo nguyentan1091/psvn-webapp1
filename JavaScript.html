@@ -3779,7 +3779,7 @@ function initWeighResultPage() {
   $('#wr-delete').toggleClass('d-none', !isAdmin);
   $('#wr-unknown-delete').toggleClass('d-none', !isAdmin);
   $('#wr-match-company').toggleClass('d-none', !isAdmin);
-  $('#wr-summary').toggleClass('d-none', !isAdmin);
+  $('#wr-summary').toggleClass('d-none', !isAdmin);  
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -3809,17 +3809,14 @@ function initWeighResultPage() {
 
   if (isAdmin) {
     $('#wr-unknown-btn').off('click').on('click', function(){
-      if (!$.fn.DataTable.isDataTable('#wr-unknown-table')) {
-        buildWrUnknownTable();
-      } else {
-        wrUnknownTable.ajax.reload();
-      }
       const modalEl = document.getElementById('wr-unknown-modal');
       const modal = new bootstrap.Modal(modalEl);
       modal.show();
-      wrUnknownTable.columns.adjust();
+      if ($.fn.DataTable.isDataTable('#wr-unknown-table')) {
+        wrUnknownTable.columns.adjust();
+      }
     });
-  }
+  }  
 
   $('#wr-adv-toggle').off('click').on('click', function(e){
     e.preventDefault();
@@ -3828,12 +3825,11 @@ function initWeighResultPage() {
 
   $('#wr-match-company').off('click').on('click', function(e){
     e.preventDefault();
-    if (!isAdmin) return;
     showLoading('Đang đối chiếu...');
     google.script.run
       .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
       .withFailureHandler(showError)
-      .matchTransportionCompanies(getWrFilters(), userSession.token);
+      .matchTransportionCompanies(userSession.token);
   });
 
   $('#wr-search').off('keyup').on('keyup', function(){
@@ -3882,12 +3878,9 @@ function getWrFilters(){
 }
 
 function updateWrSummary(counts){
-  const unassigned = Number(counts && counts.unassigned) || 0;
-  const unknown = Number(counts && counts.unknown) || 0;
-  const assigned = Number(counts && counts.assigned) || 0;
-  $('#wr-sum-unassign').text(unassigned);
-  $('#wr-sum-unknown').text(unknown);
-  $('#wr-sum-assigned').text(assigned);
+  $('#wr-sum-unassign').text(counts?.unassigned || 0);
+  $('#wr-sum-unknown').text(counts?.unknown || 0);
+  $('#wr-sum-assigned').text(counts?.assigned || 0);
 }
 
 function reloadWrTables(){
@@ -3975,22 +3968,17 @@ function buildWeighResultTables(isAdmin) {
       };
       google.script.run
         .withSuccessHandler(res => {
-          const counts = res?.counts || {};          
           res = {
-          const counts = res && res.counts ? res.counts : {};
-          const dt = {
             draw: Number(res.draw) || dtReq.draw || 0,
             recordsTotal: Number(res.recordsTotal) || 0,
             recordsFiltered: Number(res.recordsFiltered) || 0,
             data: res.data || []
           };
-          updateWrSummary(counts);          
-          callback(dt);
+          callback(res);
         })
         .withFailureHandler(err => {
           showError(err);
           callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
-          updateWrSummary({});
         })
         .getWeighResultData(req);
     },
@@ -4009,72 +3997,69 @@ function buildWeighResultTables(isAdmin) {
     if (!row) return;
     showWrEditDialog(row);
   });
-}
 
-function buildWrUnknownTable(){
-  if ($.fn.DataTable.isDataTable('#wr-unknown-table')) return;
+  if (isAdmin) {
+    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) $('#wr-unknown-table').DataTable().destroy();
+    const uWrap = $('#wr-unknown-table').parent();
+    const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
+    let uCols = [
+      { data:null, title:'Select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
+      { data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>`}
+    ];
+    uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
+    const uTable = `<table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${uCols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+    uWrap.html(uTable);
 
-  const uWrap = $('#wr-unknown-table').parent();
-  const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
-  let uCols = [
-    { data:null, title:'Select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
-    { data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>`}
-  ];
-  uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
-  const uTable = `<table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${uCols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
-  uWrap.html(uTable);
+    wrUnknownTable = $('#wr-unknown-table').DataTable({
+      processing:true,
+      serverSide:true,
+      pageLength:50,
+      autoWidth:false,
+      deferRender:true,
+      columnDefs:[{ targets:'_all', className:'text-nowrap' }],
+  
+      ajax: function(dtReq, callback){
+        const req = {
+          draw: dtReq.draw,
+          start: dtReq.start,
+          length: dtReq.length,
+          search: dtReq.search,
+          order: dtReq.order,
+          sessionToken: userSession.token,
+          filter: getWrFilters(),
+          onlyUnknown: true
+        };
+        google.script.run
+          .withSuccessHandler(res => {
+            res = {
+              draw: Number(res.draw) || dtReq.draw || 0,
+              recordsTotal: Number(res.recordsTotal) || 0,
+              recordsFiltered: Number(res.recordsFiltered) || 0,
+              data: res.data || []
+            };
+            callback(res);
+          })
+          .withFailureHandler(err => {
+            showError(err);
+            callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
+          })
+          .getWeighResultData(req);
+      },
+      columns: uCols,
+      drawCallback:function(){ this.api().columns.adjust(); }
+    });
+    wrUnknownTable.columns.adjust();
 
-  wrUnknownTable = $('#wr-unknown-table').DataTable({
-    processing:true,
-    serverSide:true,
-    pageLength:50,
-    autoWidth:false,
-    deferRender:true,
-    columnDefs:[{ targets:'_all', className:'text-nowrap' }],
-    ajax: function(dtReq, callback){
-      const req = {
-        draw: dtReq.draw,
-        start: dtReq.start,
-        length: dtReq.length,
-        search: dtReq.search,
-        order: dtReq.order,
-        sessionToken: userSession.token,
-        filter: getWrFilters(),
-        onlyUnknown: true
-      };
-      google.script.run
-        .withSuccessHandler(res => {
-          const counts = res?.counts || {};
-          res = {
-            draw: Number(res.draw) || dtReq.draw || 0,
-            recordsTotal: Number(res.recordsTotal) || 0,
-            recordsFiltered: Number(res.recordsFiltered) || 0,
-            data: res.data || []
-          };
-          updateWrSummary(counts);
-          callback(res);
-        })
-        .withFailureHandler(err => {
-          showError(err);
-          callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
-        })
-        .getWeighResultData(req);
-    },
-    columns: uCols,
-    drawCallback:function(){ this.api().columns.adjust(); }
-  });
-  wrUnknownTable.columns.adjust();
+    $('#wr-unknown-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
+      $(this).closest('tr').toggleClass('selected', this.checked);
+    });
 
-  $('#wr-unknown-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
-    $(this).closest('tr').toggleClass('selected', this.checked);
-  });
-
-  $('#wr-unknown-table tbody').off('click','.wru-edit').on('click','.wru-edit', function(){
-    const row = wrUnknownTable.row($(this).closest('tr')).data();
-    if (!row) return;
-    showWrEditDialog(row);
-  });
-
+    $('#wr-unknown-table tbody').off('click','.wru-edit').on('click','.wru-edit', function(){
+      const row = wrUnknownTable.row($(this).closest('tr')).data();
+      if (!row) return;
+      showWrEditDialog(row);
+    });
+  }
 }
 
 function showWrEditDialog(row){
