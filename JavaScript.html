@@ -19,6 +19,7 @@
 let userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
 let inactivityTimer;
 let registeredVehicleTable, totalListTable, usersTable;
+let wrResultTable, wrUnknownTable;
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
@@ -1865,7 +1866,6 @@ function initTotalListPage() {
         serverSide: true,
         searching: true,
         ordering: true,
-        autoWidth: false,
         deferRender: true,
         paging: true,
         pageLength: parseInt($('#total-list-page-length-select').val() || '50', 10),
@@ -3172,7 +3172,6 @@ function initXPPLWeighingStationPage() {
       data: h.includes('.') ? function(row){ return row[h]; } : h,
       title: h
     })),
-    scrollX: true,
     autoWidth: true,
     pageLength: 50,
     lengthChange: false,
@@ -3776,7 +3775,7 @@ function initWeighResultPage() {
   const isAdmin = (role === 'admin');
   const isAdminXppl = (role === 'admin-xppl');
 
-  $('#wr-unknown-card').toggle(isAdmin);
+  $('#wr-unknown-btn').toggleClass('d-none', !isAdmin);
   $('#wr-delete').toggleClass('d-none', !isAdmin);
   $('#wr-unknown-delete').toggleClass('d-none', !isAdmin);
 
@@ -3805,6 +3804,17 @@ function initWeighResultPage() {
     .getActiveContractNos(userSession.token);
 
   buildWeighResultTables(isAdmin);
+
+  if (isAdmin) {
+    $('#wr-unknown-btn').off('click').on('click', function(){
+      const modalEl = document.getElementById('wr-unknown-modal');
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+      if ($.fn.DataTable.isDataTable('#wr-unknown-table')) {
+        wrUnknownTable.columns.adjust();
+      }
+    });
+  }  
 
   $('#wr-adv-toggle').off('click').on('click', function(e){
     e.preventDefault();
@@ -3891,58 +3901,89 @@ function exportWrTable(table, name){
     .filter(i => !$(table.column(i).header()).hasClass('no-export'));
   const headers = visibleIdx.map(i => $(table.column(i).header()).text().trim());
   const data = table.rows({search:'applied'}).data().toArray()
-    .map(row => visibleIdx.map(i => { const key = colDefs[i].data; return key ? (row[key] ?? '') : ''; }));
+    .map(row => visibleIdx.map(i => {
+      const key = colDefs[i].data;
+      if (typeof key === 'function') return key(row);
+      return key ? (row[key] ?? '') : '';
+    }));
   const sheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheet, name);
   XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
+function normalizeDtResponse(res, draw){
+  if (!res || typeof res !== 'object') {
+    return { draw, recordsTotal:0, recordsFiltered:0, data:[] };
+  }
+  return {
+    draw: Number(res.draw ?? draw ?? 1),
+    recordsTotal: Number(res.recordsTotal ?? 0),
+    recordsFiltered: Number(res.recordsFiltered ?? res.recordsTotal ?? 0),
+    data: Array.isArray(res.data) ? res.data : []
+  };
+}
+
 function buildWeighResultTables(isAdmin) {
+  const headers = ['ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out','Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name','DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo','ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode','Note','CreateUser','Transportion Company','Changed Date','Changed Time','Username'];
+
   if ($.fn.DataTable.isDataTable('#wr-result-table')) $('#wr-result-table').DataTable().destroy();
+  const resWrap = $('#wr-result-table').parent();  
 
-  const columns = [
-    { data: null, title: 'Select', orderable:false, className:'no-export text-center', visible:isAdmin,
-      render: () => `<input type="checkbox" class="row-checkbox form-check-input">` },
-    { data: null, title: translations[currentLang].action_column || 'Hành động', orderable:false,
-      className:'no-export text-center', visible:isAdmin,
-      render: () => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>` },
+  let cols = [];
+  if (isAdmin) {
+    cols.push({ data:null, title:'Select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`});
+    cols.push({ data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>`});
+  }
+  cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID') ? { data: row => row[h], title:h } : { data:h, title:h }));
 
-    { data:'ID', title:'ID' },
-    { data:'No.', title:'No.' },
-    { data:'W.ID', title:'W.ID' },
-    { data:'Truck No', title:'Truck No' },
-    { data:'Date Out', title:'Date Out' },
-    { data:'Net Weight', title:'Net Weight' },
-    { data:'Customer Name', title:'Customer Name' },
-    { data:'ContractNo', title:'ContractNo' },
-    { data:'Transportion Company', title:'Transportion Company' },
-    { data:'Changed Date', title:'Changed Date' },
-    { data:'Changed Time', title:'Changed Time' },
-    { data:'Username', title:'Username' }
-  ];
+  const resTable = `<table id="wr-result-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${cols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+  resWrap.html(resTable);
 
   wrResultTable = $('#wr-result-table').DataTable({
     processing:true,
     serverSide:true,
     pageLength:50,
-    scrollX:true,
+    autoWidth:false,
+    deferRender:true,
+    columnDefs:[{ targets:'_all', className:'text-nowrap' }],
     ajax: function(dtReq, callback){
-      dtReq.sessionToken = userSession.token;
-      dtReq.filter = getWrFilters();
+      const req = {
+        draw: dtReq.draw,
+        start: dtReq.start,
+        length: dtReq.length,
+        search: dtReq.search,
+        order: dtReq.order,
+        sessionToken: userSession.token,
+        filter: getWrFilters(),
+        excludeUnknown: true
+      };
       google.script.run
-        .withSuccessHandler(res => callback(res))
-        .withFailureHandler(err => { showError(err); callback({draw:dtReq.draw,recordsTotal:0,recordsFiltered:0,data:[]}); })
-        .getWeighResultData(dtReq);
+        .withSuccessHandler(res => {
+          res = {
+            draw: Number(res.draw) || dtReq.draw || 0,
+            recordsTotal: Number(res.recordsTotal) || 0,
+            recordsFiltered: Number(res.recordsFiltered) || 0,
+            data: res.data || []
+          };
+          callback(res);
+        })
+        .withFailureHandler(err => {
+          showError(err);
+          callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
+        })
+        .getWeighResultData(req);
     },
-    columns: columns
+    columns: cols,
+    drawCallback:function(){ this.api().columns.adjust(); }    
   });
+  wrResultTable.columns.adjust();
 
-  $('#wr-result-table tbody').off('change', '.row-checkbox').on('change', '.row-checkbox', function(){
+  $('#wr-result-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
     $(this).closest('tr').toggleClass('selected', this.checked);
   });
 
-  $('#wr-result-table tbody').off('click', '.wr-edit').on('click', '.wr-edit', function(){
+  $('#wr-result-table tbody').off('click','.wr-edit').on('click','.wr-edit', function(){
     if (!isAdmin) return;
     const row = wrResultTable.row($(this).closest('tr')).data();
     if (!row) return;
@@ -3951,46 +3992,61 @@ function buildWeighResultTables(isAdmin) {
 
   if (isAdmin) {
     if ($.fn.DataTable.isDataTable('#wr-unknown-table')) $('#wr-unknown-table').DataTable().destroy();
-    const uCols = [
-      { data: null, title: 'Select', orderable:false, className:'no-export text-center',
-        render: () => `<input type="checkbox" class="row-checkbox form-check-input">` },
-      { data: null, title: translations[currentLang].action_column || 'Hành động', orderable:false,
-        className:'no-export text-center',
-        render: () => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>` },
-      { data:'ID', title:'ID' },
-      { data:'Truck No', title:'Truck No' },
-      { data:'Date Out', title:'Date Out' },
-      { data:'Net Weight', title:'Net Weight' },
-      { data:'Customer Name', title:'Customer Name' },
-      { data:'ContractNo', title:'ContractNo' },
-      { data:'Transportion Company', title:'Transportion Company' },
-      { data:'Changed Date', title:'Changed Date' },
-      { data:'Changed Time', title:'Changed Time' },
-      { data:'Username', title:'Username' }
+    const uWrap = $('#wr-unknown-table').parent();
+    const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
+    let uCols = [
+      { data:null, title:'Select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
+      { data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>`}
     ];
+    uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
+    const uTable = `<table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${uCols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+    uWrap.html(uTable);
 
     wrUnknownTable = $('#wr-unknown-table').DataTable({
       processing:true,
       serverSide:true,
       pageLength:50,
-      scrollX:true,
+      autoWidth:false,
+      deferRender:true,
+      columnDefs:[{ targets:'_all', className:'text-nowrap' }],
+  
       ajax: function(dtReq, callback){
-        dtReq.sessionToken = userSession.token;
-        dtReq.filter = getWrFilters();
-        dtReq.onlyUnknown = true;
+        const req = {
+          draw: dtReq.draw,
+          start: dtReq.start,
+          length: dtReq.length,
+          search: dtReq.search,
+          order: dtReq.order,
+          sessionToken: userSession.token,
+          filter: getWrFilters(),
+          onlyUnknown: true
+        };
         google.script.run
-          .withSuccessHandler(res => callback(res))
-          .withFailureHandler(err => { showError(err); callback({draw:dtReq.draw,recordsTotal:0,recordsFiltered:0,data:[]}); })
-          .getWeighResultData(dtReq);
+          .withSuccessHandler(res => {
+            res = {
+              draw: Number(res.draw) || dtReq.draw || 0,
+              recordsTotal: Number(res.recordsTotal) || 0,
+              recordsFiltered: Number(res.recordsFiltered) || 0,
+              data: res.data || []
+            };
+            callback(res);
+          })
+          .withFailureHandler(err => {
+            showError(err);
+            callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
+          })
+          .getWeighResultData(req);
       },
-      columns: uCols
+      columns: uCols,
+      drawCallback:function(){ this.api().columns.adjust(); }
     });
+    wrUnknownTable.columns.adjust();
 
-    $('#wr-unknown-table tbody').off('change', '.row-checkbox').on('change', '.row-checkbox', function(){
+    $('#wr-unknown-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
       $(this).closest('tr').toggleClass('selected', this.checked);
     });
 
-    $('#wr-unknown-table tbody').off('click', '.wru-edit').on('click', '.wru-edit', function(){
+    $('#wr-unknown-table tbody').off('click','.wru-edit').on('click','.wru-edit', function(){
       const row = wrUnknownTable.row($(this).closest('tr')).data();
       if (!row) return;
       showWrEditDialog(row);
