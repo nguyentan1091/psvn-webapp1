@@ -62,10 +62,40 @@
         </div>
 
 
-        <div id="total-list-summary" class="mb-2 d-flex flex-wrap gap-3 p-2 bg-light rounded">
-            <span><strong data-translate="total_vehicles">Tổng số xe</strong>: <span id="total-count-summary">--</span></span>
-            <span><span data-translate="active_vehicles">Xe đang hoạt động</strong>:</span>: <span id="active-count">--</span></span>
-            <span><span data-translate="banned_vehicles">Xe đang bị cấm</strong>:</span>: <span id="banned-count">--</span></span>
+        <div id="total-list-summary" class="row g-3 mb-3">
+            <div class="col-md-4 col-sm-6">
+                <div class="tl-summary-card tl-summary-card--total">
+                    <div class="tl-summary-icon">
+                        <i class="fas fa-truck"></i>
+                    </div>
+                    <div class="tl-summary-content">
+                        <div class="tl-summary-label" data-translate="total_vehicles">Tổng số xe</div>
+                        <div class="tl-summary-value" id="total-count-summary">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6">
+                <div class="tl-summary-card tl-summary-card--active">
+                    <div class="tl-summary-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="tl-summary-content">
+                        <div class="tl-summary-label" data-translate="active_vehicles">Xe đang hoạt động</div>
+                        <div class="tl-summary-value" id="active-count">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-sm-6">
+                <div class="tl-summary-card tl-summary-card--banned">
+                    <div class="tl-summary-icon">
+                        <i class="fas fa-ban"></i>
+                    </div>
+                    <div class="tl-summary-content">
+                        <div class="tl-summary-label" data-translate="banned_vehicles">Xe đang bị cấm</div>
+                        <div class="tl-summary-value" id="banned-count">--</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="row align-items-center mb-2">
