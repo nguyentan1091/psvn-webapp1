@@ -1652,7 +1652,7 @@ function handleExportExcel() {
     var ws = XLSX.utils.aoa_to_sheet(aoa);
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "VehicleData");
-    var fileName = 'DuLieuXeDangKy_' + selectedDateStr.replace(/\//g, '-') + '.xlsx';
+    var fileName = 'Registration Trucklist_' + selectedDateStr.replace(/\//g, '-') + '.xlsx';
     XLSX.writeFile(wb, fileName);
   }
 
