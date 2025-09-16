@@ -2643,7 +2643,14 @@ function getWeighResultData(params) {
   const contracts = Array.isArray(f.contracts) && f.contracts.length ? f.contracts : null;
   const companies = Array.isArray(f.companies) && f.companies.length ? f.companies : null;
   const draw = Number(params.draw || 1);
-  const empty = { draw: draw, recordsTotal: 0, recordsFiltered: 0, data: [], counts: { unassigned: 0, unknown: 0, assigned: 0 } };
+  const empty = {
+    draw: draw,
+    recordsTotal: 0,
+    recordsFiltered: 0,
+    data: [],
+    counts: { unassigned: 0, unknown: 0, assigned: 0 },
+    options: { contracts: [], companies: [] }
+  };
 
   if (!from && !to && !contracts && !companies && !(params.search && params.search.value)) {
     return empty;
@@ -2684,30 +2691,54 @@ function getWeighResultData(params) {
   }
 
   const isUser = session.role === 'user';
-  const userCompany = isUser ? String(session.contractor || '') : '';
-  const contractSet = contracts ? new Set(contracts.map(function(v){ return String(v || ''); })) : null;
-  const companySet = companies ? new Set(companies.map(function(v){ return String(v || ''); })) : null;
+  const userCompany = isUser ? String(session.contractor || '').trim() : '';
+  const contractSet = contracts
+    ? new Set(contracts.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; }))
+    : null;
+  const companySet = companies
+    ? new Set(companies.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; }))
+    : null;
 
   const baseRows = [];
+  const optionContracts = new Set();
+  const optionCompanies = new Set();  
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     var dateKey = _toDateKey(row[idxDateOut]);
     if (from && (!dateKey || dateKey < from)) continue;
     if (to && (!dateKey || dateKey > to)) continue;
 
-    var rowContract = String(stripLeadingApostrophe(row[idxContract]) || '');
-    if (contractSet && !contractSet.has(rowContract)) continue;
+    var rowContract = String(stripLeadingApostrophe(row[idxContract]) || '').trim();
+    var rowCompany = String(stripLeadingApostrophe(row[idxCompany]) || '').trim();
 
-    var rowCompany = String(stripLeadingApostrophe(row[idxCompany]) || '');
     if (isUser && rowCompany !== userCompany) continue;
+  
+    if (rowContract) optionContracts.add(rowContract);
+    if (rowCompany) optionCompanies.add(rowCompany);
+
+    if (contractSet && !contractSet.has(rowContract)) continue;  
     if (companySet && !companySet.has(rowCompany)) continue;
 
     baseRows.push(row);
   }
-  
+
+  var availableContracts = Array.from(optionContracts).sort(function(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  });
+  var availableCompanies = Array.from(optionCompanies).sort(function(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  });
+
   var totalRecords = baseRows.length;
   if (!totalRecords) {
-    return { draw: draw, recordsTotal: 0, recordsFiltered: 0, data: [], counts: { unassigned: 0, unknown: 0, assigned: 0 } };
+    return {
+      draw: draw,
+      recordsTotal: 0,
+      recordsFiltered: 0,
+      data: [],
+      counts: { unassigned: 0, unknown: 0, assigned: 0 },
+      options: { contracts: availableContracts, companies: availableCompanies }
+    };
   }
 
   const searchValue = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
@@ -2768,7 +2799,8 @@ function getWeighResultData(params) {
     recordsTotal: totalRecords,
     recordsFiltered: filtered.length,
     data: data,
-    counts: counts
+    counts: counts,
+    options: { contracts: availableContracts, companies: availableCompanies }
   };
 }
 
