@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = ' '; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -2465,7 +2465,7 @@ function saveXpplWeighingData(rows, sessionToken) {
       return v;
     });
     arr[0] = prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0');
-    arr[39] = user.username || user.user || user.email || '';
+    arr[35] = user.username || user.user || user.email || '';
     return arr;
   });
 
@@ -2610,103 +2610,164 @@ function matchTransportionCompanies(filter, sessionToken) {
   return 'Đã đối chiếu ' + updates.length + ' dòng.';
 }
 
+
+function formatWeighResultCell_(header, value) {
+  if (header === 'Register Date' || header === 'Date In' || header === 'Date Out' || header === 'Changed Date') {
+    return formatDateForClient(value);
+  }
+  if (header === 'Time' || header === 'Time In' || header === 'Time Out' || header === 'Changed Time') {
+    return formatTimeForClient(value);
+  }
+  const v = stripLeadingApostrophe(value);
+  return v == null ? '' : v;
+}
+
+function weighResultRowMatchesQuery_(row, headers, queryLower) {
+  for (var i = 0; i < headers.length; i++) {
+    var text = formatWeighResultCell_(headers[i], row[i]);
+    if (text != null && String(text).toLowerCase().indexOf(queryLower) !== -1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function getWeighResultData(params) {
   const session = validateSession(params.sessionToken);
   const sh = SpreadsheetApp.openById(XPPL_DB_ID).getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
   const headers = XPPL_DB_HEADERS;
+  const lr = sh.getLastRow();  
   const f = params.filter || {};
   const from = _toDateKey(f.dateFrom);
   const to = _toDateKey(f.dateTo);
   const contracts = Array.isArray(f.contracts) && f.contracts.length ? f.contracts : null;
   const companies = Array.isArray(f.companies) && f.companies.length ? f.companies : null;
+  const draw = Number(params.draw || 1);
+  const empty = { draw: draw, recordsTotal: 0, recordsFiltered: 0, data: [], counts: { unassigned: 0, unknown: 0, assigned: 0 } };
 
   if (!from && !to && !contracts && !companies && !(params.search && params.search.value)) {
-    return { draw:Number(params.draw||1), recordsTotal:0, recordsFiltered:0, data:[], counts:{unassigned:0, unknown:0, assigned:0} };
+    return empty;
+  }
+
+  if (lr < 2) {
+    return empty;
+  }
+
+  const idxDateOut = headers.indexOf('Date Out');
+  const idxContract = headers.indexOf('ContractNo');
+  const idxCompany = headers.indexOf('Transportion Company');
+  if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1) {
+    return empty;    
   }
 
   let rows = [];
-  if (lr >= 2) {
-    if (from || to) {
-      const idxDateOut = headers.indexOf('Date Out') + 1;
-      const dates = sh.getRange(2, idxDateOut, lr-1, 1).getValues().map(r => r[0]);
-      let start = 0, end = dates.length - 1;
-      if (from) {
-        while (start <= end && _toDateKey(dates[start]) < from) start++;
+
+  if (from || to) {
+    const dateValues = sh.getRange(2, idxDateOut + 1, lr - 1, 1).getValues();
+    let start = 0;
+    let end = dateValues.length - 1;
+    if (from) {
+      while (start <= end && _toDateKey(dateValues[start][0]) < from) start++;
+    }
+    if (to) {
+      while (end >= start && _toDateKey(dateValues[end][0]) > to) end--;
+    }
+    if (end >= start) {
+      rows = sh.getRange(start + 2, 1, end - start + 1, headers.length).getValues();
+    }
+  } else {
+    rows = sh.getRange(2, 1, lr - 1, headers.length).getValues();    
+  }
+
+  if (!rows.length) {
+    return empty;
+  }
+
+  const isUser = session.role === 'user';
+  const userCompany = isUser ? String(session.contractor || '') : '';
+  const contractSet = contracts ? new Set(contracts.map(function(v){ return String(v || ''); })) : null;
+  const companySet = companies ? new Set(companies.map(function(v){ return String(v || ''); })) : null;
+
+  const baseRows = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var dateKey = _toDateKey(row[idxDateOut]);
+    if (from && (!dateKey || dateKey < from)) continue;
+    if (to && (!dateKey || dateKey > to)) continue;
+
+    var rowContract = String(stripLeadingApostrophe(row[idxContract]) || '');
+    if (contractSet && !contractSet.has(rowContract)) continue;
+
+    var rowCompany = String(stripLeadingApostrophe(row[idxCompany]) || '');
+    if (isUser && rowCompany !== userCompany) continue;
+    if (companySet && !companySet.has(rowCompany)) continue;
+
+    baseRows.push(row);
+  }
+  
+  var totalRecords = baseRows.length;
+  if (!totalRecords) {
+    return { draw: draw, recordsTotal: 0, recordsFiltered: 0, data: [], counts: { unassigned: 0, unknown: 0, assigned: 0 } };
+  }
+
+  const searchValue = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
+  let filteredForSearch = baseRows;
+  if (searchValue) {
+    filteredForSearch = [];
+    for (var j = 0; j < baseRows.length; j++) {
+      if (weighResultRowMatchesQuery_(baseRows[j], headers, searchValue)) {
+        filteredForSearch.push(baseRows[j]);
       }
-      if (to) {
-        while (end >= start && _toDateKey(dates[end]) > to) end--;
-      }
-      if (end >= start) {
-        rows = sh.getRange(start + 2, 1, end - start + 1, headers.length).getValues();
-      }
-    } else {
-      rows = sh.getRange(2,1,lr-1,headers.length).getValues();
     }
   }
 
-  let data = rows.map(r => formatRowForClient_(r, headers));
-  if (session.role === 'user') {
-    data = data.filter(o => String(o['Transportion Company']||'') === String(session.contractor||''));
-  }
-
-  let totalRecords = data.length;
-
-  if (from || to) {
-    data = data.filter(o => {
-      const dk = _toDateKey(o['Date Out']);
-      if (from && dk < from) return false;
-      if (to && dk > to) return false;
-      return true;
-    });
-    totalRecords = data.length;
-  }
-  
-  if (contracts) {
-    const set = new Set(contracts);
-    data = data.filter(o => set.has(o['ContractNo']||''));
-  }
-  if (companies) {
-    const set = new Set(companies);
-    data = data.filter(o => set.has(o['Transportion Company']||''));
-  }
-  const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
-  let filtered = q ? data.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(q))) : data;
-
-  const counts = { unassigned:0, unknown:0, assigned:0 };
-  filtered.forEach(o => {
-    const comp = String(o['Transportion Company'] || '').trim();
+  const counts = { unassigned: 0, unknown: 0, assigned: 0 };
+  for (var k = 0; k < filteredForSearch.length; k++) {
+    var comp = String(stripLeadingApostrophe(filteredForSearch[k][idxCompany]) || '').trim();
     if (!comp) counts.unassigned++;
     else if (comp.toLowerCase() === 'unknown') counts.unknown++;
     else counts.assigned++;
-  });
+  }
 
+  let filtered = filteredForSearch;
   if (params.onlyUnknown) {
-    filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() === 'unknown');
+    filtered = filtered.filter(function(row) {
+      var comp = String(stripLeadingApostrophe(row[idxCompany]) || '').trim().toLowerCase();
+      return comp === 'unknown';
+    });
   } else if (params.excludeUnknown) {
-   filtered = filtered.filter(o => String(o['Transportion Company']||'').toLowerCase() !== 'unknown');
+    filtered = filtered.filter(function(row) {
+      var comp = String(stripLeadingApostrophe(row[idxCompany]) || '').trim().toLowerCase();
+      return comp !== 'unknown';
+    });
   }
 
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
     const offset = session.role === 'admin' ? 2 : 0;
     const idx = Number(order.column) - offset;
-    if (idx >= 0 && idx < XPPL_DB_HEADERS.length) {
-      const key = XPPL_DB_HEADERS[idx];
-      const dir = (order.dir || 'asc').toLowerCase();
-      filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true})) * (dir === 'desc' ? -1 : 1));
+    if (idx >= 0 && idx < headers.length) {
+      const dir = (order.dir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+      filtered.sort(function(a, b) {
+        const va = formatWeighResultCell_(headers[idx], a[idx]);
+        const vb = formatWeighResultCell_(headers[idx], b[idx]);
+        return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
+      });
     }
   }
 
-  const start = Number(params.start || 0);
-  const length = Number(params.length || 50);
-  const page = filtered.slice(start, start + length);
+  const start = Math.max(0, Number(params.start || 0));
+  const length = Math.max(0, Number(params.length || 50));
+  const pageRows = filtered.slice(start, start + length);
+  const data = pageRows.map(function(row) {
+    return formatRowForClient_(row, headers);
+  });
 
   return {
-    draw: Number(params.draw || 1),
-    recordsTotal: Number(totalRecords) || 0,
-    recordsFiltered: Number(filtered.length) || 0,
-    data: page,
+    draw: draw,
+    recordsTotal: totalRecords,
+    recordsFiltered: filtered.length,
+    data: data,
     counts: counts
   };
 }
