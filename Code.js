@@ -393,9 +393,17 @@ function getUsers(sessionToken) {
 
   try {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    if (sheet.getLastRow() < 2) return [];
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-    
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+
+    const lastColumn = sheet.getLastColumn();
+    const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
+    const customerNameIdx = normalizedHeaders.indexOf('customer name');
+    const securityCodeIdx = normalizedHeaders.indexOf('security code');
+
+    const data = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+
     return data.map(row => {
       let formattedDate = '';
       if (row[4] instanceof Date) {
@@ -410,7 +418,8 @@ function getUsers(sessionToken) {
         Role: row[2],
         Contractor: row[3],
         PasswordLastUpdated: formattedDate,
-        SecurityCode: row[5]
+        SecurityCode: securityCodeIdx !== -1 ? row[securityCodeIdx] : row[5],
+        CustomerName: customerNameIdx !== -1 ? row[customerNameIdx] : ''
       }
     });
   } catch (e) { Logger.log(e); throw new Error('Không thể lấy danh sách người dùng.'); }
@@ -429,7 +438,14 @@ function updateUser(userData, sessionToken) {
 
     sheet.getRange(userRowIndex + 2, 3).setValue(userData.Role);
     sheet.getRange(userRowIndex + 2, 4).setValue(userData.Contractor);
-    
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
+    const customerNameIdx = normalizedHeaders.indexOf('customer name');
+    if (customerNameIdx !== -1) {
+      sheet.getRange(userRowIndex + 2, customerNameIdx + 1).setValue(userData.CustomerName || '');
+    }
+
     return 'Cập nhật người dùng thành công!';
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi cập nhật người dùng.'); }
 }
@@ -477,6 +493,14 @@ function addNewUser(newUserData, sessionToken) {
       '',
       ''
     ]);
+
+    const newRowIndex = sheet.getLastRow();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
+    const customerNameIdx = normalizedHeaders.indexOf('customer name');
+    if (customerNameIdx !== -1) {
+      sheet.getRange(newRowIndex, customerNameIdx + 1).setValue(newUserData.CustomerName || '');
+    }
 
     return `Đã tạo người dùng ${newUserData.Username} thành công.\nMật khẩu: ${newPassword}\nMã bảo mật: ${newSecurityCode}`;
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi tạo người dùng mới: ' + e.message); }
