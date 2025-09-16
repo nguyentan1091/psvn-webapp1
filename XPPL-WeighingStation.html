@@ -1,94 +1,110 @@
-<style>
-  #xppl-weighing-table th,
-  #xppl-weighing-table td {
-    font-size: 0.875rem;
-    white-space: nowrap;
-  }
-</style>
-<div class="container-fluid px-4" id="xppl-weighing-page">
-  <!-- Upload Section -->
-  <div class="card mb-3">
-    <div class="card-header"><i class="fas fa-file-upload me-1"></i> Upload dữ liệu trạm cân</div>
-    <div class="card-body">
-      <div class="input-group">
-        <input type="file" id="xppl-weighing-file" accept=".xls,.xlsx" class="form-control" />
-        <button type="button" id="xppl-weighing-upload" class="btn btn-primary">Tải lên</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Filter & Summary Section -->
+<div class="container-fluid">
+  <style>
+    #wr-result-table th, #wr-result-table td,
+    #wr-unknown-table th, #wr-unknown-table td {
+      font-size: 0.875rem;
+      white-space: nowrap;
+    }
+  </style>  
+  <!-- Filter Bar -->
   <div class="card mb-3">
     <div class="card-header"><i class="fas fa-filter me-1"></i> Bộ lọc</div>
     <div class="card-body">
-      <div class="row g-3">
+      <div class="row g-2 align-items-end">
         <div class="col-md-4">
-          <label class="form-label">Ngày</label>
-          <input type="date" id="xppl-filter-date" class="form-control" />
+          <div class="input-group input-slim">
+            <span class="input-group-text"><i class="fas fa-search"></i></span>
+            <input type="text" id="wr-search" class="form-control" placeholder="Tìm kiếm...">
+          </div>
         </div>
         <div class="col-md-4">
-          <label class="form-label">Số hợp đồng</label>
-          <select id="xppl-filter-contract" class="form-select">
-            <option value="">Tất cả</option>
-          </select>
+          <label class="form-label">Từ ngày</label>
+          <input type="date" id="wr-date-from" class="form-control form-control-sm">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Khách hàng</label>
-          <select id="xppl-filter-customer" class="form-select">
-            <option value="">Tất cả</option>
-          </select>
+          <label class="form-label">Đến ngày</label>
+          <input type="date" id="wr-date-to" class="form-control form-control-sm">
         </div>
       </div>
-      <hr />
-      <div class="row text-center">
-        <div class="col">
-          <div>Tổng số xe</div>
-          <div id="xppl-summary-trucks" class="fs-4">0</div>
+      <div class="d-flex justify-content-end mt-2">
+        <button class="btn btn-link btn-sm" id="wr-adv-toggle">Bộ lọc nâng cao</button>
+      </div>
+      <div id="wr-advanced" class="row g-2 mt-2 d-none">
+        <div class="col-md-6">
+          <label class="form-label">Số hợp đồng</label>
+          <select id="wr-contracts" class="form-select form-select-sm" multiple></select>
         </div>
-        <div class="col">
-          <div>Tổng khối lượng</div>
-          <div id="xppl-summary-weight" class="fs-4">0</div>
+        <div class="col-md-6">
+          <label class="form-label">Transportion Company</label>
+          <select id="wr-companies" class="form-select form-select-sm" multiple></select>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- DataTable Section -->
-  <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-table me-1"></i> Dữ liệu trạm cân</div>
+  <!-- Action Button -->
+  <div class="text-center mb-3">
+    <button id="wr-match-company" class="btn btn-primary btn-sm">Tìm và gắn dữ liệu đơn vị vận chuyển</button>
+    <button id="wr-unknown-btn" class="btn btn-warning btn-sm ms-2 d-none">Xe không xác định đơn vị vận chuyển</button>
+    <div id="wr-summary" class="d-flex justify-content-center gap-4 mt-2 fs-5">
+      <div class="d-flex align-items-center" style="color:#B0BEC5;">
+        <span class="me-1">⏳</span>
+        <span>Chưa gắn đơn vị vận chuyển: <span id="wr-sum-unassign">0</span></span>
+      </div>
+      <div class="d-flex align-items-center" style="color:#E53935;">
+        <span class="me-1">❓</span>
+        <span>Không xác định đơn vị vận chuyển: <span id="wr-sum-unknown">0</span></span>
+      </div>
+      <div class="d-flex align-items-center" style="color:#43A047;">
+        <span class="me-1">✅</span>
+        <span>Đã xác định đơn vị vận chuyển: <span id="wr-sum-assigned">0</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unknown Vehicles Modal -->
+  <div class="modal fade" id="wr-unknown-modal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-1"></i> Xe không xác định đơn vị vận chuyển</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="tl-toolbar mb-3">
+            <div class="tl-toolbar__inner">
+              <div class="tl-actions">
+                <button id="wr-unknown-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật</button>
+                <button id="wr-unknown-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn</button>
+                <button id="wr-unknown-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
+              </div>
+              <div class="tl-toolbar__spacer"></div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weighing Results Table -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-table me-1"></i> Kết quả bốc hàng</div>
     <div class="card-body">
-      <div class="row mb-3 align-items-center">
-        <div class="col-md-4">
-          <div class="input-group">
-            <input type="text" id="xppl-search" class="form-control" placeholder="Tìm kiếm trong bảng..." />
-            <span class="input-group-text"><i class="fas fa-search"></i></span>
+      <div class="tl-toolbar mb-3">
+        <div class="tl-toolbar__inner">
+          <div class="tl-actions">
+            <button id="wr-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật</button>
+            <button id="wr-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn</button>
+            <button id="wr-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
           </div>
-        </div>
-        <div class="col-md-8 text-end">
-          <button id="xppl-export" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
-          <button id="xppl-refresh" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> Tải lại</button>
+          <div class="tl-toolbar__spacer"></div>
         </div>
       </div>
-
-      <div class="row align-items-center mb-2">
-        <div class="col-md-auto">
-          <div id="xppl-count" class="fw-bold"></div>
-          <div class="dataTables_length">
-            <label>
-              Hiển thị
-              <select id="xppl-page-length" class="form-select form-select-sm d-inline-block w-auto">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-              </select>
-              dòng
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div class="table-responsive mt-2">
-        <table id="xppl-weighing-table" class="table table-bordered table-striped" style="width:100%;"></table>
+      <div class="table-responsive">
+        <table id="wr-result-table" class="table table-bordered table-striped" style="width:100%"></table>
       </div>
     </div>
   </div>
