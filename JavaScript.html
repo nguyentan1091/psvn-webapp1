@@ -135,6 +135,7 @@ const translations = {
     "col_password": "Mật khẩu",
     "col_role": "Vai trò",
     "col_contractor": "Nhà thầu",
+    "col_customer_name": "Khách hàng",    
     "col_security_code": "Mã bảo mật",
 
     // SweetAlerts & Messages
@@ -251,6 +252,7 @@ const translations = {
     "col_password": "Password",
     "col_role": "Role",
     "col_contractor": "Contractor",
+    "col_customer_name": "Customer Name",
     "col_security_code": "Security Code",
 
     // SweetAlerts & Messages
@@ -640,26 +642,27 @@ function initUsersTable() {
         $('#usersTable').DataTable().destroy();
     }
     const columns = [
-        { data: 'Username', title: t.col_username },
-        { data: 'Password', title: t.col_password },
-        { data: 'Role', title: t.col_role },
-        { data: 'Contractor', title: t.col_contractor },
-        { data: 'SecurityCode', title: t.col_security_code },
         { data: null, title: t.action_column, orderable: false, render: (data, type, row) => {
             return `
                 <button class="btn btn-info btn-sm edit-user-btn" title="${t.edit_button}"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-secondary btn-sm reset-password-btn" title="Reset Password"><i class="fas fa-key"></i></button>
                 <button class="btn btn-danger btn-sm delete-user-btn" title="${t.delete_button}"><i class="fas fa-trash-alt"></i></button>
             `;
-        }}
+        }},
+        { data: 'Username', title: t.col_username },
+        { data: 'Password', title: t.col_password },
+        { data: 'Role', title: t.col_role },
+        { data: 'Contractor', title: t.col_contractor },
+        { data: 'CustomerName', title: t.col_customer_name, defaultContent: '' },
+        { data: 'SecurityCode', title: t.col_security_code }
     ];
 
     usersTable = $('#usersTable').DataTable({
         processing: true,
         columns: columns,
-        paging: false, 
-        info: false, 
-        scrollX: false,
+        order: [[1, 'asc']],
+        paging: false,
+        info: false,
         data: []
     });
 
@@ -706,6 +709,10 @@ function handleEditUser(rowData) {
                 </select>
             </div>
             <div class="swal-form-group">
+                <label for="swal-customer-name">Customer Name</label>
+                <input id="swal-customer-name" class="swal2-input" value="${rowData.CustomerName || ''}" placeholder="Nhập tên khách hàng">
+            </div>            
+            <div class="swal-form-group">
                 <label for="swal-contractor">Nhà thầu chính</label>
                 <input id="swal-contractor" class="swal2-input" list="contractors-list" value="${rowData.Contractor || ''}">
                 <datalist id="contractors-list">
@@ -718,7 +725,8 @@ function handleEditUser(rowData) {
             return {
                 Username: rowData.Username,
                 Role: $('#swal-role').val(),
-                Contractor: $('#swal-contractor').val()
+                Contractor: $('#swal-contractor').val(),
+                CustomerName: $('#swal-customer-name').val()
             }
         }
     }).then(result => {
@@ -778,6 +786,10 @@ function handleAddNewUser() {
                 </select>
             </div>
             <div class="swal-form-group">
+                <label for="swal-customer-name">Customer Name</label>
+                <input id="swal-customer-name" class="swal2-input" placeholder="Nhập tên khách hàng">
+            </div>            
+            <div class="swal-form-group">
                 <label for="swal-contractor">Nhà thầu chính</label>
                 <input id="swal-contractor" class="swal2-input" list="contractors-list" placeholder="Nhập hoặc chọn nhà thầu">
                 <datalist id="contractors-list">
@@ -794,7 +806,8 @@ function handleAddNewUser() {
             return {
                 Username: username,
                 Role: $('#swal-role').val(),
-                Contractor: $('#swal-contractor').val()
+                Contractor: $('#swal-contractor').val(),
+                CustomerName: $('#swal-customer-name').val()
             }
         }
     }).then(result => {
