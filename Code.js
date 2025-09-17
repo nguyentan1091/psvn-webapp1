@@ -20,6 +20,48 @@ const XPPL_DB_HEADERS = [
 // === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
 // ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
 const XPPL_TEMPLATE_ID = '1p8n8ffm81NaxSWB5F7Wn1GhsaBrQ21XttaWmX5yvBl4';
+const XPPL_DB_COLUMN_TYPES = {
+  'ID': 'text',
+  'No.': 'text',
+  'W.ID': 'text',
+  'Weighing Type': 'text',
+  'TicketID': 'text',
+  'Truck No': 'text',
+  'Date In': 'date',
+  'Time In': 'time',
+  'Date Out': 'date',
+  'Time Out': 'time',
+  'Weight In': 'text',
+  'Weight Out': 'text',
+  'Net Weight': 'text',
+  'Product Name': 'text',
+  'CoalSource': 'text',
+  'ProductionCode': 'text',
+  'Customer Name': 'text',
+  'DriverName': 'text',
+  'Id/Passport': 'text',
+  'CargoLotNo': 'text',
+  'CargoName': 'text',
+  'CargoCompany': 'text',
+  'PackUnit': 'text',
+  'PackQtt': 'text',
+  'OrderNo': 'text',
+  'ContractNo': 'text',
+  'InvoiceNo': 'text',
+  'CoNo': 'text',
+  'OVS_DMT': 'text',
+  'Plant': 'text',
+  'Trailer No': 'text',
+  'Truck Country': 'text',
+  'Truck Type': 'text',
+  'WeighStationCode': 'text',
+  'Note': 'text',
+  'CreateUser': 'text',
+  'Transportion Company': 'text',
+  'Changed Date': 'date',
+  'Changed Time': 'time',
+  'Username': 'text'
+};
 
 /** ================== XPPL EXPORT – constants ================== **/
 const XPPL_TEMP_PREFIX = 'XPPL_TMP_'; // prefix cho file tạm
@@ -129,22 +171,63 @@ function parseExcelTime_(v) {
   if (v == null || v === '') return '';
   if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
     return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+    var hh=v.getHours(), mm=v.getMinutes(), ss=v.getSeconds();
+    return (hh*3600+mm*60+ss)/86400;    
   }
   if (typeof v === 'number') {
-    var total = Math.round((v % 1) * 86400);
-    var hh = Math.floor(total/3600);
-    var mm = Math.floor((total%3600)/60);
-    var ss = total%60;
-    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+    var frac = v % 1;
+    if (frac < 0) frac = (frac + 1) % 1;
+    return frac;
   }
   var m = String(v).match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
   if (m) {
-    var hh = parseInt(m[1],10);
-    var mm = parseInt(m[2],10);
-    var ss = m[3]?parseInt(m[3],10):0;
-    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+    var hh = Math.min(23, Math.max(0, parseInt(m[1],10) || 0));
+    var mm = Math.min(59, Math.max(0, parseInt(m[2],10) || 0));
+    var ss = Math.min(59, Math.max(0, m[3]?parseInt(m[3],10):0));
+    return (hh*3600+mm*60+ss)/86400;
   }
-  return String(v);
+  return '';
+}
+
+function sanitizeXpplText_(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number') return String(value);
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
+  }
+  var str = String(value);
+  if (!str) return '';
+  str = str.replace(/\r?\n/g, ' ').trim();
+  if (str.charAt(0) === '=') {
+    str = str.replace(/^=+/, '');
+  }
+  return str;
+}
+
+function normalizeXpplDbValue_(header, value) {
+  var type = XPPL_DB_COLUMN_TYPES[header] || 'text';
+  if (type === 'date') {
+    var d = parseExcelDate_(value);
+    return d || '';
+  }
+  if (type === 'time') {
+    var t = parseExcelTime_(value);
+    return t === '' ? '' : t;
+  }
+  return sanitizeXpplText_(value);
+}
+
+function applyXpplDbFormats_(sheet, startRow, numRows) {
+  if (numRows <= 0) return;
+  for (var i = 0; i < XPPL_DB_HEADERS.length; i++) {
+    var header = XPPL_DB_HEADERS[i];
+    var type = XPPL_DB_COLUMN_TYPES[header] || 'text';
+    var format;
+    if (type === 'date') format = 'dd/MM/yyyy';
+    else if (type === 'time') format = 'HH:mm:ss';
+    else format = '@';
+    sheet.getRange(startRow, i + 1, numRows, 1).setNumberFormat(format);
+  }
 }
 
 function ensureDateTimeFormats(sheet, headers) {
@@ -2541,11 +2624,10 @@ function saveXpplWeighingData(rows, sessionToken) {
   const sh = ss.getSheetByName(XPPL_DB_SHEET);
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const prefix = Utilities.formatDate(new Date(), tz, 'dd-MM') + '-';
-  const dateCols = ['Date In','Date Out'];
-  const timeCols = ['Time In','Time Out'];
   let lr = sh.getLastRow();
   if (lr === 0) {
     sh.getRange(1, 1, 1, XPPL_DB_HEADERS.length).setValues([XPPL_DB_HEADERS]);
+    applyXpplDbFormats_(sh, 2, Math.max(0, sh.getMaxRows() - 1));    
     lr = 1;
   }
 
@@ -2554,28 +2636,16 @@ function saveXpplWeighingData(rows, sessionToken) {
     if (validSet.size && !validSet.has(key)) {
       throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
     }
-    const arr = XPPL_DB_HEADERS.map(h => {
-      let v = r[h] || '';
-      if (dateCols.indexOf(h) !== -1) v = parseExcelDate_(v);
-      else if (timeCols.indexOf(h) !== -1) v = parseExcelTime_(v);
-      return v;
-    });
-    arr[0] = prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0');
-    arr[35] = user.username || user.user || user.email || '';
+    const arr = XPPL_DB_HEADERS.map(h => normalizeXpplDbValue_(h, r[h]));
+    arr[0] = sanitizeXpplText_(prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0'));
+    arr[35] = sanitizeXpplText_(user.username || user.user || user.email || '');
     return arr;
   });
 
   if (toSave.length) {
     const startRow = lr + 1;
     sh.getRange(startRow, 1, toSave.length, XPPL_DB_HEADERS.length).setValues(toSave);
-    dateCols.forEach(col => {
-      const c = XPPL_DB_HEADERS.indexOf(col) + 1;
-      if (c > 0) sh.getRange(startRow, c, toSave.length, 1).setNumberFormat('dd/MM/yyyy');
-    });
-    timeCols.forEach(col => {
-      const c = XPPL_DB_HEADERS.indexOf(col) + 1;
-      if (c > 0) sh.getRange(startRow, c, toSave.length, 1).setNumberFormat('HH:mm:ss');
-    });
+    applyXpplDbFormats_(sh, startRow, toSave.length);
   }
   return 'Đã lưu ' + toSave.length + ' dòng.';
 }
@@ -2668,9 +2738,9 @@ function matchTransportionCompanies(filter, sessionToken) {
   const data = sh.getRange(2,1,lr-1,headers.length).getValues();
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const now = new Date();
-  const dStr = Utilities.formatDate(now, tz, 'dd/MM/yyyy');
-  const tStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
-  const uname = user.username || user.user || user.email || '';
+  const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const timeValue = (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400;
+  const uname = sanitizeXpplText_(user.username || user.user || user.email || '');
 
   const updates = [];
   data.forEach((r,i) => {
@@ -2678,9 +2748,10 @@ function matchTransportionCompanies(filter, sessionToken) {
     if (from && dk < from) return;
     if (to && dk > to) return;
     const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
-    r[idxComp] = plateMap.get(plate) || 'Unknown';
-    r[idxDate] = dStr;
-    r[idxTime] = tStr;
+    const compName = sanitizeXpplText_(plateMap.get(plate) || 'Unknown');
+    r[idxComp] = compName;
+    r[idxDate] = dateValue;
+    r[idxTime] = timeValue;
     r[idxUser] = uname;
     updates.push({row: i+2, values: r});
   });
@@ -2697,11 +2768,13 @@ function matchTransportionCompanies(filter, sessionToken) {
       block.push(cur.values);
     } else {
       sh.getRange(start,1,block.length,headers.length).setValues(block);
+      applyXpplDbFormats_(sh, start, block.length);      
       start = cur.row;
       block = [cur.values];
     }
   }
   sh.getRange(start,1,block.length,headers.length).setValues(block);
+  applyXpplDbFormats_(sh, start, block.length);
 
   return 'Đã đối chiếu ' + updates.length + ' dòng.';
 }
@@ -2746,8 +2819,7 @@ function getWeighResultData(params) {
   };
 
   const contractFilter = normalizeListInput(f.contracts);
-  const customerFilterInput = f.customers != null ? f.customers : f.companies;
-  const customerFilter = normalizeListInput(customerFilterInput);
+  const customerFilter = normalizeListInput(f.customers);
   const draw = Number(params.draw || 1);
   const empty = {
     draw: draw,
@@ -2952,10 +3024,16 @@ function updateWeighResultCompany(payload, sessionToken) {
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const now = new Date();
 
-  sh.getRange(rowIdx + 2, idxComp).setValue(company);
-  sh.getRange(rowIdx + 2, idxDate).setValue(Utilities.formatDate(now, tz, 'dd/MM/yyyy'));
-  sh.getRange(rowIdx + 2, idxTime).setValue(Utilities.formatDate(now, tz, 'HH:mm:ss'));
-  sh.getRange(rowIdx + 2, idxUser).setValue(user.username || user.user || user.email || '');
+  const sanitizedCompany = sanitizeXpplText_(company);
+  const userLabel = sanitizeXpplText_(user.username || user.user || user.email || '');
+  const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const timeValue = (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400;
+
+  sh.getRange(rowIdx + 2, idxComp).setValue(sanitizedCompany);
+  sh.getRange(rowIdx + 2, idxDate).setValue(dateValue);
+  sh.getRange(rowIdx + 2, idxTime).setValue(timeValue);
+  sh.getRange(rowIdx + 2, idxUser).setValue(userLabel);
+  applyXpplDbFormats_(sh, rowIdx + 2, 1);
 
   return 'Đã cập nhật.';
 }
