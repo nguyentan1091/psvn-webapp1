@@ -224,7 +224,13 @@ const translations = {
     "forgot_password_title": "Quên mật khẩu",
     "success_title": "Thành công",
     "warning_title": "Cảnh báo",
-    "info_title": "Thông tin",    
+    "info_title": "Thông tin",
+    "duplicate_vehicle_popup_title": "Xe trùng đơn vị khác",
+    "duplicate_vehicle_popup_message": "Là các xe đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.",
+    "new_vehicle_popup_title": "Thông báo xe mới",
+    "new_vehicle_popup_message": "Là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.",
+    "popup_plate_label": "Xe",
+    "popup_ok_button": "OK",
   },
   en: {
     // General
@@ -404,7 +410,13 @@ const translations = {
     "forgot_password_title": "Forgot Password",
     "success_title": "Success",
     "warning_title": "Warning",
-    "info_title": "Information",    
+    "info_title": "Information",
+    "duplicate_vehicle_popup_title": "Vehicles registered with another company",
+    "duplicate_vehicle_popup_message": "These vehicle plate(s) have already been registered with another transport company. Please contact PSVN for assistance.",
+    "new_vehicle_popup_title": "New vehicle notice",
+    "new_vehicle_popup_message": "These vehicle plate(s) are new. Please submit an additional registration to the total list with PSVN.",
+    "popup_plate_label": "Vehicle",
+    "popup_ok_button": "OK",
   }
 };
 
@@ -1230,7 +1242,7 @@ function handleManualAdd(e) {
       }
     })
     .withFailureHandler(showError)
-    .addManualVehicle(record, userSession.token);
+    .addManualVehicle(record, userSession.token, currentLang);
 }
 
 
@@ -1515,7 +1527,7 @@ function handleSaveUploadedData() {
             $('#fileUploader').val('');
         })
         .withFailureHandler(showError)
-        .saveData(dataToSave, userSession.token);
+        .saveData(dataToSave, userSession.token, currentLang);
 }
 
 function initializeDataTable(config) {
@@ -1752,10 +1764,6 @@ $('#registeredVehicleTable')
         $('#stat-approved').text(typeof json.summary.approved === 'number' ? json.summary.approved : 0);
 
         // Badge "Tổng số xe đã đăng ký:" — recordsFiltered (nếu có) hoặc dùng summary.total
-        var totalBadge =
-          (json && typeof json.recordsFiltered === 'number') ? json.recordsFiltered :
-          (json.summary && typeof json.summary.total === 'number') ? json.summary.total : 0;
-        updateRegisteredCount(totalBadge);
 
       } else {
         // Fallback khi server chưa trả summary (giữ nguyên logic cũ – tránh crash)
@@ -1764,7 +1772,6 @@ $('#registeredVehicleTable')
         var rows = (json && json.data && json.data.length) ? json.data : [];
         var totalBadge =
           (json && typeof json.recordsFiltered === 'number') ? json.recordsFiltered : rows.length;
-        updateRegisteredCount(totalBadge);
 
         var p = 0, a = 0;
         for (var i = 0; i < rows.length; i++) {
@@ -2777,15 +2784,18 @@ function showError(error) {
   const msg = raw.replace(/^Error:\s*/i, '');
 
   // --- Nhận diện "Xe mới" ---
-  let mNew = msg.match(/Xe\s+(.+?)\s+là xe mới/i);
+  const mNew =
+    msg.match(/Xe\s+(.+?)\s+là xe mới/i) ||
+    msg.match(/Vehicle plate\(s\)\s+(.+?)\s+are new/i);
   if (mNew && mNew[1]) {
     const platesNew = mNew[1].split(/[,\n\r\t ]+/).map(s => s.trim()).filter(Boolean);
     if (platesNew.length) { showNewVehiclePopup(platesNew); return; }
   }
 
   // --- Nhận diện "Xe trùng đơn vị khác" ---
-  const dupPattern = /đã được đăng ký với (công ty|đơn vị)(?:\s+vận chuyển)? khác/i;
-  if (dupPattern.test(msg) || /->\s*\"/.test(msg)) {
+  const dupPatternVi = /đã được đăng ký với (công ty|đơn vị)(?:\s+vận chuyển)? khác/i;
+  const dupPatternEn = /have already been registered with another transport company/i;
+  if (dupPatternVi.test(msg) || dupPatternEn.test(msg) || /->\s*\"/.test(msg)) {
     // Cố gắng bóc biển số từ dạng "PLATE -> "Company""
     const found = [];
     const pairRegex = /([A-Z0-9\-\.]+)\s*->/gi;
@@ -2793,9 +2803,15 @@ function showError(error) {
     while ((p = pairRegex.exec(msg)) !== null) found.push(p[1]);
 
     if (!found.length) {
-      const mDup = msg.match(/Xe\s+(.+?)\s+đã được đăng ký/i);
-      if (mDup && mDup[1]) {
-        mDup[1].split(/[,\n\r\t ]+/).forEach(s => { s = s.trim(); if (s) found.push(s); });
+      let extracted = null;
+      const mDupVi = msg.match(/Xe\s+(.+?)\s+đã được đăng ký/i);
+      if (mDupVi && mDupVi[1]) extracted = mDupVi[1];
+      else {
+        const mDupEn = msg.match(/Vehicle plate\(s\)\s+(.+?)\s+have already been registered/i);
+        if (mDupEn && mDupEn[1]) extracted = mDupEn[1];
+      }
+      if (extracted) {
+        extracted.split(/[,\n\r\t ]+/).forEach(s => { s = s.trim(); if (s) found.push(s); });
       }
     }
     if (found.length) { showDuplicatedVehiclesPopup(found); return; }
@@ -2825,16 +2841,16 @@ function showDuplicatedVehiclesPopup(platesInput) {
   }
 
   Swal.fire({
-    title: 'Xe trùng đơn vị khác',
+    title: (translations[currentLang] && translations[currentLang].duplicate_vehicle_popup_title) || 'Xe trùng đơn vị khác',
     icon: 'warning',
     html: `
       ${buildListHtml(plates)}
       <div style="margin-top:8px; font-weight:600;">
-        Là các xe đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.
+        ${(translations[currentLang] && translations[currentLang].duplicate_vehicle_popup_message) || 'Là các xe đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.'}
       </div>
     `,
     width: 520,
-    confirmButtonText: 'OK',
+    confirmButtonText: (translations[currentLang] && translations[currentLang].popup_ok_button) || 'OK',
     allowOutsideClick: true,
     didOpen: () => {
       const c = Swal.getHtmlContainer();
@@ -2855,16 +2871,16 @@ function showNewVehiclePopup(newPlates) {
     : String(newPlates || '').split(/[,\n\r\t ]+/).map(s => s.trim()).filter(Boolean);
 
   Swal.fire({
-    title: 'Thông báo xe mới',
+    title: (translations[currentLang] && translations[currentLang].new_vehicle_popup_title) || 'Thông báo xe mới',
     icon: 'info',
     html: `
       ${buildListHtml(plates)}
       <div style="margin-top:8px; font-weight:600;">
-        Là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.
+        ${(translations[currentLang] && translations[currentLang].new_vehicle_popup_message) || 'Là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.'}
       </div>
     `,
     width: 520,
-    confirmButtonText: 'OK',
+    confirmButtonText: (translations[currentLang] && translations[currentLang].popup_ok_button) || 'OK',
     allowOutsideClick: true,
     didOpen: () => {
       const c = Swal.getHtmlContainer();
@@ -3000,7 +3016,10 @@ function highlightRowsInTable(plates, className) {
 function buildListHtml(items) {
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const visible = items.slice(0, 20);
-  const listHtml = visible.map(p => `<div>Xe ${esc(p)}</div>`).join('');
+  const label =
+    (translations && translations[currentLang] && translations[currentLang].popup_plate_label) ||
+    (currentLang === 'en' ? 'Vehicle' : 'Xe');
+  const listHtml = visible.map(p => `<div>${label} ${esc(p)}</div>`).join('');
   const more = items.length > 20 ? `<div class="text-muted">...</div>` : '';
   return listHtml + more;
 }
@@ -4401,7 +4420,7 @@ function buildWeighResultTables(isAdmin) {
 
   let cols = [];
   if (isAdmin) {
-    cols.push({ data:null, title:'Select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`});
+    cols.push({ data:null, title:'select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`});
     cols.push({ data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>`});
   }
   cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID') ? { data: row => row[h], title:h } : { data:h, title:h }));
