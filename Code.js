@@ -291,8 +291,8 @@ function checkLogin(credentials) {
       throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
     }
 
-    const activeToken = userRecord[6]; // Cột G (chỉ số 6)
-    const tokenExpiry = userRecord[7]; // Cột H (chỉ số 7)
+    const activeToken = userRecord[7]; // Cột G (chỉ số 6)
+    const tokenExpiry = userRecord[8]; // Cột H (chỉ số 7)
     
     // **SỬA LỖI:** Kích hoạt lại dòng kiểm tra
     if (activeToken && tokenExpiry && new Date().getTime() < new Date(tokenExpiry).getTime()) {
@@ -310,11 +310,21 @@ function checkLogin(credentials) {
     userSheet.getRange(userRowIndex + 2, 7).setValue(newSessionToken);
     userSheet.getRange(userRowIndex + 2, 8).setValue(newExpiry);
 
+    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
+    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
+    const customerNameIdx = normalizedHeaders.indexOf('customer name');
+    let rawCustomerName = '';
+    if (customerNameIdx !== -1) {
+      rawCustomerName = userSheet.getRange(userRowIndex + 2, customerNameIdx + 1).getValue();
+    }
+    const customerName = String(rawCustomerName == null ? '' : rawCustomerName).trim();
+
     const userSession = {
       isLoggedIn: true,
       username: userRecord[0],
       role: userRecord[2],
       contractor: userRecord[3],
+      customerName: customerName,      
       token: newSessionToken
     };
 
@@ -1782,21 +1792,34 @@ function lookupSessionFromSheet(sessionToken) {
     const lastRow = userSheet.getLastRow();
     if (lastRow < 2) return null;
 
+    const rowCount = lastRow - 1;
+
     // Cột G (token) & H (expiry)
-    const tokens = userSheet.getRange(2, 7, lastRow - 1, 2).getValues(); // [ [token, expiry], ... ]
-    const usernames = userSheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
-    const roles = userSheet.getRange(2, 3, lastRow - 1, 1).getValues().flat();
-    const contractors = userSheet.getRange(2, 4, lastRow - 1, 1).getValues().flat();
+    const tokens = userSheet.getRange(2, 7, rowCount, 2).getValues(); // [ [token, expiry], ... ]
+    const usernames = userSheet.getRange(2, 1, rowCount, 1).getValues().flat();
+    const roles = userSheet.getRange(2, 3, rowCount, 1).getValues().flat();
+    const contractors = userSheet.getRange(2, 4, rowCount, 1).getValues().flat();
+
+    let customerNames = [];
+    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
+    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
+    const customerNameIdx = normalizedHeaders.indexOf('customer name');
+    if (customerNameIdx !== -1) {
+      customerNames = userSheet.getRange(2, customerNameIdx + 1, rowCount, 1).getValues().flat();
+    }
 
     for (let i = 0; i < tokens.length; i++) {
       const tk = tokens[i][0];
       const exp = tokens[i][1];
       if (tk === sessionToken && exp && new Date().getTime() < new Date(exp).getTime()) {
+        const rawCustomer = customerNames[i];
+        const customerName = String(rawCustomer == null ? '' : rawCustomer).trim();        
         return {
           isLoggedIn: true,
           username: usernames[i],
           role: roles[i],
           contractor: contractors[i],
+          customerName: customerName,
           token: tk
         };
       }
@@ -1842,7 +1865,7 @@ function getUserSession() {
   } catch (e) {
     // Bỏ qua lỗi cache, trả về khách ẩn danh
   }
-  return { isLoggedIn: false, role: null, contractor: null };
+  return { isLoggedIn: false, role: null, contractor: null, customerName: null };
 }
 
 // Trả về Map: company (UPPER) -> Set(contractNo) chỉ chứa hợp đồng Active
@@ -2664,8 +2687,18 @@ function getWeighResultData(params) {
   const f = params.filter || {};
   const from = _toDateKey(f.dateFrom);
   const to = _toDateKey(f.dateTo);
-  const contracts = Array.isArray(f.contracts) && f.contracts.length ? f.contracts : null;
-  const companies = Array.isArray(f.companies) && f.companies.length ? f.companies : null;
+  const normalizeListInput = function(value) {
+    if (value == null) return [];
+    if (Array.isArray(value)) {
+      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
+    }
+    const str = String(value == null ? '' : value).trim();
+    return str ? [str] : [];
+  };
+
+  const contractFilter = normalizeListInput(f.contracts);
+  const customerFilterInput = f.customers != null ? f.customers : f.companies;
+  const customerFilter = normalizeListInput(customerFilterInput);
   const draw = Number(params.draw || 1);
   const empty = {
     draw: draw,
@@ -2673,10 +2706,10 @@ function getWeighResultData(params) {
     recordsFiltered: 0,
     data: [],
     counts: { unassigned: 0, unknown: 0, assigned: 0 },
-    options: { contracts: [], companies: [] }
+    options: { contracts: [], customers: [] }
   };
 
-  if (!from && !to && !contracts && !companies && !(params.search && params.search.value)) {
+  if (!from && !to && !contractFilter.length && !customerFilter.length && !(params.search && params.search.value)) {
     return empty;
   }
 
@@ -2687,8 +2720,9 @@ function getWeighResultData(params) {
   const idxDateOut = headers.indexOf('Date Out');
   const idxContract = headers.indexOf('ContractNo');
   const idxCompany = headers.indexOf('Transportion Company');
-  if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1) {
-    return empty;    
+  const idxCustomer = headers.indexOf('Customer Name');
+  if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
+    return empty;
   }
 
   let rows = [];
@@ -2715,17 +2749,36 @@ function getWeighResultData(params) {
   }
 
   const isUser = session.role === 'user';
-  const userCompany = isUser ? String(session.contractor || '').trim() : '';
-  const contractSet = contracts
-    ? new Set(contracts.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; }))
+  const parseCustomerAssignment = function(value) {
+    if (value == null) return [];
+    if (Array.isArray(value)) {
+      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
+    }
+    return String(value)
+      .split(/[\n,;|]+/)
+      .map(function(v){ return v.trim(); })
+      .filter(function(v){ return v; });
+  };
+
+  const userCustomerList = isUser ? parseCustomerAssignment(session.customerName || session.customerNames) : [];
+  const userCustomerSet = isUser && userCustomerList.length
+    ? new Set(userCustomerList.map(function(v){ return v.toLowerCase(); }))
     : null;
-  const companySet = companies
-    ? new Set(companies.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; }))
+
+  if (isUser && (!userCustomerSet || !userCustomerSet.size)) {
+    return empty;
+  }
+
+  const contractSet = contractFilter.length
+    ? new Set(contractFilter.map(function(v){ return String(v); }))
+    : null;
+  const customerSet = customerFilter.length
+    ? new Set(customerFilter.map(function(v){ return String(v).toLowerCase(); }))
     : null;
 
   const baseRows = [];
   const optionContracts = new Set();
-  const optionCompanies = new Set();  
+  const optionCustomers = new Set();
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     var dateKey = _toDateKey(row[idxDateOut]);
@@ -2733,15 +2786,16 @@ function getWeighResultData(params) {
     if (to && (!dateKey || dateKey > to)) continue;
 
     var rowContract = String(stripLeadingApostrophe(row[idxContract]) || '').trim();
-    var rowCompany = String(stripLeadingApostrophe(row[idxCompany]) || '').trim();
+    var rowCustomer = String(stripLeadingApostrophe(row[idxCustomer]) || '').trim();
+    var rowCustomerKey = rowCustomer.toLowerCase();
 
-    if (isUser && rowCompany !== userCompany) continue;
+    if (isUser && (!rowCustomerKey || !userCustomerSet.has(rowCustomerKey))) continue;
   
     if (rowContract) optionContracts.add(rowContract);
-    if (rowCompany) optionCompanies.add(rowCompany);
+    if (rowCustomer) optionCustomers.add(rowCustomer);
 
-    if (contractSet && !contractSet.has(rowContract)) continue;  
-    if (companySet && !companySet.has(rowCompany)) continue;
+    if (contractSet && !contractSet.has(rowContract)) continue;
+    if (customerSet && (!rowCustomerKey || !customerSet.has(rowCustomerKey))) continue;
 
     baseRows.push(row);
   }
@@ -2749,7 +2803,7 @@ function getWeighResultData(params) {
   var availableContracts = Array.from(optionContracts).sort(function(a, b) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   });
-  var availableCompanies = Array.from(optionCompanies).sort(function(a, b) {
+  var availableCustomers = Array.from(optionCustomers).sort(function(a, b) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   });
 
@@ -2761,7 +2815,7 @@ function getWeighResultData(params) {
       recordsFiltered: 0,
       data: [],
       counts: { unassigned: 0, unknown: 0, assigned: 0 },
-      options: { contracts: availableContracts, companies: availableCompanies }
+      options: { contracts: availableContracts, customers: availableCustomers }
     };
   }
 
@@ -2824,7 +2878,7 @@ function getWeighResultData(params) {
     recordsFiltered: filtered.length,
     data: data,
     counts: counts,
-    options: { contracts: availableContracts, companies: availableCompanies }
+    options: { contracts: availableContracts, customers: availableCustomers }
   };
 }
 
