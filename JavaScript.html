@@ -87,6 +87,36 @@ const translations = {
     "register_vehicle_button": "Đăng ký xe",
     "select_company_option": "Chọn đơn vị",
     "reg_date_label": "Ngày đăng ký",
+    "register_contract_placeholder": "Nhập hoặc chọn Số hợp đồng",
+    "register_tomorrow_label": "(Ngày mai)",
+    "register_upload_date_note": "File upload chỉ chấp nhận ngày đăng ký là {date}.",
+    "register_missing_data_title": "Thiếu dữ liệu",
+    "register_missing_data_message": "Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.",
+    "loading_saving_data": "Đang lưu dữ liệu...",
+    "register_success_message": "Đăng ký xe thành công!",
+    "loading_processing_file": "Đang xử lý và xác thực file...",
+    "no_file_selected_title": "Chưa chọn file",
+    "no_file_selected_message": "Vui lòng chọn một file.",
+    "upload_errors_intro": "Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.",
+    "upload_errors_more": "... và nhiều lỗi khác.",
+    "invalid_data_title": "Dữ liệu không hợp lệ!",
+    "file_no_data_error": "File không có dữ liệu.",
+    "validation_required": "- Cột '{field}' không được để trống.",
+    "validation_invalid_date": "- Cột '{field}' có định dạng ngày không hợp lệ.",
+    "validation_only_tomorrow": "- Cột '{field}' chỉ chấp nhận ngày mai.",
+    "validation_max_length": "- Cột '{field}' không được vượt quá {max} ký tự.",
+    "validation_numeric_max": "- Cột '{field}' phải là số và không quá {max}.",
+    "validation_numeric_only": "- Cột '{field}' phải là số.",
+    "validation_allowed_values": "- Cột '{field}' chỉ chấp nhận: {values}.",
+    "validation_contractor_mismatch": "- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).",
+    "validation_row_label": "Dòng {row}",
+    "duplicate_data_error": "Dữ liệu trùng lặp trong file.",
+    "validation_duplicate_rows": "Dòng {row1} và {row2}",
+    "validation_duplicate_details": "Trùng lặp dữ liệu (Ngày, Biển số xe, ĐVVC).",
+    "no_valid_data_title": "Không có dữ liệu hợp lệ",
+    "no_valid_data_message": "Không có dữ liệu nào để lưu.",
+    "loading_checking_data": "Đang kiểm tra và lưu dữ liệu...",
+    "combo_open_list_label": "Mở danh sách",
 
     // View Page
     "view_header": "Dữ liệu xe đã đăng ký",
@@ -94,6 +124,27 @@ const translations = {
     "export_excel_button": "Xuất Excel",
     "edit_rules_notice_line1": "<strong>Quy tắc chỉnh sửa:</strong><br>- Dữ liệu đăng ký từ <strong>8:00 - 16:00</strong> chỉ có thể sửa trong khung giờ này.",
     "edit_rules_notice_line2": "- Dữ liệu đăng ký từ <strong>20:00 - 22:00</strong> chỉ có thể sửa trong khung giờ này.",
+    "view_filter_label": "Xem ngày",
+    "view_today_label": "(Hôm nay)",
+    "view_tomorrow_label": "(Ngày mai)",
+    "view_stat_total_label": "Tổng số xe đã đăng ký:",
+    "view_stat_pending_label": "Tổng số xe chưa được phê duyệt:",
+    "view_stat_approved_label": "Tổng số xe đã được phê duyệt:",
+    "view_total_badge": "Tổng số xe đã đăng ký:",
+    "no_selection_title": "Chưa chọn mục",
+    "no_selection_message": "Vui lòng chọn ít nhất một mục để xóa.",
+    "delete_selected_confirm_title": "Bạn có chắc muốn xóa {count} mục?",
+    "delete_selected_confirm_text": "Hành động này không thể hoàn tác!",
+    "cancel_button": "Hủy",
+    "confirm_delete_button": "Vâng, xóa đi!",
+    "loading_deleting": "Đang xóa...",
+    "delete_success_title": "Đã xóa!",
+    "loading_preparing_data": "Đang chuẩn bị dữ liệu...",
+    "no_data_title": "Không có dữ liệu",
+    "no_data_export_message": "Không có dữ liệu để xuất file.",
+    "edit_vehicle_title": "Chỉnh sửa thông tin xe",
+    "edit_validation_message": "Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.",
+    "loading_updating": "Đang cập nhật...",    
 
     // Total List Page
     "total_list_upload_header": "Thêm mới danh sách xe (Upload File)",
@@ -146,6 +197,9 @@ const translations = {
     "login_failed": "Đăng nhập thất bại.",
     "logging_out": "Đang đăng xuất...",
     "forgot_password_title": "Quên mật khẩu",
+    "success_title": "Thành công",
+    "warning_title": "Cảnh báo",
+    "info_title": "Thông tin",    
   },
   en: {
     // General
@@ -204,6 +258,36 @@ const translations = {
     "register_vehicle_button": "Register Vehicle",
     "select_company_option": "Select company",
     "reg_date_label": "Registration Date",
+    "register_contract_placeholder": "Enter or select Contract No",
+    "register_tomorrow_label": "(Tomorrow)",
+    "register_upload_date_note": "File upload only accepts registration date {date}.",
+    "register_missing_data_title": "Missing data",
+    "register_missing_data_message": "Please enter Registration Date, Contract No, and Truck Plate.",
+    "loading_saving_data": "Saving data...",
+    "register_success_message": "Vehicle registration successful!",
+    "loading_processing_file": "Processing and validating file...",
+    "no_file_selected_title": "No file selected",
+    "no_file_selected_message": "Please select a file.",
+    "upload_errors_intro": "Errors were found in the uploaded file. Please correct the Excel file and try again. Cells highlighted in red contain errors.",
+    "upload_errors_more": "... and more errors.",
+    "invalid_data_title": "Invalid data!",
+    "file_no_data_error": "The file has no data.",
+    "validation_required": "- Column '{field}' cannot be empty.",
+    "validation_invalid_date": "- Column '{field}' has an invalid date format.",
+    "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
+    "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
+    "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
+    "validation_numeric_only": "- Column '{field}' must be numeric.",
+    "validation_allowed_values": "- Column '{field}' only accepts: {values}.",
+    "validation_contractor_mismatch": "- You can only register vehicles for your contractor ({contractor}).",
+    "validation_row_label": "Row {row}",
+    "duplicate_data_error": "Duplicate data in the file.",
+    "validation_duplicate_rows": "Rows {row1} and {row2}",
+    "validation_duplicate_details": "Duplicate data (Date, Truck Plate, Transport Company).",
+    "no_valid_data_title": "No valid data",
+    "no_valid_data_message": "There is no data to save.",
+    "loading_checking_data": "Checking and saving data...",
+    "combo_open_list_label": "Open list",    
 
     // View Page
     "view_header": "Registered Vehicle Data",
@@ -211,6 +295,36 @@ const translations = {
     "export_excel_button": "Export Excel",
     "edit_rules_notice_line1": "<strong>Editing Rules:</strong><br>- Data registered from <strong>8:00 - 16:00</strong> can only be edited within this time frame.",
     "edit_rules_notice_line2": "- Data registered from <strong>20:00 - 22:00</strong> can only be edited within this time frame.",
+    "register_contract_placeholder": "Enter or select Contract No",
+    "register_tomorrow_label": "(Tomorrow)",
+    "register_upload_date_note": "File upload only accepts registration date {date}.",
+    "register_missing_data_title": "Missing data",
+    "register_missing_data_message": "Please enter Registration Date, Contract No, and Truck Plate.",
+    "loading_saving_data": "Saving data...",
+    "register_success_message": "Vehicle registration successful!",
+    "loading_processing_file": "Processing and validating file...",
+    "no_file_selected_title": "No file selected",
+    "no_file_selected_message": "Please select a file.",
+    "upload_errors_intro": "Errors were found in the uploaded file. Please correct the Excel file and try again. Cells highlighted in red contain errors.",
+    "upload_errors_more": "... and more errors.",
+    "invalid_data_title": "Invalid data!",
+    "file_no_data_error": "The file has no data.",
+    "validation_required": "- Column '{field}' cannot be empty.",
+    "validation_invalid_date": "- Column '{field}' has an invalid date format.",
+    "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
+    "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
+    "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
+    "validation_numeric_only": "- Column '{field}' must be numeric.",
+    "validation_allowed_values": "- Column '{field}' only accepts: {values}.",
+    "validation_contractor_mismatch": "- You can only register vehicles for your contractor ({contractor}).",
+    "validation_row_label": "Row {row}",
+    "duplicate_data_error": "Duplicate data in the file.",
+    "validation_duplicate_rows": "Rows {row1} and {row2}",
+    "validation_duplicate_details": "Duplicate data (Date, Truck Plate, Transport Company).",
+    "no_valid_data_title": "No valid data",
+    "no_valid_data_message": "There is no data to save.",
+    "loading_checking_data": "Checking and saving data...",
+    "combo_open_list_label": "Open list",
 
     // Total List Page
     "total_list_upload_header": "Add New Vehicle List (Upload File)",
@@ -263,6 +377,9 @@ const translations = {
     "login_failed": "Login failed.",
     "logging_out": "Logging out...",
     "forgot_password_title": "Forgot Password",
+    "success_title": "Success",
+    "warning_title": "Warning",
+    "info_title": "Information",    
   }
 };
 
@@ -878,6 +995,7 @@ function initRegisterPage() {
   tomorrow.setDate(today.getDate() + 1);
   const todayStr = getFormattedDate(today);
   const tomorrowStr = getFormattedDate(tomorrow);
+  const t = translations[currentLang];  
 
   const dateSelect = $('#formRegisterDate');
 
@@ -891,9 +1009,11 @@ function initRegisterPage() {
       $('#registration-content .card').removeClass('opacity-50 disabled-card');
       $('#registration-content .card').find('input, select, button').prop('disabled', false);
     } else {
-            dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>`);
+      const tomorrowLabel = t.register_tomorrow_label ? ` ${t.register_tomorrow_label}` : '';
+      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>`);
       if (status.period === 1) {
-        $('#upload-date-note').text(`File upload chỉ chấp nhận ngày đăng ký là ${tomorrowStr}.`);
+        const uploadNote = (t.register_upload_date_note || '').replace('{date}', tomorrowStr);
+        $('#upload-date-note').text(uploadNote);
       } else {
         $('#upload-date-note').text('');
       }
@@ -921,13 +1041,15 @@ function initRegisterPage() {
               .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
         } else {
           // Không có contractor → vẫn cho chọn (ít gặp)
-          const html = ['<option value="">Chọn đơn vị</option>',
+          const firstOption = t.select_company_option || 'Chọn đơn vị';
+          const html = [`<option value="">${firstOption}</option>`,
                         ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
           $sel.html(html).prop('disabled', false).removeClass('bg-light');
         }
       } else {
         // Admin: danh sách đầy đủ
-        const html = ['<option value="">Chọn đơn vị</option>',
+          const firstOption = t.select_company_option || 'Chọn đơn vị';
+        const html = [`<option value="">${firstOption}</option>`,
                       ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
         $sel.html(html).prop('disabled', false).removeClass('bg-light');
       }
@@ -1011,9 +1133,12 @@ function handleManualAdd(e) {
   const transportionCompany = $('#formTransportionCompany').val();
   const subcontractor       = $('#formSubcontractor').val().trim();
   const vehicleStatus       = $('#formVehicleStatus').val();
+  const t = translations[currentLang];  
 
   if (!registerDate || !contractNo || !truckPlate) {
-    Swal.fire('Thiếu dữ liệu', 'Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.', 'warning');
+    Swal.fire(t.register_missing_data_title || 'Thiếu dữ liệu',
+              t.register_missing_data_message || 'Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.',
+              'warning');
     return;
   }
 
@@ -1038,11 +1163,13 @@ function handleManualAdd(e) {
     'Vehicle Status'      : vehicleStatus
   };
 
-  showLoading('Đang lưu dữ liệu...');
+  showLoading(t.loading_saving_data || 'Đang lưu dữ liệu...');
   google.script.run
     .withSuccessHandler(msg => {
       Swal.close();
-      Swal.fire('Thành công', msg || 'Đăng ký xe thành công!', 'success');
+      Swal.fire(t.success_title || 'Thành công',
+                msg || t.register_success_message || 'Đăng ký xe thành công!',
+                'success');
       $('#manualEntryForm')[0].reset();
       if (typeof registeredVehicleTable !== 'undefined') {
         registeredVehicleTable.ajax.reload(null, false);
@@ -1055,11 +1182,14 @@ function handleManualAdd(e) {
 
 function handleFileUpload() {
     const file = $('#fileUploader')[0].files[0];
+    const t = translations[currentLang];    
     if (!file) {
-        Swal.fire('Chưa chọn file', 'Vui lòng chọn một file.', 'warning');
+        Swal.fire(t.no_file_selected_title || 'Chưa chọn file',
+                  t.no_file_selected_message || 'Vui lòng chọn một file.',
+                  'warning');
         return;
     }
-    showLoading('Đang xử lý và xác thực file...');
+    showLoading(t.loading_processing_file || 'Đang xử lý và xác thực file...');
     setTimeout(() => {
         try {
             const reader = new FileReader();
@@ -1068,31 +1198,31 @@ function handleFileUpload() {
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
 
-                if (jsonData.length < 2) throw new Error("File không có dữ liệu.");
+                if (jsonData.length < 2) throw new Error(t.file_no_data_error || 'File không có dữ liệu.');
                 
                 const { data, errors } = validateAndTransformData(jsonData.slice(1));
                 
                 previewTableData = data;
                 
                 const columns = [
-                    { data: 'ID', title: 'ID' },
-                    { data: 'Register Date', title: 'Ngày ĐK' },
-                    { data: 'Contract No', title: 'Số hợp đồng' },
-                    { data: 'Truck Plate', title: 'Biển số xe' },
-                    { data: 'Country', title: 'Quốc gia' },
-                    { data: 'Wheel', title: 'Số bánh' },
-                    { data: 'Trailer Plate', title: 'Biển Mooc' },
-                    { data: 'Truck weight', title: 'Trọng lượng xe' },
-                    { data: 'Pay load', title: 'Tải trọng' },
-                    { data: 'Container No1', title: 'Container 1' },
-                    { data: 'Container No2', title: 'Container 2' },
-                    { data: 'Driver Name', title: 'Tên lái xe' },
-                    { data: 'ID/Passport', title: 'Số HC' },
-                    { data: 'Phone number', title: 'SĐT' },
-                    { data: 'Destination EST', title: 'Điểm trả hàng' },
-                    { data: 'Transportion Company', title: 'ĐVVC' },
-                    { data: 'Subcontractor', title: 'Nhà thầu phụ' },
-                    { data: 'Vehicle Status', title: 'Tình trạng xe' }
+                    { data: 'ID', title: t.col_id || 'ID' },
+                    { data: 'Register Date', title: t.col_register_date || 'Register Date' },
+                    { data: 'Contract No', title: t.col_contract_no || 'Contract No' },
+                    { data: 'Truck Plate', title: t.col_truck_plate || 'Truck Plate' },
+                    { data: 'Country', title: t.col_country || 'Country' },
+                    { data: 'Wheel', title: t.col_wheel || 'Wheel' },
+                    { data: 'Trailer Plate', title: t.col_trailer_plate || 'Trailer Plate' },
+                    { data: 'Truck weight', title: t.col_truck_weight || 'Truck weight' },
+                    { data: 'Pay load', title: t.col_payload || 'Pay load' },
+                    { data: 'Container No1', title: t.col_container1 || 'Container 1' },
+                    { data: 'Container No2', title: t.col_container2 || 'Container 2' },
+                    { data: 'Driver Name', title: t.col_driver_name || 'Driver Name' },
+                    { data: 'ID/Passport', title: t.col_id_passport || 'ID/Passport' },
+                    { data: 'Phone number', title: t.col_phone_number || 'Phone number' },
+                    { data: 'Destination EST', title: t.col_destination || 'Destination EST' },
+                    { data: 'Transportion Company', title: t.col_transport_company || 'Transportion Company' },
+                    { data: 'Subcontractor', title: t.col_subcontractor || 'Subcontractor' },
+                    { data: 'Vehicle Status', title: t.col_vehicle_status || 'Vehicle Status' }
                 ];
                 
                 if ($.fn.DataTable.isDataTable('#previewDataTable')) {
@@ -1123,15 +1253,15 @@ function handleFileUpload() {
                     $('#saveUploadBtn').prop('disabled', true);
                     const maxErrorsToShow = 10;
                     const slicedErrors = errors.slice(0, maxErrorsToShow);
-                    let errorHtml = '<p>Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.</p><ul class="text-start">';
+                    let errorHtml = `<p>${t.upload_errors_intro || 'Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.'}</p><ul class="text-start">`;
                     slicedErrors.forEach(err => { errorHtml += `<li>${err}</li>`; });
                     if(errors.length > maxErrorsToShow) {
-                        errorHtml += '<li>... và nhiều lỗi khác.</li>';
+                        errorHtml += `<li>${t.upload_errors_more || '... và nhiều lỗi khác.'}</li>`;
                     }
                     errorHtml += '</ul>';
                     Swal.fire({
                         icon: 'error',
-                        title: 'Dữ liệu không hợp lệ!',
+                        title: t.invalid_data_title || 'Dữ liệu không hợp lệ!',
                         html: errorHtml
                     });
                 } else {
@@ -1158,13 +1288,33 @@ function validateAndTransformData(dataRows) {
     const allowedStatus = ['RO', 'CO', 'PM', 'CM', 'AC', 'ND'];
     const allowedCountries = ['Vietnam', 'Laos'];
 
+    const t = translations[currentLang];
+    const formatMessage = (template, replacements = {}) => {
+        let str = template || '';
+        Object.entries(replacements).forEach(([key, value]) => {
+            str = str.replace(new RegExp(`\{${key}\}`, 'g'), value);
+        });
+        return str;
+    };
+
     const columnNames = {
-        'Register Date': 'Ngày đăng ký', 'Contract No': 'Số hợp đồng', 'Truck Plate': 'Biển số xe',
-        'Country': 'Quốc gia', 'Wheel': 'Số bánh', 'Trailer Plate': 'Biển số Mooc',
-        'Truck weight': 'Trọng lượng xe', 'Pay load': 'Tải trọng xe', 'Container No1': 'Container 1',
-        'Container No2': 'Container 2', 'Driver Name': 'Tên lái xe', 'ID/Passport': 'Số hộ chiếu',
-        'Phone number': 'Số điện thoại', 'Destination EST': 'Điểm trả hàng dự kiến',
-        'Transportion Company': 'Đơn vị vận chuyển', 'Subcontractor': 'Nhà thầu phụ', 'Vehicle Status': 'Tình trạng xe'
+        'Register Date': t.col_register_date || 'Register Date',
+        'Contract No': t.col_contract_no || 'Contract No',
+        'Truck Plate': t.col_truck_plate || 'Truck Plate',
+        'Country': t.col_country || 'Country',
+        'Wheel': t.col_wheel || 'Wheel',
+        'Trailer Plate': t.col_trailer_plate || 'Trailer Plate',
+        'Truck weight': t.col_truck_weight || 'Truck weight',
+        'Pay load': t.col_payload || 'Pay load',
+        'Container No1': t.col_container1 || 'Container No1',
+        'Container No2': t.col_container2 || 'Container No2',
+        'Driver Name': t.col_driver_name || 'Driver Name',
+        'ID/Passport': t.col_id_passport || 'ID/Passport',
+        'Phone number': t.col_phone_number || 'Phone number',
+        'Destination EST': t.col_destination || 'Destination EST',
+        'Transportion Company': t.col_transport_company || 'Transportion Company',
+        'Subcontractor': t.col_subcontractor || 'Subcontractor',
+        'Vehicle Status': t.col_vehicle_status || 'Vehicle Status'
     };
 
     dataRows.forEach((row, index) => {
@@ -1172,6 +1322,12 @@ function validateAndTransformData(dataRows) {
 
         const rowIndexForError = index + 2;
         const rowErrors = {};
+
+        const appendError = (field, template, replacements = {}) => {
+            const msg = formatMessage(template, replacements);
+            if (!msg) return;
+            rowErrors[field] = rowErrors[field] ? `${rowErrors[field]} ${msg}` : msg;
+        };
         
         const record = {
             'ID': generateRandomId(15),
@@ -1187,61 +1343,74 @@ function validateAndTransformData(dataRows) {
 
         const requiredFields = ['Contract No', 'Truck Plate', 'Country', 'Wheel', 'Truck weight', 'Pay load', 'Driver Name', 'ID/Passport', 'Destination EST', 'Transportion Company', 'Subcontractor', 'Vehicle Status'];
         requiredFields.forEach(field => {
-            if (!record[field]) { rowErrors[field] = `- Cột '${columnNames[field]}' không được để trống.`; }
+            if (!record[field]) {
+                appendError(field, t.validation_required || "- Cột '{field}' không được để trống.", { field: columnNames[field] });
+            }
         });
 
         const parsedDate = parseExcelDate(record['Register Date']);
         if (!parsedDate) {
-            rowErrors['Register Date'] = `- Cột '${columnNames['Register Date']}' có định dạng ngày không hợp lệ.`;
+            appendError('Register Date', t.validation_invalid_date || "- Cột '{field}' có định dạng ngày không hợp lệ.", { field: columnNames['Register Date'] });
         } else {
             const dateStr = getFormattedDate(parsedDate);
             if (userSession.role !== 'admin') {
                 const currentHour = new Date().getHours();
                 if (currentHour >= 8 && currentHour < 16) {
                     if (dateStr !== tomorrowStr) {
-                        rowErrors['Register Date'] = `- Cột '${columnNames['Register Date']}' chỉ chấp nhận ngày mai.`;
+                        appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
                     }
                 }
             }
             record['Register Date'] = dateStr;
         }
 
-
-
-        if (record['Truck Plate'].length > 11) { rowErrors['Truck Plate'] = (rowErrors['Truck Plate'] || '') + ` - Cột '${columnNames['Truck Plate']}' không được vượt quá 11 ký tự.`; }
-        if (record['Country'] && !allowedCountries.includes(record['Country'])) { rowErrors['Country'] = (rowErrors['Country'] || '') + ` - Cột '${columnNames['Country']}' chỉ chấp nhận: ${allowedCountries.join(', ')}.`; }
-        if (record['Trailer Plate'].length > 11) { rowErrors['Trailer Plate'] = `Cột '${columnNames['Trailer Plate']}' không được vượt quá 11 ký tự.`; }
+        if (record['Truck Plate'].length > 11) {
+            appendError('Truck Plate', t.validation_max_length || "- Cột '{field}' không được vượt quá {max} ký tự.", { field: columnNames['Truck Plate'], max: 11 });
+        }
+        if (record['Country'] && !allowedCountries.includes(record['Country'])) {
+            appendError('Country', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Country'], values: allowedCountries.join(', ') });
+        }
+        if (record['Trailer Plate'].length > 11) {
+            appendError('Trailer Plate', t.validation_max_length || "- Cột '{field}' không được vượt quá {max} ký tự.", { field: columnNames['Trailer Plate'], max: 11 });
+        }
         
         const numericFields = {'Wheel': 1000, 'Truck weight': 1000, 'Pay load': 1000, 'Phone number': Infinity};
-        for(const field in numericFields) {
-            if (record[field] && (isNaN(parseFloat(record[field])) || parseFloat(record[field]) > numericFields[field])) {
-                rowErrors[field] = (rowErrors[field] || '') + ` - Cột '${columnNames[field]}' phải là số và không quá ${numericFields[field]}.`;
+        for (const field in numericFields) {
+            if (!record[field]) continue;
+            const value = parseFloat(record[field]);
+            if (isNaN(value)) {
+                appendError(field, t.validation_numeric_only || "- Cột '{field}' phải là số.", { field: columnNames[field] });
+            } else if (numericFields[field] !== Infinity && value > numericFields[field]) {
+                appendError(field, t.validation_numeric_max || "- Cột '{field}' phải là số và không quá {max}.", { field: columnNames[field], max: numericFields[field] });
             }
         }
 
         const textLengthFields = {'Container No1': 70, 'Container No2': 70, 'Driver Name': 70, 'ID/Passport': 70, 'Destination EST': 70, 'Subcontractor': 70};
         for(const field in textLengthFields) {
             if (String(record[field]).length > textLengthFields[field]) {
-                rowErrors[field] = (rowErrors[field] || '') + ` - Cột '${columnNames[field]}' không được vượt quá ${textLengthFields[field]} ký tự.`;
+                appendError(field, t.validation_max_length || "- Cột '{field}' không được vượt quá {max} ký tự.", { field: columnNames[field], max: textLengthFields[field] });
             }
         }
 
-        if (record['Vehicle Status'] && !allowedStatus.includes(record['Vehicle Status'])) { rowErrors['Vehicle Status'] = (rowErrors['Vehicle Status'] || '') + ` - Cột '${columnNames['Vehicle Status']}' chỉ chấp nhận: ${allowedStatus.join(', ')}.`; }
+        if (record['Vehicle Status'] && !allowedStatus.includes(record['Vehicle Status'])) {
+            appendError('Vehicle Status', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Vehicle Status'], values: allowedStatus.join(', ') });
+        }
         
         if (userSession.role === 'user') {
             if (record['Transportion Company'] && record['Transportion Company'] !== userSession.contractor) {
-                rowErrors['Transportion Company'] = (rowErrors['Transportion Company'] || '') + ` - Bạn chỉ có thể đăng ký cho nhà thầu của mình (${userSession.contractor}).`;
+                appendError('Transportion Company', t.validation_contractor_mismatch || '- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).', { contractor: userSession.contractor });
             }
             record['Transportion Company'] = userSession.contractor;
         } else {
             if (record['Transportion Company'] && !allowedCompanies.includes(record['Transportion Company'])) {
-                rowErrors['Transportion Company'] = (rowErrors['Transportion Company'] || '') + ` - Cột '${columnNames['Transportion Company']}' chỉ chấp nhận: ${allowedCompanies.join(', ')}.`;
+                appendError('Transportion Company', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Transportion Company'], values: allowedCompanies.join(', ') });
             }
         }
         
         if (Object.keys(rowErrors).length > 0) {
-            const errorMessages = Object.values(rowErrors).map(msg => msg.startsWith(' - ') ? msg.substring(3) : msg).join('<br>');
-            allErrors.push(`<b>Dòng ${rowIndexForError}:</b><br>${errorMessages}`);
+            const errorMessages = Object.values(rowErrors).map(msg => msg.trim()).join('<br>');
+            const rowLabel = formatMessage(t.validation_row_label || 'Dòng {row}', { row: rowIndexForError });
+            allErrors.push(`<b>${rowLabel}:</b><br>${errorMessages}`);
             record.errors = rowErrors;
         }
         
@@ -1257,11 +1426,13 @@ function validateAndTransformData(dataRows) {
             if (!transformedData[firstIndex].errors) transformedData[firstIndex].errors = {};
             if (!record.errors) record.errors = {};
             
-            const errorMessage = "Dữ liệu trùng lặp trong file.";
+            const errorMessage = t.duplicate_data_error || 'Dữ liệu trùng lặp trong file.';
             transformedData[firstIndex].errors['ID'] = errorMessage;
             record.errors['ID'] = errorMessage;
 
-            allErrors.push(`<b>Dòng ${firstIndex + 2} và ${index + 2}:</b> Trùng lặp dữ liệu (Ngày, Biển số xe, ĐVVC).`);
+            const duplicateLabel = formatMessage(t.validation_duplicate_rows || 'Dòng {row1} và {row2}', { row1: firstIndex + 2, row2: index + 2 });
+            const duplicateDetail = t.validation_duplicate_details || 'Trùng lặp dữ liệu (Ngày, Biển số xe, ĐVVC).';
+            allErrors.push(`<b>${duplicateLabel}:</b> ${duplicateDetail}`);
         } else {
             seen.set(key, index);
         }
@@ -1272,15 +1443,18 @@ function validateAndTransformData(dataRows) {
 
 function handleSaveUploadedData() {
     const dataToSave = previewTableData.filter(row => !row.errors);
+    const t = translations[currentLang];    
     if (dataToSave.length === 0) {
-        Swal.fire('Không có dữ liệu hợp lệ', 'Không có dữ liệu nào để lưu.', 'error');
+        Swal.fire(t.no_valid_data_title || 'Không có dữ liệu hợp lệ',
+                  t.no_valid_data_message || 'Không có dữ liệu nào để lưu.',
+                  'error');
         return;
     }
 
-    showLoading('Đang kiểm tra và lưu dữ liệu...');
+    showLoading(t.loading_checking_data || 'Đang kiểm tra và lưu dữ liệu...');
     google.script.run
         .withSuccessHandler(message => {
-            Swal.fire('Thành công!', message, 'success');
+            Swal.fire(t.success_title || 'Thành công', message, 'success');
             previewTableData = [];
             if($.fn.DataTable.isDataTable('#previewDataTable')) $('#previewDataTable').DataTable().clear().destroy();
             $('#previewContainer').addClass('d-none');
@@ -1408,24 +1582,28 @@ function initViewPage() {
   tomorrow.setDate(today.getDate() + 1);
   const todayStr = getFormattedDate(today);
   const tomorrowStr = getFormattedDate(tomorrow);
+  const t = translations[currentLang];  
 
+ const filterLabel = t.view_filter_label || 'Select Date';
   if (['admin', 'admin-xppl'].includes(userSession.role)) {
     dateFilterContainer.html(
       `<div class="input-group">
-         <span class="input-group-text">Xem ngày</span>
+         <span class="input-group-text">${filterLabel}</span>
          <input type="date" id="date-filter-input" class="form-control">
        </div>`
     );
     $('#date-filter-input').val(today.toISOString().split('T')[0]);
   } else if (userSession.role === 'admin-xppl') {
-    dateFilterContainer.html('');    
+    dateFilterContainer.html('');
   } else {
+    const todayLabel = t.view_today_label ? ` ${t.view_today_label}` : '';
+    const tomorrowLabel = t.view_tomorrow_label ? ` ${t.view_tomorrow_label}` : '';    
     dateFilterContainer.html(
       `<div class="input-group">
-         <span class="input-group-text">Xem ngày</span>
+         <span class="input-group-text">${filterLabel}</span>
          <select id="date-filter-select" class="form-select">
-           <option value="${todayStr}">${todayStr} (Hôm nay)</option>
-           <option value="${tomorrowStr}">${tomorrowStr} (Ngày mai)</option>
+           <option value="${todayStr}">${todayStr}${todayLabel}</option>
+           <option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>
          </select>
        </div>`
     );
@@ -1433,7 +1611,6 @@ function initViewPage() {
 
   $('#date-filter-container').on('change', () => registeredVehicleTable.draw());
 
-  const t = translations[currentLang];
   const baseColumns = [
     { data: 'ID', title: t.col_id },
     { data: 'Register Date', title: t.col_register_date },
@@ -1496,8 +1673,9 @@ function initViewPage() {
 var __registeredUseServerSummary = false; // đã có tổng từ server hay chưa
 
 function updateRegisteredCount(total) {
+  const label = t.view_total_badge || 'Tổng số xe đã đăng ký:';  
   $('#registered-count').html(
-    'Tổng số xe đã đăng ký: <span class="badge bg-primary">' + (total || 0) + '</span>'
+   `${label} <span class="badge bg-primary">${total || 0}</span>`
   );
 }
 
@@ -1647,6 +1825,7 @@ function handleExportExcel() {
     : (userSession.role === 'admin-xppl' ? '' : $('#date-filter-select').val());
 
   var table = registeredVehicleTable;
+ const t = translations[currentLang];  
 
   // Lấy cột ĐANG HIỂN THỊ theo thứ tự (bỏ cột select + action vì data = null)
   var colIdxs = table.columns({ visible: true, order: 'index' }).indexes().toArray();
@@ -1679,7 +1858,7 @@ function handleExportExcel() {
   // Mặc định: gọi server để lấy TOÀN BỘ dữ liệu theo ngày (và theo search nếu có)
   var searchVal = table.search() || '';
   var $btn = $('#exportBtn').prop('disabled', true);
-  showLoading('Đang chuẩn bị dữ liệu...');
+  showLoading(t.loading_preparing_data || 'Đang chuẩn bị dữ liệu...');
 
   google.script.run
     .withSuccessHandler(function(data){
@@ -1687,7 +1866,9 @@ function handleExportExcel() {
       if (Array.isArray(data) && data.length) {
         exportRows(data); // <-- data đã là toàn bộ (không phân trang)
       } else {
-        Swal.fire('Không có dữ liệu', 'Không có dữ liệu để xuất file.', 'info');
+        Swal.fire(t.no_data_title || 'Không có dữ liệu',
+                  t.no_data_export_message || 'Không có dữ liệu để xuất file.',
+                  'info');
       }
     })
     .withFailureHandler(function(err){ Swal.close(); $btn.prop('disabled', false); showError(err); })
@@ -1699,26 +1880,28 @@ function handleExportExcel() {
 
 function handleDeleteSelected() {
     const selectedIds = registeredVehicleTable.rows('.selected').data().toArray().map(row => row.ID);
+    const t = translations[currentLang];    
 
     if (selectedIds.length === 0) {
-        Swal.fire('Chưa chọn mục', 'Vui lòng chọn ít nhất một mục để xóa.', 'warning');
-        return;
+        Swal.fire(t.no_selection_title || 'Chưa chọn mục',
+                  t.no_selection_message || 'Vui lòng chọn ít nhất một mục để xóa.',
+                  'warning');
     }
 
     Swal.fire({
-        title: `Bạn có chắc muốn xóa ${selectedIds.length} mục?`,
-        text: "Hành động này không thể hoàn tác!",
+        title: (t.delete_selected_confirm_title || 'Bạn có chắc muốn xóa {count} mục?').replace('{count}', selectedIds.length),
+        text: t.delete_selected_confirm_text || 'Hành động này không thể hoàn tác!',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc3545',
-        cancelButtonText: 'Hủy',
-        confirmButtonText: 'Vâng, xóa đi!'
+        cancelButtonText: t.cancel_button || 'Hủy',
+        confirmButtonText: t.confirm_delete_button || 'Vâng, xóa đi!'
     }).then((result) => {
         if (result.isConfirmed) {
-            showLoading('Đang xóa...');
+            showLoading(t.loading_deleting || 'Đang xóa...');
             google.script.run
                 .withSuccessHandler(message => {
-                    Swal.fire('Đã xóa!', message, 'success');
+                    Swal.fire(t.delete_success_title || 'Đã xóa!', message, 'success');
                     registeredVehicleTable.draw(false);
                 })
                 .withFailureHandler(showError)
@@ -1729,50 +1912,51 @@ function handleDeleteSelected() {
 
 function handleEdit(rowData) {
     const createOptions = (items, selectedValue) => items.map(item => `<option value="${item}" ${item === selectedValue ? 'selected' : ''}>${item}</option>`).join('');
+    const t = translations[currentLang];    
 
     const formHtml = `
         <form id="editForm" class="edit-form-grid">
-            <div class="form-group"><label>ID</label><input type="text" class="form-control" value="${rowData.ID}" readonly></div>
-            <div class="form-group"><label>Ngày đăng ký</label><input type="text" class="form-control" value="${rowData['Register Date']}" readonly></div>
-            <div class="form-group"><label>Số hợp đồng</label><input type="text" id="editContractNo" class="form-control" value="${rowData['Contract No'] || ''}" required></div>
-            <div class="form-group"><label>Biển số xe</label><input type="text" id="editTruckPlate" class="form-control" value="${rowData['Truck Plate'] || ''}" maxlength="11" required></div>
-            <div class="form-group"><label>Quốc gia</label>
+            <div class="form-group"><label>${t.col_id || 'ID'}</label><input type="text" class="form-control" value="${rowData.ID}" readonly></div>
+            <div class="form-group"><label>${t.col_register_date || 'Register Date'}</label><input type="text" class="form-control" value="${rowData['Register Date']}" readonly></div>
+            <div class="form-group"><label>${t.col_contract_no || 'Contract No'}</label><input type="text" id="editContractNo" class="form-control" value="${rowData['Contract No'] || ''}" required></div>
+            <div class="form-group"><label>${t.col_truck_plate || 'Truck Plate'}</label><input type="text" id="editTruckPlate" class="form-control" value="${rowData['Truck Plate'] || ''}" maxlength="11" required></div>
+            <div class="form-group"><label>${t.col_country || 'Country'}</label>
                 <select id="editCountry" class="form-select">${createOptions(['Vietnam', 'Laos'], rowData['Country'])}</select>
             </div>
-            <div class="form-group"><label>Số bánh</label><input type="number" id="editWheel" class="form-control" value="${rowData['Wheel'] || ''}" max="1000" required></div>
-            <div class="form-group"><label>Biển số Mooc</label><input type="text" id="editTrailerPlate" class="form-control" value="${rowData['Trailer Plate'] || ''}" maxlength="11"></div>
-            <div class="form-group"><label>Trọng lượng xe</label><input type="number" id="editTruckWeight" class="form-control" value="${rowData['Truck weight'] || ''}" max="1000" step="0.01" required></div>
-            <div class="form-group"><label>Tải trọng xe</label><input type="number" id="editPayLoad" class="form-control" value="${rowData['Pay load'] || ''}" max="1000" step="0.01" required></div>
-            <div class="form-group"><label>Container 1</label><input type="text" id="editContainerNo1" class="form-control" value="${rowData['Container No1'] || ''}" maxlength="70"></div>
-            <div class="form-group"><label>Container 2</label><input type="text" id="editContainerNo2" class="form-control" value="${rowData['Container No2'] || ''}" maxlength="70"></div>
-            <div class="form-group"><label>Tên lái xe</label><input type="text" id="editDriverName" class="form-control" value="${rowData['Driver Name'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>Số hộ chiếu</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" ></div>
-            <div class="form-group"><label>Điểm trả hàng dự kiến</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>Đơn vị vận chuyển</label>
+            <div class="form-group"><label>${t.col_wheel || 'Wheel'}</label><input type="number" id="editWheel" class="form-control" value="${rowData['Wheel'] || ''}" max="1000" required></div>
+            <div class="form-group"><label>${t.col_trailer_plate || 'Trailer Plate'}</label><input type="text" id="editTrailerPlate" class="form-control" value="${rowData['Trailer Plate'] || ''}" maxlength="11"></div>
+            <div class="form-group"><label>${t.col_truck_weight || 'Truck weight'}</label><input type="number" id="editTruckWeight" class="form-control" value="${rowData['Truck weight'] || ''}" max="1000" step="0.01" required></div>
+            <div class="form-group"><label>${t.col_payload || 'Pay load'}</label><input type="number" id="editPayLoad" class="form-control" value="${rowData['Pay load'] || ''}" max="1000" step="0.01" required></div>
+            <div class="form-group"><label>${t.col_container1 || 'Container 1'}</label><input type="text" id="editContainerNo1" class="form-control" value="${rowData['Container No1'] || ''}" maxlength="70"></div>
+            <div class="form-group"><label>${t.col_container2 || 'Container 2'}</label><input type="text" id="editContainerNo2" class="form-control" value="${rowData['Container No2'] || ''}" maxlength="70"></div>
+            <div class="form-group"><label>${t.col_driver_name || 'Driver Name'}</label><input type="text" id="editDriverName" class="form-control" value="${rowData['Driver Name'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_id_passport || 'ID/Passport'}</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_phone_number || 'Phone number'}</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" ></div>
+            <div class="form-group"><label>${t.col_destination || 'Destination EST'}</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_transport_company || 'Transportion Company'}</label>
                 <select class="form-select" id="editTransportionCompany" ${userSession.role === 'user' ? 'disabled' : ''}>
                     ${createOptions(allowedCompanies, rowData['Transportion Company'])}
                 </select>
             </div>
-            <div class="form-group"><label>Nhà thầu phụ</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>Tình trạng xe</label>
+            <div class="form-group"><label>${t.col_subcontractor || 'Subcontractor'}</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_vehicle_status || 'Vehicle Status'}</label>
                 <select class="form-select" id="editVehicleStatus" required>
                     ${createOptions(['RO', 'CO', 'PM', 'CM', 'AC', 'ND'], rowData['Vehicle Status'])}
                 </select>
-            </div>                      
+            </div>
         </form>`;
 
     Swal.fire({
-        title: 'Chỉnh sửa thông tin xe',
+        title: t.edit_vehicle_title || 'Chỉnh sửa thông tin xe',
         html: formHtml,
         width: '90%',
         showCancelButton: true,
-        confirmButtonText: 'Lưu thay đổi',
-        cancelButtonText: 'Hủy bỏ',
+        confirmButtonText: t.save_changes_button || 'Lưu thay đổi',
+        cancelButtonText: t.cancel_button || 'Hủy bỏ',
         preConfirm: () => {
             const form = $('#editForm')[0];
             if (!form.checkValidity()) {
-                Swal.showValidationMessage('Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.');
+                Swal.showValidationMessage(t.edit_validation_message || 'Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.');
                 return false;
             }
             const updatedRecord = { ...rowData };
@@ -1796,10 +1980,10 @@ function handleEdit(rowData) {
         }
     }).then((result) => {
         if (result.isConfirmed) {
-            showLoading('Đang cập nhật...');
+            showLoading(t.loading_updating || 'Đang cập nhật...');
             google.script.run
                 .withSuccessHandler(message => {
-                    Swal.fire('Thành công!', message, 'success');
+                    Swal.fire(t.success_title || 'Thành công', message, 'success');
                     registeredVehicleTable.draw(false);
                 })
                 .withFailureHandler(showError)
@@ -3084,11 +3268,13 @@ function loadActiveContractNosForRegister() {
 function initComboBox(inputSel, options) {
   const $input = $(inputSel);
   if (!$input.length) return;
+  const t = translations[currentLang];  
 
   // Bọc input
   if (!$input.parent().hasClass('combo-wrap')) {
     $input.wrap('<div class="combo-wrap"></div>');
-    $input.after('<button type="button" class="combo-btn" aria-label="Mở danh sách">▾</button><div class="combo-menu"></div>');
+    const ariaLabel = t.combo_open_list_label || 'Mở danh sách';
+    $input.after(`<button type="button" class="combo-btn" aria-label="${ariaLabel}">▾</button><div class="combo-menu"></div>`);
   }
   const $wrap = $input.parent();
   const $btn  = $wrap.find('.combo-btn');
