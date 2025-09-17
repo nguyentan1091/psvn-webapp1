@@ -3985,7 +3985,7 @@ function initWeighResultPage() {
   $('#wr-date-from').val(formatDateInput(yesterday));
   $('#wr-date-to').val(formatDateInput(yesterday));
   $('#wr-adv-toggle').attr('aria-expanded', 'false');
-  $('#wr-contracts, #wr-companies').prop('disabled', true).empty();
+  $('#wr-contracts, #wr-customers').prop('disabled', true).empty();
 
   google.script.run
     .withSuccessHandler(list => {
@@ -4047,13 +4047,85 @@ function initWeighResultPage() {
 
 function formatDateInput(d){ return d.toISOString().slice(0,10); }
 
+function parseMultiValueInput(value) {
+  if (value == null) return [];
+  const arr = Array.isArray(value)
+    ? value
+    : String(value).split(/[\n,;|]+/);
+  return arr
+    .map(v => String(v == null ? '' : v).trim())
+    .filter(Boolean);
+}
+
+function uniqueCasePreserveOrder(list) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(val => {
+    const str = String(val == null ? '' : val).trim();
+    if (!str) return;
+    const key = str.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(str);
+  });
+  return out;
+}
+
+function getWrAllowedCustomers() {
+  if (!userSession || userSession.role !== 'user') return [];
+  const raw = userSession.customerName || userSession.customerNames || '';
+  return uniqueCasePreserveOrder(parseMultiValueInput(raw));
+}
+
+function sanitizeWrCustomerSelection(values) {
+  const allowed = getWrAllowedCustomers();
+  if (!allowed.length) return [];
+  const allowedSet = new Set(allowed.map(name => name.toLowerCase()));
+  const filtered = uniqueCasePreserveOrder(
+    parseMultiValueInput(values).filter(name => allowedSet.has(name.toLowerCase()))
+  );
+  return filtered.length ? filtered : allowed.slice();
+}
+
+function arraysEqualIgnoreCase(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i] || '').toLowerCase() !== (b[i] || '').toLowerCase()) return false;
+  }
+  return true;
+}
+
+function syncWrCustomerSelection(selected) {
+  if (!Array.isArray(selected)) return;
+  const $sel = $('#wr-customers');
+  if (!$sel.length) return;
+  const current = parseMultiValueInput($sel.val());
+  if (!arraysEqualIgnoreCase(current, selected)) {
+    $sel.val(selected);
+  }
+}
+
 function getWrFilters(){
-  return {
+  const filter = {
     dateFrom: $('#wr-date-from').val(),
     dateTo: $('#wr-date-to').val(),
-    contracts: $('#wr-contracts').val() || [],
-    customers: $('#wr-customers').val() || []
+    contracts: uniqueCasePreserveOrder($('#wr-contracts').val() || []),
+    customers: uniqueCasePreserveOrder($('#wr-customers').val() || [])
   };
+
+  if (userSession?.role === 'user') {
+    const allowed = getWrAllowedCustomers();
+    if (allowed.length) {
+      const sanitized = sanitizeWrCustomerSelection(filter.customers);
+      filter.customers = sanitized;
+      syncWrCustomerSelection(sanitized);
+    } else {
+      filter.customers = [];
+    }
+  }
+
+  return filter;  
 }
 
 function updateWrSummary(counts){
@@ -4069,11 +4141,11 @@ function updateWrAdvancedFilters(options){
     const $sel = $(selector);
     if (!$sel.length) return;
 
-    const current = new Set(($sel.val() || []).map(v => String(v)));
+    const currentSet = new Set(parseMultiValueInput($sel.val()).map(v => v.toLowerCase()));
     $sel.empty();
 
     const list = Array.isArray(values)
-      ? values.map(v => String(v == null ? '' : v).trim()).filter(v => v)
+      ? uniqueCasePreserveOrder(values)
       : [];
 
     if (!list.length) {
@@ -4083,22 +4155,27 @@ function updateWrAdvancedFilters(options){
       return;
     }
 
-    const unique = [];
-    const seen = new Set();
     list.forEach(val => {
-      if (seen.has(val)) return;
-      seen.add(val);
-      unique.push(val);
-    });
-
-    unique.forEach(val => {
-      const opt = new Option(val, val, false, current.has(val));
+      const isSelected = currentSet.has(val.toLowerCase());
+      const opt = new Option(val, val, false, isSelected);
       $sel.append(opt);
     });
 
-    const selected = unique.filter(val => current.has(val));
+    const selected = list.filter(val => currentSet.has(val.toLowerCase()));
     $sel.val(selected);
     $sel.prop('disabled', false);
+
+    if (selector === '#wr-customers' && userSession?.role === 'user') {
+      const sanitized = sanitizeWrCustomerSelection($sel.val());
+      if (sanitized.length) {
+        const normalizedList = list.map(val => val.toLowerCase());
+        const sanitizedExisting = sanitized.filter(name => normalizedList.includes(name.toLowerCase()));
+        const finalSelection = sanitizedExisting.length ? sanitizedExisting : sanitized;
+        $sel.val(finalSelection);
+      } else {
+        $sel.val([]);
+      }
+    }    
   }
 
   refreshSelect('#wr-contracts', options.contracts);
@@ -4148,20 +4225,26 @@ function exportWrTable(table, name){
   const searchValue = table.search() || '';
   const order = (table.order() || []).map(([column, dir]) => ({ column, dir }));
 
-  const currentCount = table.rows({ search: 'applied' }).count();
-  if (!currentCount) {
+  const info = (typeof table.page === 'function' && typeof table.page.info === 'function')
+    ? table.page.info()
+    : null;
+  const settingsObj = (settings && settings.length) ? settings[0] : null;
+  let totalRecords = null;
+  if (settingsObj && typeof settingsObj._iRecordsDisplay === 'number') {
+    totalRecords = settingsObj._iRecordsDisplay;
+  } else if (info && typeof info.recordsDisplay === 'number') {
+    totalRecords = info.recordsDisplay;
+  } else {
+    const dataApi = table.rows({ search: 'applied' }).data();
+    totalRecords = dataApi && typeof dataApi.length === 'number' ? dataApi.length : 0;    
+  }
+
+  if (!totalRecords) {
     Swal.fire('Không có dữ liệu', 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
     return;
   }
 
-  const info = (typeof table.page === 'function' && typeof table.page.info === 'function')
-    ? table.page.info()
-    : null;
-  let reqLength = Number.MAX_SAFE_INTEGER;
-  if (info && typeof info.recordsDisplay === 'number' && info.recordsDisplay > 0) {
-    reqLength = info.recordsDisplay;
-  }
-  if (reqLength < currentCount) reqLength = currentCount;
+  const reqLength = Math.max(0, Number(totalRecords));
 
   const extra = {};
   const tableId = table.table().node().id;
