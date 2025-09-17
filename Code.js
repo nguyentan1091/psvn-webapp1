@@ -96,6 +96,10 @@ const LOCKOUT_DURATION_1 = 10 * 60 * 1000; // 10 minutes
 const LOCKOUT_DURATION_2 = 60 * 60 * 1000; // 1 hour
 const SESSION_TIMEOUT_SECONDS = 30 * 60; // 30 minutes
 
+// Default supervision account configuration
+const SUPERVISION_DEFAULT_USERNAME = 'LA';
+const SUPERVISION_DEFAULT_PASSWORD = 'CRLF@LA111';
+const SUPERVISION_DEFAULT_ROLE = 'User-Supervision';
 
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
 function stripLeadingApostrophe(v) {
@@ -330,6 +334,66 @@ function logLoginAttempt(username, status) {
   }
 }
 
+function ensureSupervisionAccount_() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(USERS_SHEET);
+    if (!sheet) return;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 1) return;
+
+    const lastCol = sheet.getLastColumn();
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
+
+    const findIndex = names => {
+      const list = Array.isArray(names) ? names : [names];
+      for (const name of list) {
+        const idx = normalizedHeaders.indexOf(String(name || '').trim().toLowerCase());
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+
+    const usernameIdx = findIndex(['username', 'user name']);
+    if (usernameIdx === -1) return;
+
+    const dataRowCount = Math.max(0, lastRow - 1);
+    if (dataRowCount > 0) {
+      const usernames = sheet
+        .getRange(2, usernameIdx + 1, dataRowCount, 1)
+        .getValues()
+        .map(r => String(r[0] || '').trim().toLowerCase());
+      if (usernames.includes(SUPERVISION_DEFAULT_USERNAME.toLowerCase())) {
+        return;
+      }
+    }
+
+    const passwordIdx = findIndex('password');
+    const roleIdx = findIndex('role');
+    const contractorIdx = findIndex('contractor');
+    const passwordUpdatedIdx = findIndex(['password last updated', 'passwordlastupdated', 'password updated']);
+    const securityCodeIdx = findIndex(['security code', 'securitycode']);
+    const customerNameIdx = findIndex(['customer name', 'customer']);
+
+    const newRow = new Array(lastCol).fill('');
+    newRow[usernameIdx] = SUPERVISION_DEFAULT_USERNAME;
+    if (passwordIdx !== -1) newRow[passwordIdx] = SUPERVISION_DEFAULT_PASSWORD;
+    if (roleIdx !== -1) newRow[roleIdx] = SUPERVISION_DEFAULT_ROLE;
+    if (contractorIdx !== -1) newRow[contractorIdx] = '';
+    if (passwordUpdatedIdx !== -1) newRow[passwordUpdatedIdx] = new Date();
+    if (securityCodeIdx !== -1) {
+      newRow[securityCodeIdx] = Math.random().toString(36).slice(-6).toUpperCase();
+    }
+    if (customerNameIdx !== -1) newRow[customerNameIdx] = '';
+
+    sheet.appendRow(newRow);
+  } catch (err) {
+    Logger.log('ensureSupervisionAccount_ error: ' + err);
+  }
+}
+
 function checkLogin(credentials) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
@@ -416,7 +480,9 @@ function checkLogin(credentials) {
       : '';
     const customerName = String(rawCustomerName == null ? '' : rawCustomerName).trim();
 
-    const userRole = (roleIdx !== -1) ? userRecord[roleIdx] : '';
+    const rawUserRole = (roleIdx !== -1) ? userRecord[roleIdx] : '';
+    const userRole = String(rawUserRole == null ? '' : rawUserRole).trim();
+    const normalizedRole = userRole.toLowerCase();
     const userContractor = (contractorIdx !== -1) ? userRecord[contractorIdx] : '';
     const canonicalUsername = String(userRecord[usernameIdx] == null ? '' : userRecord[usernameIdx]).trim();
 
@@ -434,9 +500,10 @@ function checkLogin(credentials) {
     const userSession = {
       isLoggedIn: true,
       username: canonicalUsername,
-      role: userRole,
+      role: normalizedRole,
+      roleDisplay: userRole || normalizedRole,
       contractor: userContractor,
-      customerName: customerName, 
+      customerName: customerName,
       token: newSessionToken
     };
 
@@ -753,6 +820,7 @@ function getCustomersByContracts(contracts, sessionToken) {
 
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   const userSession = validateSession(params.sessionToken);
+  const userRole = String(userSession.role || '').toLowerCase();  
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const lastRow = sheet.getLastRow();
@@ -762,7 +830,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
 
   let allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
 
-  if (userSession.role === 'user') {
+   if (userRole === 'user') {
     const companyColumnIndex = headers.indexOf('Transportion Company');
     if (companyColumnIndex !== -1) {
         allData = allData.filter(row => row[companyColumnIndex] === userSession.contractor);
@@ -770,6 +838,11 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     const activityColumnIndex = headers.indexOf('Activity Status');
     if (activityColumnIndex !== -1) {
         allData = allData.filter(row => String(row[activityColumnIndex]).toUpperCase() === 'ACTIVE');
+    }
+  } else if (userRole === 'user-supervision') {
+    const statusIdx = headers.indexOf('Registration Status');
+    if (statusIdx !== -1) {
+      allData = allData.filter(row => String(row[statusIdx] || '').trim().toLowerCase() === 'approved');
     }    
   }
 
@@ -1499,6 +1572,7 @@ function checkVehicleActivityStatus(vehicles) {
 
 function getAllDataForExport(dateString, sessionToken, searchQuery) {
   const userSession = validateSession(sessionToken);
+  const role = String(userSession.role || '').toLowerCase();  
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheet = ss.getSheetByName(DATA_SHEET);
@@ -1510,9 +1584,15 @@ function getAllDataForExport(dateString, sessionToken, searchQuery) {
     let rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
 
     // Lọc theo quyền user (nếu là user thường)
-    if (userSession.role === 'user') {
+     if (role === 'user') {
       const compIdx = headers.indexOf('Transportion Company');
       rows = rows.filter(r => r[compIdx] === userSession.contractor);
+    }
+    if (role === 'user-supervision') {
+      const statusIdx = headers.indexOf('Registration Status');
+      if (statusIdx !== -1) {
+        rows = rows.filter(r => String(r[statusIdx] || '').trim().toLowerCase() === 'approved');
+      }
     }
 
     // Lọc theo ngày (định dạng dd/MM/yyyy, bỏ dấu ')
@@ -1989,6 +2069,11 @@ function validateSession(sessionToken) {
 // THAY THẾ getUserSession()
 // ==========================
 function getUserSession() {
+  try {
+    ensureSupervisionAccount_();
+  } catch (e) {
+    Logger.log('ensureSupervisionAccount_ wrapper error: ' + e);
+  }  
   try {
     // Ưu tiên cache user nếu có
     var userCache = CacheService.getUserCache();
