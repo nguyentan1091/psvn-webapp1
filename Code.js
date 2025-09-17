@@ -1455,10 +1455,17 @@ function _toDateKey(v) {
 // =================================================================
 // LOGIC XỬ LÝ ĐĂNG KÝ XE – Gom đủ "Xe mới" và "Xe trùng đơn vị khác"
 // =================================================================
+const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu. Không thể đăng ký. Vui lòng liên hệ PSVN.';
+const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
+
 function checkVehiclesAgainstTotalList(vehicles) {
   const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
   if (totalListSheet.getLastRow() < 2) {
-    return { isValid: false, message: 'Danh sách xe tổng chưa có dữ liệu. Không thể đăng ký. Vui lòng liên hệ PSVN.' };
+    return {
+      isValid: false,
+      message: TOTAL_LIST_EMPTY_MESSAGE_VI,
+      messageEn: TOTAL_LIST_EMPTY_MESSAGE_EN
+    };
   }
 
   const totalListData = totalListSheet.getRange(
@@ -1508,17 +1515,21 @@ function checkVehiclesAgainstTotalList(vehicles) {
 
   // Ưu tiên báo "Xe mới" nếu có
   if (newPlates.length > 0) {
+    const message = `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`;    
     return {
       isValid: false,
-      message: `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`
+      message: message,
+      messageEn: `Vehicle plate(s) ${newPlates.join(', ')} are new. Please submit an additional registration to the total list with PSVN.`
     };
   }
 
   // Nếu có xe trùng đơn vị khác → trả về danh sách biển số
   if (mismatchPlates.length > 0) {
+    const message = `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`;    
     return {
       isValid: false,
-      message: `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`
+      message: message,
+      messageEn: `Vehicle plate(s) ${mismatchPlates.join(', ')} have already been registered with another transport company. Please contact PSVN for assistance.`
     };
   }
 
@@ -1531,7 +1542,11 @@ function checkVehiclesAgainstTotalList(vehicles) {
 function checkVehicleActivityStatus(vehicles) {
   const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
   if (totalListSheet.getLastRow() < 2) {
-    return { isValid: false, message: 'Danh sách xe tổng chưa có dữ liệu. Không thể đăng ký. Vui lòng liên hệ PSVN.' };
+    return {
+      isValid: false,
+      message: TOTAL_LIST_EMPTY_MESSAGE_VI,
+      messageEn: TOTAL_LIST_EMPTY_MESSAGE_EN
+    };
   }
 
   const totalListData = totalListSheet.getRange(
@@ -1560,9 +1575,11 @@ function checkVehicleActivityStatus(vehicles) {
   });
 
   if (bannedPlates.length > 0) {
+   const message = `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`;    
     return {
       isValid: false,
-      message: `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`
+      message: message,
+      messageEn: `Vehicle plate(s) ${bannedPlates.join(', ')} are currently banned. Please contact PSVN for assistance.`
     };
   }
 
@@ -1622,25 +1639,39 @@ function getAllDataForExport(dateString, sessionToken, searchQuery) {
   }
 }
 
+function createMessagePicker_(language) {
+  const lang = String(language || '').toLowerCase() === 'en' ? 'en' : 'vi';
+  return function(vi, en) {
+    return lang === 'en' && en ? en : vi;
+  };
+}
 
-
-function saveData(dataToSave, sessionToken) {
+function saveData(dataToSave, sessionToken, language) {
   const userSession = validateSession(sessionToken);
-  if (!dataToSave || dataToSave.length === 0) throw new Error('Không có dữ liệu để lưu.');
+
+  const pickMessage = createMessagePicker_(language);
+  if (!dataToSave || dataToSave.length === 0) {
+    throw new Error(pickMessage('Không có dữ liệu để lưu.', 'There is no data to save.'));
+  }
 
   if (userSession.role !== 'admin') {
     const timeStatus = checkRegistrationTime();
-    if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép đăng ký dữ liệu trong ngày.');
+    if (!timeStatus.isOpen) {
+      throw new Error(pickMessage(
+        'Đã hết thời gian cho phép đăng ký dữ liệu trong ngày.',
+        'The allowed registration time for today has ended.'
+      ));
+    }
   }
 
   const activityResult = checkVehicleActivityStatus(dataToSave);
   if (!activityResult.isValid) {
-    throw new Error(activityResult.message);
+    throw new Error(pickMessage(activityResult.message, activityResult.messageEn));
   }
 
   const validationResult = checkVehiclesAgainstTotalList(dataToSave);
   if (!validationResult.isValid) {
-    throw new Error(validationResult.message);
+    throw new Error(pickMessage(validationResult.message, validationResult.messageEn));
   }
 
   // Kiểm tra Contract No thuộc đúng đơn vị & Active
@@ -1660,7 +1691,10 @@ function saveData(dataToSave, sessionToken) {
     });
 
     if (invalid.length > 0) {
-      throw new Error('Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active): ' + invalid.join(', '));
+      throw new Error(pickMessage(
+        'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active): ' + invalid.join(', '),
+        'Invalid contract numbers. Please verify the transport contract (Contract No must belong to the correct company and be Active): ' + invalid.join(', ')
+      ));
     }
   })();
 
@@ -1674,7 +1708,10 @@ function saveData(dataToSave, sessionToken) {
 
   const existingDuplicates = checkForExistingRegistrations(dupCheckRecords, sessionToken);
   if (existingDuplicates && existingDuplicates.length > 0) {
-      throw new Error(`Các xe sau đã được đăng ký trong ngày: ${existingDuplicates.join(', ')}. Vui lòng kiểm tra lại.`);
+      throw new Error(pickMessage(
+        `Các xe sau đã được đăng ký trong ngày: ${existingDuplicates.join(', ')}. Vui lòng kiểm tra lại.`,
+        `The following vehicles have already been registered today: ${existingDuplicates.join(', ')}. Please verify.`
+      ));
   }
 
   try {
@@ -1689,8 +1726,11 @@ function saveData(dataToSave, sessionToken) {
       return HEADERS_REGISTER.map(header => obj[header] || "");
     });
     sheet.getRange(sheet.getLastRow() + 1, 1, dataArray.length, HEADERS_REGISTER.length).setValues(dataArray);
-    return 'Dữ liệu đã được lưu thành công!';
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi lưu dữ liệu: ' + error.message); }
+    return pickMessage('Dữ liệu đã được lưu thành công!', 'Data saved successfully!');
+  } catch (error) {
+    Logger.log(error);
+    throw new Error(pickMessage('Lỗi khi lưu dữ liệu: ' + error.message, 'Error saving data: ' + error.message));
+  }
 }
 
 function updateData(rowData, sessionToken) {
@@ -2369,8 +2409,9 @@ function generateShortId() {
 }
 
 // === THAY TOÀN BỘ addManualVehicle ===
-function addManualVehicle(record, sessionToken) {
+function addManualVehicle(record, sessionToken, language) {
   const userSession = validateSession(sessionToken);
+  const pickMessage = createMessagePicker_(language);
 
   try {
     const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -2387,7 +2428,7 @@ function addManualVehicle(record, sessionToken) {
 
     const activityCheck = checkVehicleActivityStatus([{ 'Truck Plate': rowObj['Truck Plate'] }]);
     if (!activityCheck.isValid) {
-      throw new Error(activityCheck.message);
+     throw new Error(pickMessage(activityCheck.message, activityCheck.messageEn));
     }
 
     // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
@@ -2396,14 +2437,17 @@ function addManualVehicle(record, sessionToken) {
       'Transportion Company': rowObj['Transportion Company']
     }]);
     if (!precheck.isValid) {
-      throw new Error(precheck.message);
+      throw new Error(pickMessage(precheck.message, precheck.messageEn));
     }
 
     // ✅ NEW: kiểm tra Contract No thuộc đúng Contractor & Active
     const contractNo = String(rowObj['Contract No'] || '').trim();
     const company    = String(rowObj['Transportion Company'] || '').trim();
     if (!isContractActiveForCompany_(contractNo, company)) {
-      throw new Error('Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).');
+      throw new Error(pickMessage(
+        'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).',
+        'Invalid contract numbers. Please verify the transport contract (Contract No must belong to the correct company and be Active).'
+      ));
     }
 
     // ✅ NEW: kiểm tra xe đã đăng ký trong ngày (tái dùng logic của saveData)
@@ -2413,7 +2457,10 @@ function addManualVehicle(record, sessionToken) {
       'Transportion Company': rowObj['Transportion Company']
     }], sessionToken);
     if (dup && dup.length > 0) {
-      throw new Error(`Các xe sau đã được đăng ký trong ngày: ${dup.join(', ')}. Vui lòng kiểm tra lại.`);
+      throw new Error(pickMessage(
+        `Các xe sau đã được đăng ký trong ngày: ${dup.join(', ')}. Vui lòng kiểm tra lại.`,
+        `The following vehicles have already been registered today: ${dup.join(', ')}. Please verify.`
+      ));
     }
 
     // ID do server tự sinh
@@ -2434,10 +2481,10 @@ function addManualVehicle(record, sessionToken) {
     const values = [HEADERS_REGISTER.map(h => rowObj[h] ?? "")];
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, HEADERS_REGISTER.length).setValues(values);
 
-    return 'Đăng ký xe thành công!';
+    return pickMessage('Đăng ký xe thành công!', 'Vehicle registered successfully!');
   } catch (e) {
     Logger.log(e);
-    throw new Error('Lỗi khi thêm mới: ' + e.message);
+    throw new Error('Add New Error: ' + e.message);
   }
 }
 
