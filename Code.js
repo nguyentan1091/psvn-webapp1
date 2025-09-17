@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = ' '; 
+const SPREADSHEET_ID = ''; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -250,7 +250,7 @@ function logLoginAttempt(username, status) {
 function checkLogin(credentials) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-  const username = credentials.username;
+  const username = String(credentials.username == null ? '' : credentials.username).trim();
   
   try {
     const lockoutUntil = scriptProperties.getProperty(`lockout_until_${username}`);
@@ -260,20 +260,37 @@ function checkLogin(credentials) {
     }
 
     if (userSheet.getLastRow() < 2) throw new Error('Không có dữ liệu người dùng.');
-    const usersRange = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, 8);
+
+    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
+    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
+    const totalColumns = headerRow.length;
+
+    const usernameIdx = normalizedHeaders.indexOf('username');
+    const passwordIdx = normalizedHeaders.indexOf('password');
+    const roleIdx = normalizedHeaders.indexOf('role');
+    const contractorIdx = normalizedHeaders.indexOf('contractor');
+    const customerNameIdx = normalizedHeaders.indexOf('customer name');
+    const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
+    const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
+
+    if (usernameIdx === -1 || passwordIdx === -1) {
+      throw new Error('Cấu trúc sheet Users không hợp lệ. Thiếu cột Username hoặc Password.');
+    }
+
+    const usersRange = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, totalColumns);
     const users = usersRange.getValues();
     let userRowIndex = -1;
     let userRecord = null;
 
     for (let i = 0; i < users.length; i++) {
-        if (users[i][0] === username) {
-            userRowIndex = i;
-            userRecord = users[i];
-            break;
-        }
+      if (String(users[i][usernameIdx] == null ? '' : users[i][usernameIdx]).trim() === username) {
+        userRowIndex = i;
+        userRecord = users[i];
+        break;
+      }
     }
 
-    if (!userRecord || userRecord[1] !== credentials.password) {
+    if (!userRecord || String(userRecord[passwordIdx] == null ? '' : userRecord[passwordIdx]) !== String(credentials.password == null ? '' : credentials.password)) {
       logLoginAttempt(username, 'Failure');
       let failedAttempts = parseInt(scriptProperties.getProperty(`failed_attempts_${username}`) || '0') + 1;
       if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
@@ -291,13 +308,34 @@ function checkLogin(credentials) {
       throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
     }
 
-    const activeToken = userRecord[7]; // Cột G (chỉ số 6)
-    const tokenExpiry = userRecord[8]; // Cột H (chỉ số 7)
-    
-    // **SỬA LỖI:** Kích hoạt lại dòng kiểm tra
-    if (activeToken && tokenExpiry && new Date().getTime() < new Date(tokenExpiry).getTime()) {
-      throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
+    let activeToken = '';
+    let tokenExpiry = '';
+    if (activeTokenIdx !== -1) {
+      activeToken = String(userRecord[activeTokenIdx] == null ? '' : userRecord[activeTokenIdx]).trim();
     }
+    if (tokenExpiryIdx !== -1) {
+      tokenExpiry = userRecord[tokenExpiryIdx];
+    }
+
+    if (activeToken && tokenExpiry) {
+      const expiryDate = tokenExpiry instanceof Date ? tokenExpiry : new Date(tokenExpiry);
+      if (!isNaN(expiryDate.getTime()) && new Date().getTime() < expiryDate.getTime()) {
+        throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
+      }
+    }
+
+    if (activeTokenIdx === -1 || tokenExpiryIdx === -1) {
+      throw new Error('Thiếu cột ActiveSessionToken hoặc SessionTokenExpiry trong sheet Users.');
+    }
+
+    const rawCustomerName = (customerNameIdx !== -1)
+      ? userRecord[customerNameIdx]
+      : '';
+    const customerName = String(rawCustomerName == null ? '' : rawCustomerName).trim();
+
+    const userRole = (roleIdx !== -1) ? userRecord[roleIdx] : '';
+    const userContractor = (contractorIdx !== -1) ? userRecord[contractorIdx] : '';
+    const canonicalUsername = String(userRecord[usernameIdx] == null ? '' : userRecord[usernameIdx]).trim();
 
     logLoginAttempt(username, 'Success');
     scriptProperties.deleteProperty(`failed_attempts_${username}`);
@@ -307,24 +345,15 @@ function checkLogin(credentials) {
     const newSessionToken = Utilities.getUuid();
     const newExpiry = new Date(new Date().getTime() + SESSION_TIMEOUT_SECONDS * 1000);
     
-    userSheet.getRange(userRowIndex + 2, 7).setValue(newSessionToken);
-    userSheet.getRange(userRowIndex + 2, 8).setValue(newExpiry);
-
-    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
-    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
-    const customerNameIdx = normalizedHeaders.indexOf('customer name');
-    let rawCustomerName = '';
-    if (customerNameIdx !== -1) {
-      rawCustomerName = userSheet.getRange(userRowIndex + 2, customerNameIdx + 1).getValue();
-    }
-    const customerName = String(rawCustomerName == null ? '' : rawCustomerName).trim();
+    userSheet.getRange(userRowIndex + 2, activeTokenIdx + 1).setValue(newSessionToken);
+    userSheet.getRange(userRowIndex + 2, tokenExpiryIdx + 1).setValue(newExpiry);
 
     const userSession = {
       isLoggedIn: true,
-      username: userRecord[0],
-      role: userRecord[2],
-      contractor: userRecord[3],
-      customerName: customerName,      
+      username: canonicalUsername,
+      role: userRole,
+      contractor: userContractor,
+      customerName: customerName, 
       token: newSessionToken
     };
 
@@ -345,10 +374,30 @@ function logout() {
   if (sessionData) {
     const session = JSON.parse(sessionData);
     const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const users = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, 1).getValues().flat();
-    const userRowIndex = users.indexOf(session.username);
-    if (userRowIndex !== -1) {
-      userSheet.getRange(userRowIndex + 2, 7, 1, 2).clearContent();
+    if (userSheet.getLastRow() > 1) {
+      const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
+      const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
+      const usernameIdx = normalizedHeaders.indexOf('username');
+      const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
+      const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
+
+      if (usernameIdx !== -1) {
+        const usernameValues = userSheet
+          .getRange(2, usernameIdx + 1, userSheet.getLastRow() - 1, 1)
+          .getValues()
+          .map(r => String(r[0] == null ? '' : r[0]).trim());
+        const targetUsername = String(session.username == null ? '' : session.username).trim();
+        const userRowIndex = usernameValues.indexOf(targetUsername);
+
+        if (userRowIndex !== -1) {
+          if (activeTokenIdx !== -1) {
+            userSheet.getRange(userRowIndex + 2, activeTokenIdx + 1).clearContent();
+          }
+          if (tokenExpiryIdx !== -1) {
+            userSheet.getRange(userRowIndex + 2, tokenExpiryIdx + 1).clearContent();
+          }
+        }
+      }
     }
   }
   userCache.remove('user_session');
