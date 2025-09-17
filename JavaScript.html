@@ -3845,7 +3845,7 @@ function initWeighResultPage() {
     if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
   });
 
-  $('#wr-date-from, #wr-date-to, #wr-contracts, #wr-companies').off('change').on('change', reloadWrTables);
+  $('#wr-date-from, #wr-date-to, #wr-contracts, #wr-customers').off('change').on('change', reloadWrTables);
 
   $('#wr-reload').off('click').on('click', function(e){ e.preventDefault(); wrResultTable.ajax.reload(); });
   if (isAdmin) $('#wr-unknown-reload').off('click').on('click', function(e){ e.preventDefault(); wrUnknownTable.ajax.reload(); });
@@ -3866,7 +3866,7 @@ function getWrFilters(){
     dateFrom: $('#wr-date-from').val(),
     dateTo: $('#wr-date-to').val(),
     contracts: $('#wr-contracts').val() || [],
-    companies: $('#wr-companies').val() || []
+    customers: $('#wr-customers').val() || []
   };
 }
 
@@ -3916,7 +3916,7 @@ function updateWrAdvancedFilters(options){
   }
 
   refreshSelect('#wr-contracts', options.contracts);
-  refreshSelect('#wr-companies', options.companies);
+  refreshSelect('#wr-customers', options.customers);
 }
 
 function reloadWrTables(){
