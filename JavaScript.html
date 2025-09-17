@@ -25,6 +25,31 @@ let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
 let currentLang = 'vi'; // Ngôn ngữ mặc định
 
+function normalizeRole(role) {
+    return typeof role === 'string' ? role.trim().toLowerCase() : '';
+}
+
+function getUserRole() {
+    return normalizeRole(userSession && userSession.role);
+}
+
+function getRoleDisplay() {
+    if (!userSession) return '';
+    return userSession.roleDisplay || userSession.role || '';
+}
+
+function isRole(role) {
+    return getUserRole() === normalizeRole(role);
+}
+
+function hasAnyRole(roles) {
+    const current = getUserRole();
+    const list = Array.isArray(roles) ? roles : [roles];
+    return list.some(r => normalizeRole(r) === current);
+}
+
+const SUPERVISION_ALLOWED_PAGES = new Set(['Page_View', 'Page_WeighResult', 'Page_Account']);
+
 
 // =================================================================
 // **MỚI:** HỆ THỐNG DỊCH
@@ -411,7 +436,12 @@ function setLanguage(lang) {
     
     // Cập nhật thông tin người dùng
     if(userSession.isLoggedIn) {
-         $('#userInfo').text(translations[currentLang].hello_user.replace('{username}', userSession.username).replace('{role}', userSession.role));
+         const roleText = getRoleDisplay();
+         $('#userInfo').text(
+            translations[currentLang].hello_user
+                .replace('{username}', userSession.username)
+                .replace('{role}', roleText)
+         );
     }
 }
 
@@ -498,12 +528,24 @@ function loadDashboard() {
             }
           };
 
-          if (userSession.role === 'admin-xppl') {
+          const role = getUserRole();
+          if (role === 'user-supervision') {
+            hideMenuItem('Page_Register');
+            hideMenuItem('Page_TotalList');
+            hideMenuItem('Page_Contract');
+            hideMenuItem('Page_XuLyXPPL');
+            hideMenuItem('XPPL-WeighingStation');
+            hideMenuItem('Page_Guide');
+            $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
+            const viewLink = $('#sidebar-wrapper .list-group-item[data-page="Page_View"]');
+            viewLink.removeClass('d-none disabled').addClass('active');
+            viewLink.closest('.collapse').addClass('show');
+          } else if (role === 'admin-xppl') {
             hideMenuItem('Page_Register');
             hideMenuItem('Page_Contract');
             hideMenuItem('Page_XuLyXPPL');
             $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
-          } else if (userSession.role !== 'admin') {
+          } else if (role !== 'admin') {
             hideMenuItem('Page_XuLyXPPL');
             const active = $('#sidebar-wrapper .list-group-item[data-page].active');
             if (active.data('page') === 'Page_XuLyXPPL') {
@@ -511,7 +553,7 @@ function loadDashboard() {
               $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
             }
           }
-          if (!['admin', 'admin-xppl'].includes(userSession.role)) {
+        if (!hasAnyRole(['admin', 'admin-xppl'])) {
             hideMenuItem('XPPL-WeighingStation');
           }
         }
@@ -531,8 +573,17 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
 
     $('.page-title').text(translations[currentLang][pageTitleKey] || pageTitleKey);
     if (!isInitialLoad) showLoading(translations[currentLang].loading_page);
+    const role = getUserRole();
+    if (role === 'user-supervision' && !SUPERVISION_ALLOWED_PAGES.has(pageName)) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Tài khoản giám sát chỉ được phép xem dữ liệu đã được phê duyệt.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
         // Chặn client nếu không phải admin
-    if (pageName === 'Page_XuLyXPPL' && userSession && userSession.role !== 'admin') {
+    if (pageName === 'Page_XuLyXPPL' && userSession && role !== 'admin') {
       if (!isInitialLoad) Swal.close();
       Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin.', 'info');
       $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
@@ -540,7 +591,7 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
       return;
     }
 
-    if (userSession && userSession.role === 'admin-xppl' && ['Page_Register','Page_Contract'].includes(pageName)) {
+    if (userSession && role === 'admin-xppl' && ['Page_Register','Page_Contract'].includes(pageName)) {
       if (!isInitialLoad) Swal.close();
       Swal.fire('Không có quyền', 'Chức năng này không khả dụng với tài khoản hiện tại.', 'info');
       $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
@@ -548,7 +599,7 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
       return;
     }
 
-    if (pageName === 'XPPL-WeighingStation' && userSession && !['admin', 'admin-xppl'].includes(userSession.role)) {
+    if (pageName === 'XPPL-WeighingStation' && userSession && !hasAnyRole(['admin', 'admin-xppl'])) {
       if (!isInitialLoad) Swal.close();
       Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin hoặc admin-xppl.', 'info');
       $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
@@ -746,7 +797,7 @@ function handleForgotPassword(e) {
 function initAccountPage() {
     $('#changePasswordForm').on('submit', handleChangePassword);
 
-    if (userSession.role === 'admin') {
+    if (isRole('admin')) {
         $('#admin-user-management').removeClass('d-none');
         initUsersTable();
         $('#addNewUserBtn').on('click', handleAddNewUser);
@@ -820,9 +871,10 @@ function handleEditUser(rowData) {
             <div class="swal-form-group">
                 <label for="swal-role">Phân quyền</label>
                 <select id="swal-role" class="swal2-select">
-                    <option value="user" ${rowData.Role === 'user' ? 'selected' : ''}>user</option>
-                    <option value="admin" ${rowData.Role === 'admin' ? 'selected' : ''}>admin</option>
-                    <option value="admin-xppl" ${rowData.Role === 'admin-xppl' ? 'selected' : ''}>admin-xppl</option>
+                    <option value="user" ${normalizeRole(rowData.Role) === 'user' ? 'selected' : ''}>user</option>
+                    <option value="admin" ${normalizeRole(rowData.Role) === 'admin' ? 'selected' : ''}>admin</option>
+                    <option value="admin-xppl" ${normalizeRole(rowData.Role) === 'admin-xppl' ? 'selected' : ''}>admin-xppl</option>
+                    <option value="User-Supervision" ${normalizeRole(rowData.Role) === 'user-supervision' ? 'selected' : ''}>User-Supervision</option>
                 </select>
             </div>
             <div class="swal-form-group">
@@ -900,6 +952,7 @@ function handleAddNewUser() {
                     <option value="user">user</option>
                     <option value="admin">admin</option>
                     <option value="admin-xppl">admin-xppl</option>
+                    <option value="User-Supervision">User-Supervision</option>                    
                 </select>
             </div>
             <div class="swal-form-group">
@@ -1031,7 +1084,8 @@ function initRegisterPage() {
       allowedCompanies = (list || []).filter(Boolean);
       const $sel = $('#formTransportionCompany');
 
-      if (userSession.role === 'user') {
+
+      if (isRole('user')) {//đã làm đến đây lúc 15:28
         // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
         const me = String((userSession.contractor || '')).trim();
         if (me) {
@@ -1077,7 +1131,7 @@ function startRegistrationTimer() {
                     closedNotice.addClass('d-none');
                     contentCards.removeClass('opacity-50 disabled-card');
                     contentCards.find('input, select, button').prop('disabled', false);
-                    if (userSession.role === 'user') {
+                    if (isRole('user')) {
                         $('#formTransportionCompany').prop('disabled', true);
                     }
                     openNotice.find('#open-message').text(translations[currentLang].reg_open_message_text);
@@ -1353,7 +1407,7 @@ function validateAndTransformData(dataRows) {
             appendError('Register Date', t.validation_invalid_date || "- Cột '{field}' có định dạng ngày không hợp lệ.", { field: columnNames['Register Date'] });
         } else {
             const dateStr = getFormattedDate(parsedDate);
-            if (userSession.role !== 'admin') {
+            if (!isRole('admin')) {
                 const currentHour = new Date().getHours();
                 if (currentHour >= 8 && currentHour < 16) {
                     if (dateStr !== tomorrowStr) {
@@ -1396,7 +1450,7 @@ function validateAndTransformData(dataRows) {
             appendError('Vehicle Status', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Vehicle Status'], values: allowedStatus.join(', ') });
         }
         
-        if (userSession.role === 'user') {
+        if (isRole('user')) {
             if (record['Transportion Company'] && record['Transportion Company'] !== userSession.contractor) {
                 appendError('Transportion Company', t.validation_contractor_mismatch || '- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).', { contractor: userSession.contractor });
             }
@@ -1582,10 +1636,16 @@ function initViewPage() {
   tomorrow.setDate(today.getDate() + 1);
   const todayStr = getFormattedDate(today);
   const tomorrowStr = getFormattedDate(tomorrow);
-  const t = translations[currentLang];  
+  const t = translations[currentLang];
+  const role = getUserRole();
+  const isAdmin = role === 'admin';
+  const isAdminXppl = role === 'admin-xppl';
+  const isUser = role === 'user';
+  const isSupervision = role === 'user-supervision';
+  const showSelectActions = isAdmin || isUser; 
 
  const filterLabel = t.view_filter_label || 'Select Date';
-  if (['admin', 'admin-xppl'].includes(userSession.role)) {
+  if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
     dateFilterContainer.html(
       `<div class="input-group">
          <span class="input-group-text">${filterLabel}</span>
@@ -1593,11 +1653,9 @@ function initViewPage() {
        </div>`
     );
     $('#date-filter-input').val(today.toISOString().split('T')[0]);
-  } else if (userSession.role === 'admin-xppl') {
-    dateFilterContainer.html('');
   } else {
     const todayLabel = t.view_today_label ? ` ${t.view_today_label}` : '';
-    const tomorrowLabel = t.view_tomorrow_label ? ` ${t.view_tomorrow_label}` : '';    
+    const tomorrowLabel = t.view_tomorrow_label ? ` ${t.view_tomorrow_label}` : '';
     dateFilterContainer.html(
       `<div class="input-group">
          <span class="input-group-text">${filterLabel}</span>
@@ -1634,7 +1692,7 @@ function initViewPage() {
     { data: 'Time', title: t.col_time }
   ];
 
-  const columns = (userSession.role !== 'admin-xppl')
+  const columns = showSelectActions
     ? [
         { data: null, title: '<input type="checkbox" id="selectAllCheckbox">', orderable: false, render: () => '<input type="checkbox" class="row-checkbox">' },
         { data: null, title: t.action_column, orderable: false, render: () => `<button class="btn btn-warning btn-sm edit-btn" title="${t.edit_button}"><i class="fas fa-edit"></i></button>` },
@@ -1653,20 +1711,19 @@ function initViewPage() {
         .getRegisteredDataServerSide(params);
     },
     getExtraParams: () => {
-      if (['admin', 'admin-xppl'].includes(userSession.role)) {
+      if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
+        const raw = $('#date-filter-input').val();
         return {
-          dateString: $('#date-filter-input').val()
-            ? getFormattedDate(new Date($('#date-filter-input').val()))
-            : getFormattedDate(new Date())
+          dateString: raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date())
         };
       }
       return { dateString: $('#date-filter-select').val() };
     },
     searchControl: '#table-search-input',
     lengthControl: '#page-length-select',
-    deleteButton: userSession.role !== 'admin-xppl' ? '#deleteSelectedBtn' : null,
-    selectAllCheckbox: userSession.role !== 'admin-xppl' ? '#selectAllCheckbox' : null,
-    enableSelect: userSession.role !== 'admin-xppl'
+    deleteButton: showSelectActions ? '#deleteSelectedBtn' : null,
+    selectAllCheckbox: showSelectActions ? '#selectAllCheckbox' : null,
+    enableSelect: showSelectActions
   });
 
 // ===== Tổng số xe đã đăng ký (theo ngày lọc) =====
@@ -1750,23 +1807,23 @@ $('#registeredVehicleTable')
   });
 
   // ----- Phần còn lại giữ nguyên -----
-  if (userSession.role === 'user') {
+  if (isUser) {
     const notice = $('#edit-rules-notice');
     notice.removeClass('d-none');
     notice.html(`${t.edit_rules_notice_line1}<br>${t.edit_rules_notice_line2}`);
   }
 
   $('#refreshBtn').on('click', () => registeredVehicleTable.ajax.reload(null, false));
-  if (userSession.role !== 'admin-xppl') {
-    $('#deleteSelectedBtn').on('click', handleDeleteSelected);
+  if (showSelectActions) {
+    $('#deleteSelectedBtn').removeClass('d-none disabled').off('click').on('click', handleDeleteSelected);
   } else {
-    $('#deleteSelectedBtn').addClass('d-none');
+     $('#deleteSelectedBtn').addClass('d-none').off('click');
   }
   $('#exportBtn').off('click').on('click', handleExportExcel);
 
 
   // === Visibility & permissions for Registered Vehicles table (Admin vs User) ===
-  if (typeof registeredVehicleTable !== 'undefined' && userSession.role !== 'admin-xppl') {
+   if (typeof registeredVehicleTable !== 'undefined' && showSelectActions) {
     const SELECT_COL = 0;
     const ACTION_COL = 1;
 
@@ -1777,17 +1834,11 @@ $('#registeredVehicleTable')
 
     const applyRegisteredColumnsVisibility = () => {
       if (!registeredVehicleTable) return;
-      if (userSession && userSession.role === 'admin') {
+     if (isAdmin) {
         try {
           registeredVehicleTable.column(SELECT_COL).visible(true);
           registeredVehicleTable.column(ACTION_COL).visible(true);
-        } catch (_e) {}
-      } else if (userSession && userSession.role === 'admin-xppl') {
-        try {
-          registeredVehicleTable.column(SELECT_COL).visible(false);
-          registeredVehicleTable.column(ACTION_COL).visible(false);
-        } catch (_e) {}
-        $('#deleteSelectedBtn').addClass('d-none');        
+        } catch (_e) {}    
       } else {
         const allow = isWithinUserEditWindow();
         try {
@@ -1796,6 +1847,8 @@ $('#registeredVehicleTable')
         } catch (_e) {}
         if (!allow) {
           $('#deleteSelectedBtn').addClass('disabled');
+        } else {
+          $('#deleteSelectedBtn').removeClass('disabled');          
         }
       }
     };
@@ -1818,11 +1871,13 @@ const $btn = $('#exportBtn').prop('disabled', true);
 
 function handleExportExcel() {
   // Lấy ngày theo đúng logic cũ
-  var selectedDateStr = (['admin', 'admin-xppl'].includes(userSession.role))
-    ? ($('#date-filter-input').val()
-        ? getFormattedDate(new Date($('#date-filter-input').val()))
-        : getFormattedDate(new Date()))
-    : (userSession.role === 'admin-xppl' ? '' : $('#date-filter-select').val());
+  var selectedDateStr;
+  if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
+    const raw = $('#date-filter-input').val();
+    selectedDateStr = raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date());
+  } else {
+    selectedDateStr = $('#date-filter-select').val();
+  }
 
   var table = registeredVehicleTable;
  const t = translations[currentLang];  
@@ -1934,7 +1989,7 @@ function handleEdit(rowData) {
             <div class="form-group"><label>${t.col_phone_number || 'Phone number'}</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" ></div>
             <div class="form-group"><label>${t.col_destination || 'Destination EST'}</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
             <div class="form-group"><label>${t.col_transport_company || 'Transportion Company'}</label>
-                <select class="form-select" id="editTransportionCompany" ${userSession.role === 'user' ? 'disabled' : ''}>
+                <select class="form-select" id="editTransportionCompany" ${isRole('user') ? 'disabled' : ''}>
                     ${createOptions(allowedCompanies, rowData['Transportion Company'])}
                 </select>
             </div>
@@ -1994,7 +2049,7 @@ function handleEdit(rowData) {
 
 function initTotalListPage() {
     const t = translations[currentLang];
-    const isAdmin = (userSession?.role === 'admin');
+    const isAdmin = isRole('admin');
 
     // 1) Destroy sạch mọi instance/bộ nhớ cũ
     if ($.fn.DataTable.isDataTable('#totalListTable')) {
@@ -3050,7 +3105,7 @@ let contractTable;
 
 function initContractPage() {
   // Quyền: admin thấy khung nhập + thao tác, user thì ẩn
-  const isAdmin = (userSession?.role === 'admin');
+  const isAdmin = isRole('admin');
   if (isAdmin) $('#contract-entry-card').removeClass('d-none');
   else $('#contract-entry-card').addClass('d-none');
   $('#ct-delete').toggleClass('d-none', !isAdmin);
@@ -3780,7 +3835,7 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
 
 
   // ====== Admin guard & DataTable ======
-  if (!userSession || userSession.role !== 'admin') {
+  if (!userSession || !isRole('admin')) {
     $('#main-content').html('<div class="alert alert-warning">Bạn không có quyền truy cập trang này.</div>');
     return;
   }
@@ -3970,9 +4025,9 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
 
 // ====================== WEIGHING RESULT PAGE ======================
 function initWeighResultPage() {
-  const role = userSession?.role || '';
-  const isAdmin = (role === 'admin');
-  const isAdminXppl = (role === 'admin-xppl');
+  const role = getUserRole();
+  const isAdmin = role === 'admin';
+  const isAdminXppl = role === 'admin-xppl';
 
   $('#wr-unknown-btn').toggleClass('d-none', !isAdmin);
   $('#wr-delete').toggleClass('d-none', !isAdmin);
@@ -4072,7 +4127,7 @@ function uniqueCasePreserveOrder(list) {
 }
 
 function getWrAllowedCustomers() {
-  if (!userSession || userSession.role !== 'user') return [];
+  if (!userSession || !isRole('user')) return [];
   const raw = userSession.customerName || userSession.customerNames || '';
   return uniqueCasePreserveOrder(parseMultiValueInput(raw));
 }
@@ -4114,7 +4169,7 @@ function getWrFilters(){
     customers: uniqueCasePreserveOrder($('#wr-customers').val() || [])
   };
 
-  if (userSession?.role === 'user') {
+  if (isRole('user')) {
     const allowed = getWrAllowedCustomers();
     if (allowed.length) {
       const sanitized = sanitizeWrCustomerSelection(filter.customers);
@@ -4165,7 +4220,7 @@ function updateWrAdvancedFilters(options){
     $sel.val(selected);
     $sel.prop('disabled', false);
 
-    if (selector === '#wr-customers' && userSession?.role === 'user') {
+   if (selector === '#wr-customers' && isRole('user')) {
       const sanitized = sanitizeWrCustomerSelection($sel.val());
       if (sanitized.length) {
         const normalizedList = list.map(val => val.toLowerCase());
