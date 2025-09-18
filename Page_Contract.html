@@ -2,7 +2,8 @@
   <!-- Khung nhập liệu: chỉ hiện cho admin -->
   <div id="contract-entry-card" class="card mb-3 d-none">
     <div class="card-header">
-      <i class="fas fa-pencil-alt me-1"></i> Nhập hợp đồng
+      <i class="fas fa-pencil-alt me-1"></i>
+      <span data-translate="contract_entry_title">Nhập hợp đồng</span>
     </div>
     <div class="card-body">
       <form id="contractForm" class="row g-2 gy-2 compact-form">
@@ -27,7 +28,8 @@
         </div>
         <div class="col-12 text-end mt-2">
           <button type="submit" class="btn btn-primary btn-sm">
-            <i class="fas fa-save me-1"></i> Lưu
+            <i class="fas fa-save me-1"></i>
+            <span data-translate="contract_save_button">Lưu</span>
           </button>
         </div>
       </form>
@@ -37,7 +39,8 @@
   <!-- Bảng dữ liệu -->
   <div class="card">
     <div class="card-header">
-      <i class="fas fa-table me-1"></i> Hợp đồng
+      <i class="fas fa-table me-1"></i>
+      <span data-translate="contract_card_title">Hợp đồng</span>
     </div>
     <div class="card-body">
 
@@ -46,20 +49,23 @@
         <div class="tl-toolbar__inner">
           <div class="tl-actions">
             <button id="ct-reload" class="btn btn-primary btn-slim">
-              <i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật
+              <i class="fas fa-sync-alt me-1"></i>
+              <span data-translate="show_update_button">Hiển thị/Cập nhật</span>
             </button>
             <button id="ct-delete" class="btn btn-danger btn-slim d-none">
-              <i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn
+              <i class="fas fa-trash-alt me-1"></i>
+              <span data-translate="delete_selected_button">Xóa mục đã chọn</span>
             </button>
             <button id="ct-export" class="btn btn-success btn-slim">
-              <i class="fas fa-file-excel me-1"></i> Xuất Excel
+              <i class="fas fa-file-excel me-1"></i>
+              <span data-translate="export_excel_button">Xuất Excel</span>
             </button>
           </div>
           <div class="tl-toolbar__spacer"></div>
           <div class="tl-search">
             <div class="input-group input-slim">
               <span class="input-group-text"><i class="fas fa-search"></i></span>
-              <input type="text" id="ct-search" class="form-control" placeholder="Tìm trong danh sách...">
+              <input type="text" id="ct-search" class="form-control" placeholder="Tìm trong danh sách..." data-translate-placeholder="contract_search_placeholder">
             </div>
           </div>
         </div>
