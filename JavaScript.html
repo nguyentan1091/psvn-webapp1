@@ -4122,7 +4122,8 @@ function initWeighResultPage() {
   $('#wr-delete').toggleClass('d-none', !isAdmin);
   $('#wr-unknown-delete').toggleClass('d-none', !isAdmin);
   $('#wr-match-company').toggleClass('d-none', !isAdmin);
-  $('#wr-summary').toggleClass('d-none', !isAdmin);  
+  const hasActions = $('#wr-actions').find('button:not(.d-none)').length > 0;
+  $('#wr-actions').toggleClass('d-none', !hasActions);
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -4272,10 +4273,20 @@ function getWrFilters(){
   return filter;  
 }
 
-function updateWrSummary(counts){
-  $('#wr-sum-unassign').text(counts?.unassigned || 0);
-  $('#wr-sum-unknown').text(counts?.unknown || 0);
-  $('#wr-sum-assigned').text(counts?.assigned || 0);
+function updateWrSummary(counts, overview){
+  const formatNumber = value => {
+    if (value == null) return '0';
+    const cleaned = typeof value === 'string' ? value.replace(/,/g, '') : value;
+    const num = typeof cleaned === 'number' ? cleaned : Number(cleaned);
+    return Number.isFinite(num) ? num.toLocaleString('en-US') : '0';
+  };
+
+  $('#wr-sum-unassign').text(formatNumber(counts?.unassigned));
+  $('#wr-sum-unknown').text(formatNumber(counts?.unknown));
+  $('#wr-sum-assigned').text(formatNumber(counts?.assigned));
+
+  $('#wr-summary-trucks').text(formatNumber(overview?.trucks));
+  $('#wr-summary-weight').text(formatNumber(overview?.weight));
 }
 
 function updateWrAdvancedFilters(options){
@@ -4519,7 +4530,7 @@ function buildWeighResultTables(isAdmin) {
       };
       google.script.run
         .withSuccessHandler(res => {
-          updateWrSummary(res.counts);
+          updateWrSummary(res.counts, res.summary);
           if (res && res.options) updateWrAdvancedFilters(res.options);
           const dtRes = {
             draw: Number(res.draw) || dtReq.draw || 0,
@@ -4585,7 +4596,7 @@ function buildWeighResultTables(isAdmin) {
         };
         google.script.run
           .withSuccessHandler(res => {
-            updateWrSummary(res.counts);
+            updateWrSummary(res.counts, res.summary);
             if (res && res.options) updateWrAdvancedFilters(res.options);
             const dtRes = {
               draw: Number(res.draw) || dtReq.draw || 0,
