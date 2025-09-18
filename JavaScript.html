@@ -23,7 +23,7 @@ let wrResultTable, wrUnknownTable;
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
-let currentLang = 'vi'; // Ngôn ngữ mặc định
+let currentLang = 'en'; // Ngôn ngữ mặc định
 
 function normalizeRole(role) {
     return typeof role === 'string' ? role.trim().toLowerCase() : '';
@@ -71,9 +71,22 @@ const translations = {
     "sidebar_vehicle": "Đăng Ký Xe",
     "sidebar_approval": "Phê Duyệt",
     "sidebar_weighing": "Trạm Cân",
-    "sidebar_weighing_result": "Kết quả bốc hàng",    
+    "sidebar_weighing_result": "Kết quả bốc hàng",
     "sidebar_account_parent": "Tài khoản",
     "sidebar_guide": "Hướng dẫn",
+
+    // Contracts Page
+    "contract_entry_title": "Nhập hợp đồng",
+    "contract_save_button": "Lưu",
+    "contract_card_title": "Hợp đồng",
+    "contract_search_placeholder": "Tìm trong danh sách...",
+    "contract_loading_saving": "Đang lưu...",
+    "contract_edit_title": "Sửa hợp đồng",
+    "contract_loading_updating": "Đang cập nhật...",
+    "contract_loading_deleting": "Đang xoá...",
+    "contract_no_selection_title": "Chưa chọn dòng",
+    "contract_no_selection_message": "Hãy tick các dòng cần xoá.",
+    "contract_confirm_delete_title": "Xoá các mục đã chọn?",
 
     // Login Page
     "login_title": "Đăng nhập",
@@ -324,9 +337,22 @@ const translations = {
     "sidebar_vehicle": "Vehicle Registration",
     "sidebar_approval": "Approval",
     "sidebar_weighing": "Weighing Station",
-    "sidebar_weighing_result": "Weighing Results",    
+    "sidebar_weighing_result": "Weighing Results",
     "sidebar_account_parent": "Account",
     "sidebar_guide": "Guide",
+
+    // Contracts Page
+    "contract_entry_title": "Enter Contract",
+    "contract_save_button": "Save",
+    "contract_card_title": "Contracts",
+    "contract_search_placeholder": "Search in the list...",
+    "contract_loading_saving": "Saving...",
+    "contract_edit_title": "Edit Contract",
+    "contract_loading_updating": "Updating...",
+    "contract_loading_deleting": "Deleting...",
+    "contract_no_selection_title": "No rows selected",
+    "contract_no_selection_message": "Please tick the rows you want to delete.",
+    "contract_confirm_delete_title": "Delete selected items?",
 
     // Account Page
     "change_password_header": "Change Password",
@@ -3279,9 +3305,14 @@ function initContractPage() {
       'Transportion Company': $('#ct-company').val().trim(),
       'Status': $('#ct-status').val().trim()
     };
-    showLoading('Đang lưu...');
+    showLoading(t.contract_loading_saving || 'Đang lưu...');
     google.script.run
-      .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); contractTable.ajax.reload(null,false); this.reset(); })
+      .withSuccessHandler(msg => {
+        Swal.close();
+        Swal.fire(t.success_title || 'Thành công', msg, 'success');
+        contractTable.ajax.reload(null, false);
+        this.reset();
+      })
       .withFailureHandler(showError)
       .upsertContract(payload, userSession.token);
   });
@@ -3301,12 +3332,13 @@ function initContractPage() {
 }
 
 function buildContractTable(isAdmin) {
+  const t = translations[currentLang];  
   if ($.fn.DataTable.isDataTable('#contractTable')) $('#contractTable').DataTable().destroy();
 
   const columns = [
     { data: null, title: 'Select', orderable:false, className:'no-export text-center', visible:isAdmin,
       render: () => `<input type="checkbox" class="row-checkbox form-check-input">` },
-    { data: null, title: translations[currentLang].action_column || 'Hành động', orderable:false,
+    { data: null, title: t.action_column || 'Hành động', orderable:false,
       className:'no-export text-center', visible:isAdmin,
       render: () => `<button class="btn btn-warning btn-sm ct-edit"><i class="fas fa-edit"></i></button>` },
 
@@ -3363,7 +3395,7 @@ function buildContractTable(isAdmin) {
     ).join('');
 
     Swal.fire({
-      title: 'Sửa hợp đồng',
+      title: t.contract_edit_title || 'Sửa hợp đồng',
       html: `
         <div class="text-start">
           <div class="mb-2"><label class="form-label">ID</label>
@@ -3393,11 +3425,11 @@ function buildContractTable(isAdmin) {
       })
     }).then(res => {
       if (!res.isConfirmed) return;
-      showLoading('Đang cập nhật...');
+      showLoading(t.contract_loading_updating || t.loading_updating || 'Đang cập nhật...');
       google.script.run
         .withSuccessHandler(msg => {
           Swal.close();
-          Swal.fire('Thành công', msg, 'success');
+          Swal.fire(t.success_title || 'Thành công', msg, 'success');
           contractTable.ajax.reload(null, false);
         })
         .withFailureHandler(showError)
@@ -3407,6 +3439,7 @@ function buildContractTable(isAdmin) {
 }
 
 function bindContractToolbar(isAdmin) {
+  const t = translations[currentLang];  
   // Reload
   $('#ct-reload').off('click').on('click', function(e){ e.preventDefault(); contractTable.ajax.reload(); });
 
@@ -3418,13 +3451,24 @@ function bindContractToolbar(isAdmin) {
     const ids = [];
     contractTable.rows('.selected').every(function(){ const d=this.data(); if(d && d.ID) ids.push(d.ID); });
 
-    if (!ids.length) { Swal.fire('Chưa chọn dòng', 'Hãy tick các dòng cần xoá.', 'info'); return; }
-    Swal.fire({icon:'warning',title:'Xoá các mục đã chọn?', showCancelButton:true})
+    if (!ids.length) {
+      Swal.fire(
+        t.contract_no_selection_title || 'Chưa chọn dòng',
+        t.contract_no_selection_message || 'Hãy tick các dòng cần xoá.',
+        'info'
+      );
+      return;
+    }
+    Swal.fire({icon:'warning', title: t.contract_confirm_delete_title || 'Xoá các mục đã chọn?', showCancelButton:true})
       .then(r => {
         if (!r.isConfirmed) return;
-        showLoading('Đang xoá...');
+        showLoading(t.contract_loading_deleting || t.loading_deleting || 'Đang xoá...');
         google.script.run
-          .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); contractTable.ajax.reload(null,false); })
+          .withSuccessHandler(msg => {
+            Swal.close();
+            Swal.fire(t.success_title || 'Thành công', msg, 'success');
+            contractTable.ajax.reload(null, false);
+          })
           .withFailureHandler(showError)
           .deleteContracts(ids, userSession.token);
       });
