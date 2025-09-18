@@ -231,6 +231,34 @@ const translations = {
     "new_vehicle_popup_message": "Là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.",
     "popup_plate_label": "Xe",
     "popup_ok_button": "OK",
+
+    // XPPL Weighing Station
+    "xppl_upload_card_title": "Upload dữ liệu trạm cân",
+    "xppl_upload_button": "Tải lên",
+    "xppl_filter_card_title": "Bộ lọc",
+    "xppl_filter_date_label": "Ngày",
+    "xppl_filter_contract_label": "Số hợp đồng",
+    "xppl_filter_customer_label": "Khách hàng",
+    "xppl_filter_all_option": "Tất cả",
+    "xppl_select_date_first": "Chọn ngày trước",
+    "xppl_summary_total_trucks": "Tổng số xe",
+    "xppl_summary_trucks_sub": "Xe đã ghi nhận trong bộ lọc",
+    "xppl_summary_total_weight": "Tổng khối lượng (Kg)",
+    "xppl_summary_weight_sub": "Tổng khối lượng hàng đã cân",
+    "xppl_data_card_title": "Dữ liệu trạm cân",
+    "xppl_search_placeholder": "Tìm kiếm trong bảng...",
+    "xppl_total_rows": "Tổng số dòng",
+    "xppl_upload_confirm_title": "Xác nhận",
+    "xppl_upload_confirm_text": "Bạn có chắc muốn tải lên?",
+    "xppl_upload_confirm_button": "Xác nhận",
+    "xppl_upload_cancel_button": "Hủy bỏ",
+    "xppl_processing_file": "Đang xử lý file...",
+    "xppl_file_no_data": "File không có dữ liệu",
+    "xppl_header_mismatch": "Tiêu đề cột không khớp với mẫu yêu cầu.",
+    "xppl_upload_success_message": "Tải lên thành công",
+    "xppl_loading_data": "Đang tải dữ liệu...",
+    "xppl_no_file_excel_message": "Vui lòng chọn file Excel.",
+    "xppl_no_data_export_message": "Không có dữ liệu để xuất.",    
   },
   en: {
     // General
@@ -326,6 +354,9 @@ const translations = {
     "export_excel_button": "Export Excel",
     "edit_rules_notice_line1": "<strong>Editing Rules:</strong><br>- Data registered from <strong>8:00 - 16:00</strong> can only be edited within this time frame.",
     "edit_rules_notice_line2": "- Data registered from <strong>20:00 - 22:00</strong> can only be edited within this time frame.",
+    "view_stat_total_label": "Total registered vehicles:",
+    "view_stat_pending_label": "Total pending approval:",
+    "view_stat_approved_label": "Total approved vehicles:",    
     "register_contract_placeholder": "Enter or select Contract No",
     "register_tomorrow_label": "(Tomorrow)",
     "register_upload_date_note": "File upload only accepts registration date {date}.",
@@ -417,6 +448,34 @@ const translations = {
     "new_vehicle_popup_message": "These vehicle plate(s) are new. Please submit an additional registration to the total list with PSVN.",
     "popup_plate_label": "Vehicle",
     "popup_ok_button": "OK",
+
+    // XPPL Weighing Station
+    "xppl_upload_card_title": "Upload Weighing Station Data",
+    "xppl_upload_button": "Upload",
+    "xppl_filter_card_title": "Filters",
+    "xppl_filter_date_label": "Date",
+    "xppl_filter_contract_label": "Contract No",
+    "xppl_filter_customer_label": "Customer",
+    "xppl_filter_all_option": "All",
+    "xppl_select_date_first": "Select a date first",
+    "xppl_summary_total_trucks": "Total Trucks",
+    "xppl_summary_trucks_sub": "Trucks captured by the filters",
+    "xppl_summary_total_weight": "Total Weight (Kg)",
+    "xppl_summary_weight_sub": "Total cargo weight recorded",
+    "xppl_data_card_title": "Weighing Station Data",
+    "xppl_search_placeholder": "Search within the table...",
+    "xppl_total_rows": "Total rows",
+    "xppl_upload_confirm_title": "Confirm",
+    "xppl_upload_confirm_text": "Are you sure you want to upload?",
+    "xppl_upload_confirm_button": "Confirm",
+    "xppl_upload_cancel_button": "Cancel",
+    "xppl_processing_file": "Processing file...",
+    "xppl_file_no_data": "The file contains no data",
+    "xppl_header_mismatch": "Column headers do not match the required template.",
+    "xppl_upload_success_message": "Upload successful",
+    "xppl_loading_data": "Loading data...",
+    "xppl_no_file_excel_message": "Please choose an Excel file.",
+    "xppl_no_data_export_message": "No data to export.",    
   }
 };
 
@@ -444,6 +503,12 @@ function setLanguage(lang) {
     }
     if ($.fn.DataTable.isDataTable('#usersTable')) {
         initUsersTable();
+    }
+    
+    if (typeof xpplWeighingTable !== 'undefined' && $.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+        const count = xpplWeighingTable.rows({ search: 'applied' }).count();
+        const label = (translations[lang] && translations[lang].xppl_total_rows) || 'Tổng số dòng';
+        $('#xppl-count').html(`${label}: <span class="badge bg-primary">${count}</span>`);
     }
     
     // Cập nhật thông tin người dùng
@@ -3456,7 +3521,9 @@ function initXPPLWeighingStationPage() {
 
   xpplWeighingTable.on('draw.dt', function () {
     const count = xpplWeighingTable.rows({ search: 'applied' }).count();
-    $('#xppl-count').html('Tổng số dòng: <span class="badge bg-primary">' + count + '</span>');
+    const t = (translations && translations[currentLang]) || translations.vi || {};
+    const label = t.xppl_total_rows || 'Tổng số dòng';
+    $('#xppl-count').html(label + ': <span class="badge bg-primary">' + count + '</span>');
   });
 
   $('#xppl-weighing-upload').off('click').on('click', handleXpplWeighingUpload);
@@ -3475,32 +3542,33 @@ function initXPPLWeighingStationPage() {
 }
 
 function handleXpplWeighingUpload() {
+  const t = (translations && translations[currentLang]) || translations.vi || {};  
   const file = $('#xppl-weighing-file')[0].files[0];
   if (!file) {
-    Swal.fire('Chưa chọn file', 'Vui lòng chọn file Excel.', 'warning');
+    Swal.fire(t.no_file_selected_title || 'Chưa chọn file', t.xppl_no_file_excel_message || t.no_file_selected_message || 'Vui lòng chọn file Excel.', 'warning');
     return;
   }
   Swal.fire({
-    title: 'Xác nhận',
-    text: 'Bạn có chắc muốn tải lên?',
+    title: t.xppl_upload_confirm_title || 'Xác nhận',
+    text: t.xppl_upload_confirm_text || 'Bạn có chắc muốn tải lên?',
     icon: 'question',
     showCancelButton: true,
-    confirmButtonText: 'Xác nhận',
-    cancelButtonText: 'Hủy bỏ'
+    confirmButtonText: t.xppl_upload_confirm_button || 'Xác nhận',
+    cancelButtonText: t.xppl_upload_cancel_button || t.cancel_button || 'Hủy bỏ'
   }).then(res => {
     if (!res.isConfirmed) return;
-    showLoading('Đang xử lý file...');
+    showLoading(t.xppl_processing_file || 'Đang xử lý file...');
     const reader = new FileReader();
     reader.onload = function(e) {
       try {
         const workbook = XLSX.read(e.target.result, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'' });
-        if (rows.length < 2) throw new Error('File không có dữ liệu');
+        if (rows.length < 2) throw new Error(t.xppl_file_no_data || t.file_no_data_error || 'File không có dữ liệu');
         const headers = rows[0].map(h => String(h || '').trim());
         const expected = XPPL_FILE_HEADERS;
         if (headers.length !== expected.length || !headers.every((h,i) => h === expected[i])) {
-          throw new Error('Tiêu đề cột không khớp với mẫu yêu cầu.');
+          throw new Error(t.xppl_header_mismatch || 'Tiêu đề cột không khớp với mẫu yêu cầu.');
         }
         const data = rows.slice(1).map(r => {
           const obj = { ID: '' };
@@ -3510,7 +3578,7 @@ function handleXpplWeighingUpload() {
         google.script.run
           .withSuccessHandler(msg => {
             Swal.close();
-            Swal.fire('Thành công', msg || 'Tải lên thành công', 'success');
+            Swal.fire(t.success_title || 'Thành công', msg || (t.xppl_upload_success_message || 'Tải lên thành công'), 'success');
             $('#xppl-weighing-file').val('');
             $('#xppl-filter-date').val('');
             $('#xppl-filter-contract').val('');
@@ -3521,7 +3589,7 @@ function handleXpplWeighingUpload() {
           .saveXpplWeighingData(data, userSession.token);
       } catch(err) {
         Swal.close();
-        Swal.fire('Lỗi', err.message || String(err), 'error');
+        Swal.fire(t.error_title || 'Lỗi', err.message || String(err), 'error');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -3529,15 +3597,16 @@ function handleXpplWeighingUpload() {
 }
 
 function loadXpplWeighingData() {
+  const t = (translations && translations[currentLang]) || translations.vi || {};  
   const dateVal = $('#xppl-filter-date').val();
   const contractVal = $('#xppl-filter-contract').val();
   const customerVal = $('#xppl-filter-customer').val();
 
   if (!dateVal) {
     $('#xppl-filter-contract').prop('disabled', true)
-      .empty().append('<option value="">Chọn ngày trước</option>');
+      .empty().append(`<option value="" data-translate="xppl_select_date_first">${t.xppl_select_date_first || 'Chọn ngày trước'}</option>`);
     $('#xppl-filter-customer').prop('disabled', true)
-      .empty().append('<option value="">Chọn ngày trước</option>');
+     .empty().append(`<option value="" data-translate="xppl_select_date_first">${t.xppl_select_date_first || 'Chọn ngày trước'}</option>`);
     if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
       xpplWeighingTable.clear().draw();
     }
@@ -3552,25 +3621,25 @@ function loadXpplWeighingData() {
     customerName: customerVal
   };
 
-  showLoading('Đang tải dữ liệu...');
+  showLoading(t.xppl_loading_data || 'Đang tải dữ liệu...');
   google.script.run
     .withSuccessHandler(res => {
       Swal.close();
       if (!res) res = {};
       if (res.contracts) {
         const $c = $('#xppl-filter-contract').prop('disabled', false)
-          .empty().append('<option value="">Tất cả</option>');
+          .empty().append(`<option value="" data-translate="xppl_filter_all_option">${t.xppl_filter_all_option || 'Tất cả'}</option>`);
         res.contracts.forEach(c => $c.append(`<option value="${c}">${c}</option>`));
         if (filter.contractNo) $c.val(filter.contractNo);
       }
       if (res.customers) {
         const $c2 = $('#xppl-filter-customer').prop('disabled', false)
-          .empty().append('<option value="">Tất cả</option>');
+          .empty().append(`<option value="" data-translate="xppl_filter_all_option">${t.xppl_filter_all_option || 'Tất cả'}</option>`);
         res.customers.forEach(c => $c2.append(`<option value="${c}">${c}</option>`));
         if (filter.customerName) $c2.val(filter.customerName);
       }
       $('#xppl-summary-trucks').text(res.summary ? res.summary.trucks || 0 : 0);
-      $('#xppl-summary-weight').text(res.summary ? res.summary.weight || 0 : 0);
+      $('#xppl-summary-weight').text(res.summary ? (res.summary.weight || 0).toLocaleString('en-US') : 0);
       if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
         xpplWeighingTable.clear().rows.add(res.data || []).draw();
         xpplWeighingTable.columns.adjust().draw();
@@ -3581,9 +3650,10 @@ function loadXpplWeighingData() {
 }
 
 function exportXpplWeighingExcel() {
+  const t = (translations && translations[currentLang]) || translations.vi || {};  
   const rows = xpplWeighingTable.rows({ search: 'applied' }).data().toArray();
   if (!rows.length) {
-    Swal.fire('Không có dữ liệu', 'Không có dữ liệu để xuất.', 'info');
+    Swal.fire(t.no_data_title || 'Không có dữ liệu', t.xppl_no_data_export_message || t.no_data_export_message || 'Không có dữ liệu để xuất.', 'info');
     return;
   }
   const aoa = [XPPL_WEIGHING_HEADERS];
