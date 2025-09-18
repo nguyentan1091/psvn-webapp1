@@ -258,7 +258,40 @@ const translations = {
     "xppl_upload_success_message": "Tải lên thành công",
     "xppl_loading_data": "Đang tải dữ liệu...",
     "xppl_no_file_excel_message": "Vui lòng chọn file Excel.",
-    "xppl_no_data_export_message": "Không có dữ liệu để xuất.",    
+    "xppl_no_data_export_message": "Không có dữ liệu để xuất.",
+
+    // Weigh Result Page
+    "wr_filter_card_title": "Bộ lọc",
+    "wr_search_placeholder": "Tìm kiếm...",
+    "wr_date_from_label": "Từ ngày",
+    "wr_date_to_label": "Đến ngày",
+    "wr_adv_toggle_show": "Bộ lọc nâng cao",
+    "wr_adv_toggle_hide": "Ẩn bộ lọc nâng cao",
+    "wr_contract_label": "Số hợp đồng",
+    "wr_customer_label": "Customer Name",
+    "wr_match_title": "Tìm và gắn dữ liệu đơn vị vận chuyển",
+    "wr_match_sub": "Đối chiếu nhanh thông tin phương tiện",
+    "wr_unknown_title": "Xe không xác định đơn vị vận chuyển",
+    "wr_unknown_sub": "Xem và xử lý thủ công",
+    "wr_status_unassigned": "Chưa gắn đơn vị vận chuyển",
+    "wr_status_unknown": "Không xác định đơn vị vận chuyển",
+    "wr_status_assigned": "Đã xác định đơn vị vận chuyển",
+    "wr_summary_total_trucks_label": "Tổng số xe",
+    "wr_summary_total_trucks_sub": "Số lượng xe phù hợp với bộ lọc",
+    "wr_summary_total_weight_label": "Tổng khối lượng (Kg)",
+    "wr_summary_total_weight_sub": "Khối lượng đã ghi nhận theo bộ lọc",
+    "wr_unknown_modal_title": "Xe không xác định đơn vị vận chuyển",
+    "wr_result_card_title": "Kết quả bốc hàng",
+    "wr_matching_loading": "Đang đối chiếu...",
+    "wr_update_company_title": "Cập nhật đơn vị vận chuyển",
+    "wr_no_row_selected_title": "Chưa chọn dòng",
+    "wr_no_row_selected_message": "Hãy tick các dòng cần xoá.",
+    "wr_delete_confirm_title": "Xoá các mục đã chọn?",
+    "wr_deleting_loading": "Đang xoá...",
+    "wr_no_export_columns_title": "Không có cột để xuất",
+    "wr_no_export_columns_message": "Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.",
+    "wr_no_matching_data_message": "Không có bản ghi phù hợp với bộ lọc hiện tại.",
+    "wr_exporting_data": "Đang xuất dữ liệu...",
   },
   en: {
     // General
@@ -475,7 +508,40 @@ const translations = {
     "xppl_upload_success_message": "Upload successful",
     "xppl_loading_data": "Loading data...",
     "xppl_no_file_excel_message": "Please choose an Excel file.",
-    "xppl_no_data_export_message": "No data to export.",    
+    "xppl_no_data_export_message": "No data to export.",
+
+    // Weigh Result Page
+    "wr_filter_card_title": "Filters",
+    "wr_search_placeholder": "Search...",
+    "wr_date_from_label": "From date",
+    "wr_date_to_label": "To date",
+    "wr_adv_toggle_show": "Advanced filters",
+    "wr_adv_toggle_hide": "Hide advanced filters",
+    "wr_contract_label": "Contract No",
+    "wr_customer_label": "Customer Name",
+    "wr_match_title": "Find & link transport company data",
+    "wr_match_sub": "Quickly reconcile vehicle information",
+    "wr_unknown_title": "Transport company not identified",
+    "wr_unknown_sub": "Review and handle manually",
+    "wr_status_unassigned": "Transport company not linked",
+    "wr_status_unknown": "Transport company unknown",
+    "wr_status_assigned": "Transport company identified",
+    "wr_summary_total_trucks_label": "Total trucks",
+    "wr_summary_total_trucks_sub": "Vehicles matching the filters",
+    "wr_summary_total_weight_label": "Total weight (Kg)",
+    "wr_summary_total_weight_sub": "Recorded weight within the filters",
+    "wr_unknown_modal_title": "Transport company not identified",
+    "wr_result_card_title": "Weighing results",
+    "wr_matching_loading": "Matching transport companies...",
+    "wr_update_company_title": "Update transport company",
+    "wr_no_row_selected_title": "No rows selected",
+    "wr_no_row_selected_message": "Please select the rows to delete.",
+    "wr_delete_confirm_title": "Delete selected entries?",
+    "wr_deleting_loading": "Deleting...",
+    "wr_no_export_columns_title": "No columns to export",
+    "wr_no_export_columns_message": "Please show at least one column before exporting to Excel.",
+    "wr_no_matching_data_message": "No records match the current filters.",
+    "wr_exporting_data": "Exporting data...",
   }
 };
 
@@ -4129,7 +4195,10 @@ function initWeighResultPage() {
   yesterday.setDate(yesterday.getDate() - 1);
   $('#wr-date-from').val(formatDateInput(yesterday));
   $('#wr-date-to').val(formatDateInput(yesterday));
-  $('#wr-adv-toggle').attr('aria-expanded', 'false');
+  $('#wr-adv-toggle')
+    .attr('aria-expanded', 'false')
+    .attr('data-translate', 'wr_adv_toggle_show')
+    .text((translations[currentLang] && translations[currentLang].wr_adv_toggle_show) || 'Bộ lọc nâng cao');
   $('#wr-contracts, #wr-customers').prop('disabled', true).empty();
 
   google.script.run
@@ -4156,16 +4225,26 @@ function initWeighResultPage() {
     e.preventDefault();
     const $adv = $('#wr-advanced');
     const isHidden = $adv.toggleClass('d-none').hasClass('d-none');
-    $(this).text(isHidden ? 'Bộ lọc nâng cao' : 'Ẩn bộ lọc nâng cao');
+    const t = translations[currentLang] || translations.vi || {};
+    const key = isHidden ? 'wr_adv_toggle_show' : 'wr_adv_toggle_hide';
+    $(this)
+      .attr('data-translate', key)
+      .text(t[key] || (isHidden ? 'Bộ lọc nâng cao' : 'Ẩn bộ lọc nâng cao'));
     $(this).attr('aria-expanded', String(!isHidden));
   });
 
   $('#wr-match-company').off('click').on('click', function(e){
     e.preventDefault();
-    showLoading('Đang đối chiếu...');
+    const t = translations[currentLang] || translations.vi || {};
+    showLoading(t.wr_matching_loading || 'Đang đối chiếu...');
     const filter = getWrFilters();
     google.script.run
-      .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
+      .withSuccessHandler(msg => {
+        Swal.close();
+        const t2 = translations[currentLang] || translations.vi || {};
+        Swal.fire(t2.success_title || 'Thành công', msg, 'success');
+        reloadWrTables();
+      })
       .withFailureHandler(showError)
       .matchTransportionCompanies(filter, userSession.token);
   });
@@ -4291,6 +4370,7 @@ function updateWrSummary(counts, overview){
 
 function updateWrAdvancedFilters(options){
   if (!options || typeof options !== 'object') return;
+  const t = translations[currentLang] || translations.vi || {};  
 
   function refreshSelect(selector, values) {
     const $sel = $(selector);
@@ -4304,7 +4384,8 @@ function updateWrAdvancedFilters(options){
       : [];
 
     if (!list.length) {
-      $sel.append('<option value="" disabled>Không có dữ liệu</option>');
+      const label = t.no_data_title || 'Không có dữ liệu';
+      $sel.append(`<option value="" disabled>${esc(label)}</option>`);
       $sel.val([]);
       $sel.prop('disabled', true);
       return;
@@ -4345,13 +4426,20 @@ function reloadWrTables(){
 function deleteWrRows(table){
   const ids = [];
   table.rows('.selected').every(function(){ const d=this.data(); if(d && d.ID) ids.push(d.ID); });
-  if (!ids.length) { Swal.fire('Chưa chọn dòng', 'Hãy tick các dòng cần xoá.', 'info'); return; }
-  Swal.fire({icon:'warning', title:'Xoá các mục đã chọn?', showCancelButton:true})
+  const t = translations[currentLang] || translations.vi || {};
+  if (!ids.length) { Swal.fire(t.wr_no_row_selected_title || 'Chưa chọn dòng', t.wr_no_row_selected_message || 'Hãy tick các dòng cần xoá.', 'info'); return; }
+  Swal.fire({icon:'warning', title: t.wr_delete_confirm_title || 'Xoá các mục đã chọn?', showCancelButton:true})
     .then(r => {
       if (!r.isConfirmed) return;
-      showLoading('Đang xoá...');
+      const t2 = translations[currentLang] || translations.vi || {};
+      showLoading(t2.wr_deleting_loading || 'Đang xoá...');
       google.script.run
-        .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
+        .withSuccessHandler(msg => {
+          Swal.close();
+          const t3 = translations[currentLang] || translations.vi || {};
+          Swal.fire(t3.success_title || 'Thành công', msg, 'success');
+          reloadWrTables();
+        })
         .withFailureHandler(showError)
         .deleteWeighResults(ids, userSession.token);
     });
@@ -4359,6 +4447,7 @@ function deleteWrRows(table){
 
 function exportWrTable(table, name){
   if (!table) return;
+  const t = translations[currentLang] || translations.vi || {};  
   const settings = table.settings();
   if (!settings || !settings.length) return;
 
@@ -4372,7 +4461,7 @@ function exportWrTable(table, name){
   const visibleIdx = table.columns(':visible').indexes().toArray()
     .filter(i => !$(table.column(i).header()).hasClass('no-export'));
   if (!visibleIdx.length) {
-    Swal.fire('Không có cột để xuất', 'Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.', 'info');
+    Swal.fire(t.wr_no_export_columns_title || 'Không có cột để xuất', t.wr_no_export_columns_message || 'Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.', 'info');
     return;
   }
 
@@ -4391,11 +4480,11 @@ function exportWrTable(table, name){
     totalRecords = info.recordsDisplay;
   } else {
     const dataApi = table.rows({ search: 'applied' }).data();
-    totalRecords = dataApi && typeof dataApi.length === 'number' ? dataApi.length : 0;    
+    totalRecords = dataApi && typeof dataApi.length === 'number' ? dataApi.length : 0;
   }
 
   if (!totalRecords) {
-    Swal.fire('Không có dữ liệu', 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
+    Swal.fire(t.no_data_title || 'Không có dữ liệu', t.wr_no_matching_data_message || 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
     return;
   }
 
@@ -4409,7 +4498,7 @@ function exportWrTable(table, name){
     extra.excludeUnknown = true;
   }
 
-  showLoading('Đang xuất dữ liệu...');
+  showLoading(t.wr_exporting_data || 'Đang xuất dữ liệu...');
 
   const req = {
     draw: 0,
@@ -4427,7 +4516,8 @@ function exportWrTable(table, name){
       Swal.close();
       const rows = (res && Array.isArray(res.data)) ? res.data : [];
       if (!rows.length) {
-        Swal.fire('Không có dữ liệu', 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
+        const t2 = translations[currentLang] || translations.vi || {};
+        Swal.fire(t2.no_data_title || 'Không có dữ liệu', t2.wr_no_matching_data_message || 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
         return;
       }
 
@@ -4633,16 +4723,23 @@ function showWrEditDialog(row){
   const opts = ['Unknown', ...(window.__wrCompanyList || [])]
     .map(v => `<option value="${esc(v)}" ${v === (row['Transportion Company']||'') ? 'selected' : ''}>${esc(v)}</option>`)
     .join('');
+  const t = translations[currentLang] || translations.vi || {};    
   Swal.fire({
-    title: 'Cập nhật đơn vị vận chuyển',
+    title: t.wr_update_company_title || 'Cập nhật đơn vị vận chuyển',
     html: `<select id="sw-wr-company" class="form-select">${opts}</select>`,
     focusConfirm:false,
     preConfirm: () => $('#sw-wr-company').val()
   }).then(res => {
     if (!res.isConfirmed) return;
-    showLoading('Đang cập nhật...');
+    const t2 = translations[currentLang] || translations.vi || {};
+    showLoading(t2.loading_updating || 'Đang cập nhật...');
     google.script.run
-      .withSuccessHandler(msg => { Swal.close(); Swal.fire('Thành công', msg, 'success'); reloadWrTables(); })
+      .withSuccessHandler(msg => {
+        Swal.close();
+        const t3 = translations[currentLang] || translations.vi || {};
+        Swal.fire(t3.success_title || 'Thành công', msg, 'success');
+        reloadWrTables();
+      })
       .withFailureHandler(showError)
       .updateWeighResultCompany({ ID: row.ID, 'Transportion Company': res.value }, userSession.token);
   });
