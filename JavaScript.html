@@ -2061,6 +2061,48 @@ function handleExportExcel() {
       aoa.push(cols.map(function(c){ return (obj[c.key] == null ? '' : obj[c.key]); }));
     });
     var ws = XLSX.utils.aoa_to_sheet(aoa);
+    
+    (function applyWorksheetStyling() {
+      if (!ws['!ref']) return;
+      var range = XLSX.utils.decode_range(ws['!ref']);
+      var headerRow = range.s.r;
+      var borderSide = { style: 'thin', color: { rgb: '000000' } };
+      for (var R = range.s.r; R <= range.e.r; ++R) {
+        for (var C = range.s.c; C <= range.e.c; ++C) {
+          var cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          var cell = ws[cellRef];
+          if (!cell) continue;
+          cell.s = cell.s || {};
+          cell.s.border = {
+            top: borderSide,
+            right: borderSide,
+            bottom: borderSide,
+            left: borderSide
+          };
+          if (R === headerRow) {
+            cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+          }
+        }
+      }
+      var colCount = aoa[0] ? aoa[0].length : 0;
+      if (!colCount) return;
+      var colWidths = [];
+      for (var cIdx = 0; cIdx < colCount; ++cIdx) {
+        var maxLen = 0;
+        for (var rIdx = 0; rIdx < aoa.length; ++rIdx) {
+          var cellValue = aoa[rIdx][cIdx];
+          var text = cellValue == null ? '' : String(cellValue);
+          var parts = text.split(/\r?\n/);
+          for (var p = 0; p < parts.length; ++p) {
+            var len = parts[p].length;
+            if (len > maxLen) maxLen = len;
+          }
+        }
+        var width = Math.min(Math.max(maxLen + 2, 10), 60);
+        colWidths.push({ wch: width });
+      }
+      ws['!cols'] = colWidths;
+    })();    
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "VehicleData");
     var fileName = 'Registration Trucklist_' + selectedDateStr.replace(/\//g, '-') + '.xlsx';
@@ -3115,6 +3157,47 @@ function exportTotalListExcel() {
 
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet(exportData);
+            (function applyWorksheetStyling() {
+                if (!ws['!ref']) return;
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                const borderSide = { style: 'thin', color: { rgb: '000000' } };
+                const headerRow = range.s.r;
+                for (let R = range.s.r; R <= range.e.r; ++R) {
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+                        const cell = ws[ref];
+                        if (!cell) continue;
+                        cell.s = cell.s || {};
+                        cell.s.border = {
+                            top: borderSide,
+                            right: borderSide,
+                            bottom: borderSide,
+                            left: borderSide
+                        };
+                        if (R === headerRow) {
+                            cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+                        }
+                    }
+                }
+                const colCount = exportData[0] ? exportData[0].length : 0;
+                if (!colCount) return;
+                const colWidths = [];
+                for (let cIdx = 0; cIdx < colCount; ++cIdx) {
+                    let maxLen = 0;
+                    for (let rIdx = 0; rIdx < exportData.length; ++rIdx) {
+                        const cellValue = exportData[rIdx][cIdx];
+                        const text = cellValue == null ? '' : String(cellValue);
+                        const parts = text.split(/\r?\n/);
+                        for (let p = 0; p < parts.length; ++p) {
+                            const len = parts[p].length;
+                            if (len > maxLen) maxLen = len;
+                        }
+                    }
+                    const width = Math.min(Math.max(maxLen + 2, 10), 60);
+                    colWidths.push({ wch: width });
+                }
+                ws['!cols'] = colWidths;
+            })();            
             XLSX.utils.book_append_sheet(wb, ws, 'TotalList');
 
             const today = new Date();
@@ -3488,7 +3571,46 @@ function bindContractToolbar(isAdmin) {
         return key ? (row[key] ?? '') : '';
       }));
 
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    const aoa = [headers, ...data];
+    const sheet = XLSX.utils.aoa_to_sheet(aoa);
+
+    const range = XLSX.utils.decode_range(sheet['!ref'] || `A1:${XLSX.utils.encode_cell({ r: aoa.length - 1, c: headers.length - 1 })}`);
+    const border = {
+      top:    { style: 'thin', color: { rgb: 'FF000000' } },
+      bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+      left:   { style: 'thin', color: { rgb: 'FF000000' } },
+      right:  { style: 'thin', color: { rgb: 'FF000000' } }
+    };
+
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellAddr = XLSX.utils.encode_cell({ r, c });
+        if (!sheet[cellAddr]) {
+          sheet[cellAddr] = { t: 's', v: '' };
+        }
+        sheet[cellAddr].s = sheet[cellAddr].s || {};
+        sheet[cellAddr].s.border = border;
+        if (r === range.s.r) {
+          sheet[cellAddr].s.font = Object.assign({}, sheet[cellAddr].s.font, { bold: true });
+        }
+      }
+    }
+
+    const textify = val => {
+      if (val == null) return '';
+      if (typeof val === 'number') return val.toString();
+      return String(val);
+    };
+    sheet['!cols'] = headers.map((header, idx) => {
+      const maxLen = aoa.reduce((max, row) => {
+        const cellText = textify(row[idx] ?? '');
+        return Math.max(max, Array.from(cellText).length);
+      }, 0);
+      const padding = 2;
+      const minWidth = 10;
+      const maxWidth = 40;
+      return { wch: Math.min(Math.max(maxLen + padding, minWidth), maxWidth) };
+    });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, 'Contracts');
     XLSX.writeFile(wb, `Contracts_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -3771,6 +3893,47 @@ function exportXpplWeighingExcel() {
     aoa.push(XPPL_WEIGHING_HEADERS.map(h => r[h] || ''));
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  (function applyWorksheetStyling() {
+    if (!ws['!ref']) return;
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const borderSide = { style: 'thin', color: { rgb: '000000' } };
+    const headerRow = range.s.r;
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[ref];
+        if (!cell) continue;
+        cell.s = cell.s || {};
+        cell.s.border = {
+          top: borderSide,
+          right: borderSide,
+          bottom: borderSide,
+          left: borderSide
+        };
+        if (R === headerRow) {
+          cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+        }
+      }
+    }
+    const colCount = aoa[0] ? aoa[0].length : 0;
+    if (!colCount) return;
+    const colWidths = [];
+    for (let cIdx = 0; cIdx < colCount; ++cIdx) {
+      let maxLen = 0;
+      for (let rIdx = 0; rIdx < aoa.length; ++rIdx) {
+        const value = aoa[rIdx][cIdx];
+        const text = value == null ? '' : String(value);
+        const parts = text.split(/\r?\n/);
+        for (let p = 0; p < parts.length; ++p) {
+          const len = parts[p].length;
+          if (len > maxLen) maxLen = len;
+        }
+      }
+      const width = Math.min(Math.max(maxLen + 2, 10), 60);
+      colWidths.push({ wch: width });
+    }
+    ws['!cols'] = colWidths;
+  })();  
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'XPPL');
   XLSX.writeFile(wb, 'XPPL_Weighing.xlsx');
