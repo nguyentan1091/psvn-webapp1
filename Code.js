@@ -2959,6 +2959,7 @@ function getWeighResultData(params) {
     recordsFiltered: 0,
     data: [],
     counts: { unassigned: 0, unknown: 0, assigned: 0 },
+    summary: { trucks: 0, weight: 0 },    
     options: { contracts: [], customers: [] }
   };
 
@@ -2974,6 +2975,7 @@ function getWeighResultData(params) {
   const idxContract = headers.indexOf('ContractNo');
   const idxCompany = headers.indexOf('Transportion Company');
   const idxCustomer = headers.indexOf('Customer Name');
+  const idxNetWeight = headers.indexOf('Net Weight');  
   if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
     return empty;
   }
@@ -3068,6 +3070,7 @@ function getWeighResultData(params) {
       recordsFiltered: 0,
       data: [],
       counts: { unassigned: 0, unknown: 0, assigned: 0 },
+      summary: { trucks: 0, weight: 0 },      
       options: { contracts: availableContracts, customers: availableCustomers }
     };
   }
@@ -3084,11 +3087,23 @@ function getWeighResultData(params) {
   }
 
   const counts = { unassigned: 0, unknown: 0, assigned: 0 };
+  let totalWeight = 0;  
   for (var k = 0; k < filteredForSearch.length; k++) {
     var comp = String(stripLeadingApostrophe(filteredForSearch[k][idxCompany]) || '').trim();
     if (!comp) counts.unassigned++;
     else if (comp.toLowerCase() === 'unknown') counts.unknown++;
     else counts.assigned++;
+
+    if (idxNetWeight > -1) {
+      var rawWeight = stripLeadingApostrophe(filteredForSearch[k][idxNetWeight]);
+      if (typeof rawWeight === 'string') {
+        rawWeight = rawWeight.replace(/,/g, '');
+      }
+      var weightNum = Number(rawWeight);
+      if (Number.isFinite(weightNum)) {
+        totalWeight += weightNum;
+      }
+    }    
   }
 
   let filtered = filteredForSearch;
@@ -3131,6 +3146,7 @@ function getWeighResultData(params) {
     recordsFiltered: filtered.length,
     data: data,
     counts: counts,
+    summary: { trucks: filteredForSearch.length, weight: totalWeight },    
     options: { contracts: availableContracts, customers: availableCustomers }
   };
 }
