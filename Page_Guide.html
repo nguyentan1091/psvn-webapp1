@@ -1,66 +1,203 @@
 <div id="guide-page" class="container py-4">
   <style>
-    #guide-page h3{letter-spacing:.2px}
-    #guide-page .row-item{align-items:center;margin-bottom:18px}
-    #guide-page .label{min-width:190px;font-weight:600}
-    #guide-page .btn{min-width:110px}
+    #guide-page {
+      color: #1f2937;
+    }
+    #guide-page .guide-hero {
+      position: relative;
+      padding: 2.75rem 1.5rem;
+      margin-bottom: 2.5rem;
+      border-radius: 1.5rem;
+      background: linear-gradient(135deg, #0d6efd, #6610f2);
+      color: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 1.25rem 2.5rem rgba(13, 110, 253, 0.25);
+    }
+    #guide-page .guide-hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.35), transparent 55%),
+                  radial-gradient(circle at bottom left, rgba(255, 255, 255, 0.2), transparent 50%);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    #guide-page .guide-hero-content {
+      position: relative;
+      max-width: 720px;
+      margin: 0 auto;
+      z-index: 1;
+    }
+    #guide-page .guide-hero-title {
+      font-size: clamp(1.75rem, 3vw + 1rem, 2.8rem);
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+    }
+    #guide-page .guide-hero-subtitle {
+      font-size: clamp(1rem, 1.5vw + 0.75rem, 1.25rem);
+      letter-spacing: 0.4px;
+      margin-bottom: 0;
+      opacity: 0.95;
+    }
+    #guide-page .guide-section + .guide-section {
+      margin-top: 3rem;
+    }
+    #guide-page .section-header h4 {
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+    #guide-page .section-header p {
+      margin-bottom: 0;
+      color: #475569;
+    }
+    #guide-page .guide-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 1.75rem;
+      border-radius: 1.25rem;
+      border: 1px solid #e5e7eb;
+      background: #ffffff;
+      box-shadow: 0 1.25rem 2.5rem rgba(15, 23, 42, 0.07);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    #guide-page .guide-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 1.75rem 3rem rgba(15, 23, 42, 0.12);
+    }
+    #guide-page .guide-card-icon {
+      width: 3.25rem;
+      height: 3.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.85rem;
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+      background: rgba(13, 110, 253, 0.08);
+      color: #0d6efd;
+    }
+    #guide-page .guide-card h5 {
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    #guide-page .guide-card p {
+      margin-bottom: 0;
+      color: #4b5563;
+    }
+    #guide-page .guide-card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+    #guide-page .guide-card-actions .btn {
+      min-width: 120px;
+      font-weight: 500;
+    }
+    #guide-page .guide-card .ratio {
+      border-radius: 0.85rem;
+      overflow: hidden;
+      background: #0f172a;
+    }
+    @media (max-width: 767.98px) {
+      #guide-page .guide-card {
+        padding: 1.25rem;
+      }
+      #guide-page .guide-card-actions {
+        width: 100%;
+      }
+    }
   </style>
 
-  <div class="text-center mb-4">
-    <h3>HƯỚNG DẪN SỬ DỤNG PHẦN MỀM ĐĂNG KÝ XE PSVN</h3>
-    <h2>INTRUCSTIONS FOR USING PSVN TRUCKLIST REGISTRATION SYSTEM</h2>
-  </div>
-
-  <!-- Hướng dẫn (PDF) -->
-  <div class="row row-item">
-    <div class="col-12 col-md-4 label">Hướng dẫn / Intrucstions:</div>
-    <div class="col-auto">
-      <a class="btn btn-primary" target="_blank"
-         href="https://drive.google.com/file/d/1rj0PBmsK7gSNw1Pv254Ryfpj8s8PhPte/view?usp=drive_link">
-        View
-      </a>
-    </div>
-    <div class="col-auto">
-      <!-- tải thẳng: uc?export=download&id=FILE_ID -->
-      <a class="btn btn-primary"
-         href="https://drive.google.com/uc?export=download&id=1rj0PBmsK7gSNw1Pv254Ryfpj8s8PhPte">
-        Download
-      </a>
+  <div class="guide-hero text-center">
+    <div class="guide-hero-content">
+      <h1 class="guide-hero-title">HƯỚNG DẪN SỬ DỤNG PHẦN MỀM ĐĂNG KÝ XE PSVN</h1>
+      <p class="guide-hero-subtitle">INSTRUCTIONS FOR USING THE PSVN TRUCKLIST REGISTRATION SYSTEM</p>
     </div>
   </div>
 
-  <!-- Mẫu đăng ký xe (XLSX) -->
-  <div class="row row-item">
-    <div class="col-12 col-md-4 label">Mẫu đăng ký xe / Truck Registration Form:</div>
-    <div class="col-auto">
-      <a class="btn btn-primary" target="_blank"
-         href="https://docs.google.com/spreadsheets/d/1gCCURtJV39tZ6fGiwP1rhgZ3JROL7UIg/edit?usp=drive_link&ouid=116446158032860604535&rtpof=true&sd=true">
-        View
-      </a>
+  <div class="guide-section" data-guide-role="general">
+    <div class="section-header mb-4">
+      <h4>Hướng dẫn chung / General Guides</h4>
+      <p>Các biểu mẫu và tài liệu hỗ trợ dành cho tất cả người dùng hệ thống / Helpful templates and manuals for every PSVN user.</p>
     </div>
-    <div class="col-auto">
-      <!-- tải thẳng file Excel: /export?format=xlsx -->
-      <a class="btn btn-primary"
-         href="https://docs.google.com/spreadsheets/d/1gCCURtJV39tZ6fGiwP1rhgZ3JROL7UIg/export?format=xlsx">
-        Download
-      </a>
+
+    <div class="row g-4">
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="guide-card h-100">
+          <div class="guide-card-icon"><i class="fas fa-book-open"></i></div>
+          <h5>Hướng dẫn sử dụng / User Manual</h5>
+          <p>Đọc hướng dẫn chi tiết về các bước đăng ký xe trên hệ thống PSVN.<br>Detailed documentation for working with the PSVN registration workflow.</p>
+          <div class="guide-card-actions">
+            <a class="btn btn-outline-primary" target="_blank" href="https://drive.google.com/file/d/1rj0PBmsK7gSNw1Pv254Ryfpj8s8PhPte/view?usp=drive_link">Xem</a>
+            <a class="btn btn-primary" href="https://drive.google.com/uc?export=download&id=1rj0PBmsK7gSNw1Pv254Ryfpj8s8PhPte">Tải về</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="guide-card h-100">
+          <div class="guide-card-icon"><i class="fas fa-clipboard-list"></i></div>
+          <h5>Mẫu đăng ký xe / Truck Registration Form</h5>
+          <p>Tải biểu mẫu chuẩn để nhập thông tin xe đăng ký.<br>Official spreadsheet template for creating truck registrations.</p>
+          <div class="guide-card-actions">
+            <a class="btn btn-outline-primary" target="_blank" href="https://docs.google.com/spreadsheets/d/1gCCURtJV39tZ6fGiwP1rhgZ3JROL7UIg/edit?usp=drive_link&ouid=116446158032860604535&rtpof=true&sd=true">Xem</a>
+            <a class="btn btn-primary" href="https://docs.google.com/spreadsheets/d/1gCCURtJV39tZ6fGiwP1rhgZ3JROL7UIg/export?format=xlsx">Tải về</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="guide-card h-100">
+          <div class="guide-card-icon"><i class="fas fa-layer-group"></i></div>
+          <h5>Mẫu danh sách tổng / Master Truck List Template</h5>
+          <p>Dùng mẫu này để tổng hợp dữ liệu xe theo hợp đồng.<br>Template for consolidating approved trucks into a single list.</p>
+          <div class="guide-card-actions">
+            <a class="btn btn-outline-primary" target="_blank" href="https://docs.google.com/spreadsheets/d/1f9ef_GmMlAA3uJs658V6rjSECLIiOcJe/edit?usp=drive_link&ouid=116446158032860604535&rtpof=true&sd=true">Xem</a>
+            <a class="btn btn-primary" href="https://docs.google.com/spreadsheets/d/1f9ef_GmMlAA3uJs658V6rjSECLIiOcJe/export?format=xlsx">Tải về</a>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Mẫu danh sách tổng (XLSX) -->
-  <div class="row row-item">
-    <div class="col-12 col-md-4 label">Mẫu danh sách tổng / Master Truck List Template:</div>
-    <div class="col-auto">
-      <a class="btn btn-primary" target="_blank"
-         href="https://docs.google.com/spreadsheets/d/1f9ef_GmMlAA3uJs658V6rjSECLIiOcJe/edit?usp=drive_link&ouid=116446158032860604535&rtpof=true&sd=true">
-        View
-      </a>
+  <div class="guide-section d-none" data-guide-role="xppl">
+    <div class="section-header mb-4">
+      <h4>Hướng dẫn dành cho XPPL / Guides for XPPL</h4>
+      <p>Tài liệu chuyên biệt hỗ trợ vận hành trạm cân XPPL. Các nội dung bên dưới chỉ hiển thị cho tài khoản admin-xppl.</p>
     </div>
-    <div class="col-auto">
-      <a class="btn btn-primary"
-         href="https://docs.google.com/spreadsheets/d/1f9ef_GmMlAA3uJs658V6rjSECLIiOcJe/export?format=xlsx">
-        Download
-      </a>
+
+    <div class="row g-4">
+      <div class="col-12 col-lg-7">
+        <div class="guide-card h-100">
+          <div class="guide-card-icon text-danger" style="background: rgba(220,53,69,0.12);"><i class="fas fa-video"></i></div>
+          <h5>Video hướng dẫn / Tutorial Video</h5>
+          <p>Xem video thao tác trực quan quy trình sử dụng hệ thống cho XPPL.<br>Step-by-step walkthrough of the XPPL workflow.</p>
+          <div class="ratio ratio-16x9 mb-3">
+            <iframe src="https://drive.google.com/file/d/1yX5N7Fz3TdC-Pp7HeM4n5SIhXhK0RZzZ/preview" allow="autoplay; fullscreen" allowfullscreen title="XPPL Tutorial"></iframe>
+          </div>
+          <div class="guide-card-actions">
+            <a class="btn btn-outline-primary" target="_blank" href="https://drive.google.com/file/d/1yX5N7Fz3TdC-Pp7HeM4n5SIhXhK0RZzZ/view?usp=drive_link">Xem</a>
+            <a class="btn btn-primary" href="https://drive.google.com/uc?export=download&id=1yX5N7Fz3TdC-Pp7HeM4n5SIhXhK0RZzZ">Tải về</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-5">
+        <div class="guide-card h-100">
+          <div class="guide-card-icon text-success" style="background: rgba(25,135,84,0.12);"><i class="fas fa-file-pdf"></i></div>
+          <h5>Hướng dẫn PDF / PDF Manual</h5>
+          <p>Tài liệu chi tiết từng bước xử lý nghiệp vụ tại XPPL.<br>Downloadable PDF with in-depth XPPL instructions.</p>
+          <div class="guide-card-actions">
+            <a class="btn btn-outline-primary" target="_blank" href="https://drive.google.com/file/d/1WyS8tuUG1KYTDE9Ns22Ma6k_DWWF_kiQ/view?usp=sharing">Xem</a>
+            <a class="btn btn-primary" href="https://drive.google.com/uc?export=download&id=1WyS8tuUG1KYTDE9Ns22Ma6k_DWWF_kiQ">Tải về</a>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
