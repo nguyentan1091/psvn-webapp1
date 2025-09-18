@@ -8,34 +8,34 @@
   </style>  
   <!-- Filter Bar -->
   <div class="card mb-3">
-    <div class="card-header"><i class="fas fa-filter me-1"></i> Bộ lọc</div>
+    <div class="card-header"><i class="fas fa-filter me-1"></i><span data-translate="wr_filter_card_title">Bộ lọc</span></div>
     <div class="card-body">
       <div class="row g-2 align-items-end">
         <div class="col-md-4">
           <div class="input-group input-slim">
             <span class="input-group-text"><i class="fas fa-search"></i></span>
-            <input type="text" id="wr-search" class="form-control" placeholder="Tìm kiếm...">
+            <input type="text" id="wr-search" class="form-control" data-translate-placeholder="wr_search_placeholder" placeholder="Tìm kiếm...">
           </div>
         </div>
         <div class="col-md-4">
-          <label class="form-label">Từ ngày</label>
+          <label class="form-label" data-translate="wr_date_from_label">Từ ngày</label>
           <input type="date" id="wr-date-from" class="form-control form-control-sm">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Đến ngày</label>
+          <label class="form-label" data-translate="wr_date_to_label">Đến ngày</label>
           <input type="date" id="wr-date-to" class="form-control form-control-sm">
         </div>
       </div>
       <div class="d-flex justify-content-end mt-2">
-        <button class="btn btn-link btn-sm" id="wr-adv-toggle">Bộ lọc nâng cao</button>
+        <button class="btn btn-link btn-sm" id="wr-adv-toggle" data-translate="wr_adv_toggle_show">Bộ lọc nâng cao</button>
       </div>
       <div id="wr-advanced" class="row g-2 mt-2 d-none">
         <div class="col-md-6">
-          <label class="form-label">Số hợp đồng</label>
+          <label class="form-label" data-translate="wr_contract_label">Số hợp đồng</label>
           <select id="wr-contracts" class="form-select form-select-sm" multiple></select>
         </div>
         <div class="col-md-6">
-          <label class="form-label">Customer Name</label>
+          <label class="form-label" data-translate="wr_customer_label">Customer Name</label>
           <select id="wr-customers" class="form-select form-select-sm" multiple></select>
         </div>
       </div>
@@ -50,15 +50,15 @@
           <button id="wr-match-company" type="button" class="wr-action-btn wr-action-btn--primary">
             <span class="wr-action-icon"><i class="fas fa-link"></i></span>
             <span class="wr-action-text">
-              <span class="wr-action-title">Tìm và gắn dữ liệu đơn vị vận chuyển</span>
-              <span class="wr-action-sub">Đối chiếu nhanh thông tin phương tiện</span>
+              <span class="wr-action-title" data-translate="wr_unknown_title">Tìm và gắn dữ liệu đơn vị vận chuyển</span>
+              <span class="wr-action-sub" data-translate="wr_match_sub">Đối chiếu nhanh thông tin phương tiện</span>
             </span>
           </button>
           <button id="wr-unknown-btn" type="button" class="wr-action-btn wr-action-btn--warning d-none">
             <span class="wr-action-icon"><i class="fas fa-truck-loading"></i></span>
             <span class="wr-action-text">
-              <span class="wr-action-title">Xe không xác định đơn vị vận chuyển</span>
-              <span class="wr-action-sub">Xem và xử lý thủ công</span>
+              <span class="wr-action-title" data-translate="wr_unknown_title">Xe không xác định đơn vị vận chuyển</span>
+              <span class="wr-action-sub" data-translate="wr_unknown_sub">Xem và xử lý thủ công</span>
             </span>
           </button>
         </div>
@@ -67,7 +67,7 @@
             <div class="wr-status-card wr-status-card--pending h-100">
               <div class="wr-status-icon"><i class="fas fa-hourglass-half"></i></div>
               <div class="wr-status-info">
-                <div class="wr-status-label">Chưa gắn đơn vị vận chuyển</div>
+                <div class="wr-status-label" data-translate="wr_status_unassigned">Chưa gắn đơn vị vận chuyển</div>
                 <div class="wr-status-value" id="wr-sum-unassign">0</div>
               </div>
             </div>
@@ -76,7 +76,7 @@
             <div class="wr-status-card wr-status-card--unknown h-100">
               <div class="wr-status-icon"><i class="fas fa-question-circle"></i></div>
               <div class="wr-status-info">
-                <div class="wr-status-label">Không xác định đơn vị vận chuyển</div>
+                <div class="wr-status-label" data-translate="wr_status_unknown">Không xác định đơn vị vận chuyển</div>
                 <div class="wr-status-value" id="wr-sum-unknown">0</div>
               </div>
             </div>
@@ -85,7 +85,7 @@
             <div class="wr-status-card wr-status-card--assigned h-100">
               <div class="wr-status-icon"><i class="fas fa-check-circle"></i></div>
               <div class="wr-status-info">
-                <div class="wr-status-label">Đã xác định đơn vị vận chuyển</div>
+                <div class="wr-status-label" data-translate="wr_status_assigned">Đã xác định đơn vị vận chuyển</div>
                 <div class="wr-status-value" id="wr-sum-assigned">0</div>
               </div>
             </div>
@@ -97,19 +97,19 @@
       <div class="row g-3 xppl-summary-row h-100">
         <div class="col-sm-5 col-lg-4 d-flex">
           <div class="xppl-summary-card w-100">
-            <div class="xppl-summary-label">Tổng số xe</div>
+            <div class="xppl-summary-label" data-translate="wr_summary_total_trucks_label">Tổng số xe</div>
             <div class="xppl-summary-value" id="wr-summary-trucks">0</div>
-            <div class="xppl-summary-sub">Số lượng xe phù hợp với bộ lọc</div>
+            <div class="xppl-summary-sub" data-translate="wr_summary_total_trucks_sub">Số lượng xe phù hợp với bộ lọc</div>
           </div>
         </div>
         <div class="col-sm-7 col-lg-8 d-flex">
           <div class="xppl-summary-card xppl-summary-card--weight w-100">
             <div class="xppl-summary-header">
-              <span class="xppl-summary-title">Tổng khối lượng (Kg)</span>
+              <span class="xppl-summary-title" data-translate="wr_summary_total_weight_label">Tổng khối lượng (Kg)</span>
               <span class="xppl-summary-chip"><i class="fas fa-weight-hanging me-1"></i>Kg</span>
             </div>
             <div class="xppl-summary-value" id="wr-summary-weight">0</div>
-            <div class="xppl-summary-sub">Khối lượng đã ghi nhận theo bộ lọc</div>
+            <div class="xppl-summary-sub" data-translate="wr_summary_total_weight_sub">Khối lượng đã ghi nhận theo bộ lọc</div>
           </div>
         </div>
       </div>
@@ -121,16 +121,16 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-1"></i> Xe không xác định đơn vị vận chuyển</h5>
+          <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-1"></i> <span data-translate="wr_unknown_modal_title">Xe không xác định đơn vị vận chuyển</span></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div class="tl-toolbar mb-3">
             <div class="tl-toolbar__inner">
               <div class="tl-actions">
-                <button id="wr-unknown-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật</button>
-                <button id="wr-unknown-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn</button>
-                <button id="wr-unknown-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
+                <button id="wr-unknown-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> <span data-translate="show_update_button">Hiển thị/Cập nhật</span></button>
+                <button id="wr-unknown-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> <span data-translate="delete_selected_button">Xóa mục đã chọn</span></button>
+                <button id="wr-unknown-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Xuất Excel</span></button>
               </div>
               <div class="tl-toolbar__spacer"></div>
             </div>
@@ -145,14 +145,14 @@
 
   <!-- Weighing Results Table -->
   <div class="card">
-    <div class="card-header"><i class="fas fa-table me-1"></i> Kết quả bốc hàng</div>
+    <div class="card-header"><i class="fas fa-table me-1"></i> <span data-translate="wr_result_card_title">Kết quả bốc hàng</span></div>
     <div class="card-body">
       <div class="tl-toolbar mb-3">
         <div class="tl-toolbar__inner">
           <div class="tl-actions">
-            <button id="wr-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> Hiển thị/Cập nhật</button>
-            <button id="wr-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> Xóa mục đã chọn</button>
-            <button id="wr-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
+            <button id="wr-reload" class="btn btn-primary btn-slim"><i class="fas fa-sync-alt me-1"></i> <span data-translate="show_update_button">Hiển thị/Cập nhật</span></button>
+            <button id="wr-delete" class="btn btn-danger btn-slim d-none"><i class="fas fa-trash-alt me-1"></i> <span data-translate="delete_selected_button">Xóa mục đã chọn</span></button>
+            <button id="wr-export" class="btn btn-success btn-slim"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Xuất Excel</span></button>
           </div>
           <div class="tl-toolbar__spacer"></div>
         </div>
