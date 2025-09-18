@@ -780,6 +780,7 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
         .withSuccessHandler(html => {
             $('#main-content').html(html);
             switch (pageName) {
+                case 'Page_Guide': initGuidePage(); break;              
                 case 'Page_Register': initRegisterPage(); break;
                 case 'Page_View': initViewPage(); break;
                 case 'Page_TotalList': initTotalListPage(); break;
@@ -963,6 +964,23 @@ function handleForgotPassword(e) {
 // =================================================================
 // ACCOUNT PAGE SPECIFIC FUNCTIONS
 // =================================================================
+function initGuidePage() {
+  const container = $('#guide-page');
+  if (!container.length) return;
+
+  const role = getUserRole();
+  const generalSection = container.find('[data-guide-role="general"]');
+  const xpplSection = container.find('[data-guide-role="xppl"]');
+
+  if (role === 'admin-xppl') {
+    generalSection.addClass('d-none');
+    xpplSection.removeClass('d-none');
+  } else {
+    xpplSection.addClass('d-none');
+    generalSection.removeClass('d-none');
+  }
+}
+
 function initAccountPage() {
     $('#changePasswordForm').on('submit', handleChangePassword);
 
