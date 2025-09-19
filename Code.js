@@ -858,6 +858,20 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     });
   }
 
+  if (params.contractNo) {
+    const contractIndex = headers.indexOf('Contract No');
+    if (contractIndex !== -1) {
+      const target = String(params.contractNo).replace(/^'+/, '').trim().toLowerCase();
+      if (target) {
+        allData = allData.filter(row => {
+          const raw = row[contractIndex];
+          const value = String(raw == null ? '' : raw).replace(/^'+/, '').trim().toLowerCase();
+          return value === target;
+        });
+      }
+    }
+  }
+
   const recordsTotal = allData.length;
   let filteredData = allData;
 
@@ -918,6 +932,59 @@ return {
 
 function getRegisteredDataServerSide(params) {
   return processServerSide(params, DATA_SHEET, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
+}
+
+function getRegisteredContractOptions(filter, sessionToken) {
+  const session = validateSession(sessionToken);
+  const role = String(session.role || '').toLowerCase();
+  const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
+  if (!dateString) return { contracts: [] };
+
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
+  if (!sheet) return { contracts: [] };
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { contracts: [] };
+
+  const dateIdx = HEADERS_REGISTER.indexOf('Register Date');
+  const contractIdx = HEADERS_REGISTER.indexOf('Contract No');
+  if (dateIdx === -1 || contractIdx === -1) return { contracts: [] };
+
+  const activityIdx = HEADERS_REGISTER.indexOf('Activity Status');
+  const companyIdx = HEADERS_REGISTER.indexOf('Transportion Company');
+  const statusIdx = HEADERS_REGISTER.indexOf('Registration Status');
+
+  let rows = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
+
+  if (role === 'user') {
+    if (companyIdx !== -1) {
+      rows = rows.filter(row => row[companyIdx] === session.contractor);
+    }
+    if (activityIdx !== -1) {
+      rows = rows.filter(row => String(row[activityIdx]).toUpperCase() === 'ACTIVE');
+    }
+  } else if (role === 'user-supervision') {
+    if (statusIdx !== -1) {
+      rows = rows.filter(row => String(row[statusIdx] || '').trim().toLowerCase() === 'approved');
+    }
+  }
+
+  const toDateString = value => {
+    if (value instanceof Date) {
+      return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
+    }
+    return String(value == null ? '' : value).replace(/^'+/, '').trim();
+  };
+
+  const contractsSet = new Set();
+  rows.forEach(row => {
+    if (toDateString(row[dateIdx]) !== dateString) return;
+    const contract = String(row[contractIdx] == null ? '' : row[contractIdx]).replace(/^'+/, '').trim();
+    if (contract) contractsSet.add(contract);
+  });
+
+  const contracts = Array.from(contractsSet).sort();
+  return { contracts: contracts };
 }
 
 function getTotalListDataServerSide(params) {
@@ -1587,9 +1654,9 @@ function checkVehicleActivityStatus(vehicles) {
 }
 
 
-function getAllDataForExport(dateString, sessionToken, searchQuery) {
+function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) {
   const userSession = validateSession(sessionToken);
-  const role = String(userSession.role || '').toLowerCase();  
+  const role = String(userSession.role || '').toLowerCase();
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheet = ss.getSheetByName(DATA_SHEET);
@@ -1599,6 +1666,9 @@ function getAllDataForExport(dateString, sessionToken, searchQuery) {
 
     const headers = HEADERS_REGISTER;
     let rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    const contractFilter = contractNo
+      ? String(contractNo).replace(/^'+/, '').trim().toLowerCase()
+      : '';    
 
     // Lọc theo quyền user (nếu là user thường)
      if (role === 'user') {
@@ -1625,6 +1695,17 @@ function getAllDataForExport(dateString, sessionToken, searchQuery) {
       });
     }
 
+    if (contractFilter) {
+      const contractIdx = headers.indexOf('Contract No');
+      if (contractIdx !== -1) {
+        rows = rows.filter(r => {
+          const raw = r[contractIdx];
+          const value = String(raw == null ? '' : raw).replace(/^'+/, '').trim().toLowerCase();
+          return value === contractFilter;
+        });
+      }
+    }
+
     // Lọc theo từ khóa search (nếu có)
     if (searchQuery && String(searchQuery).trim()) {
       const q = String(searchQuery).toLowerCase();
@@ -1635,7 +1716,7 @@ function getAllDataForExport(dateString, sessionToken, searchQuery) {
     return rows.map(r => formatRowForClient_(r, headers));
   } catch (e) {
     Logger.log(e);
-    throw new Error('Không thể lấy dữ liệu để xuất file: ' + e.message);
+    throw new Error('Cannot retrieve export data: ' + e.message);
   }
 }
 
