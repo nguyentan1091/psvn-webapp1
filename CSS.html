@@ -658,30 +658,180 @@ table.dataTable tbody tr.hl-dup-vehicle > td {
 .tl-row-dup   { background-color: #fff8e6 !important; } /* vàng nhạt */
 .td.is-invalid { background-color: #ffecec !important; } /* đỏ ô lỗi */
 
-/* ===== Registered Stats Bar ===== */
-.stats-bar{
-  display:flex; flex-wrap:wrap; gap:16px;
-  font-weight:700;
+/* ===== Registered Vehicles – Filters & Summary ===== */
+.view-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: flex-end;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f7fb 100%);
+  border: 1px solid #e3e8f2;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
-.stats-bar .stat-item{
-  display:flex; align-items:center; gap:10px;
-  font-size: 1rem; /* nhãn */
+
+.view-toolbar__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
-.stats-bar .label{ color:#111; }
-.stat-num{
-  display:inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 1.15rem; /* số lớn hơn nhãn */
-  line-height: 1.1;
-  color: #fff;
-  min-width: 44px;
-  text-align: center;
+
+.view-filter {
+  min-width: 190px;
 }
-.stat-num--primary{ background:#0d6efd; }  /* xanh dương */
-.stat-num--danger{ background:#dc143c; }   /* đỏ tươi */
-.stat-num--success{ background:#198754; }  /* xanh lá */
+
+.view-filter .form-label {
+  font-weight: 600;
+  color: #364152;
+}
+
+.view-toolbar__search {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+.view-toolbar__search .input-group-text {
+  background: transparent;
+  border-right: 0;
+  color: #6c757d;
+}
+
+.view-toolbar__search .form-control {
+  border-left: 0;
+}
+
+.view-toolbar__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.view-toolbar__actions .btn {
+  min-width: 120px;
+}
+
+.view-summary {
+  background: #f7f9fc;
+  border: 1px solid #e1e6ef;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.view-summary__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+}
+
+.view-summary__item {
+  position: relative;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.view-summary__label {
+  font-size: 0.9rem;
+  color: #000000;
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+}
+
+.view-summary__value {
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.view-summary__item--primary {
+  background: linear-gradient(135deg, rgba(13, 110, 253, 0.12), rgba(13, 110, 253, 0.02));
+  border-color: rgba(13, 110, 253, 0.25);
+}
+
+.view-summary__item--primary .view-summary__value,
+.view-summary__value--primary {
+  color: #0b5ed7;
+}
+
+.view-summary__item--pending {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.16), rgba(255, 193, 7, 0.04));
+  border-color: rgba(255, 193, 7, 0.25);
+}
+
+.view-summary__item--pending .view-summary__value,
+.view-summary__value--pending {
+  color: #b36b00;
+}
+
+.view-summary__item--approved {
+  background: linear-gradient(135deg, rgba(25, 135, 84, 0.14), rgba(25, 135, 84, 0.04));
+  border-color: rgba(25, 135, 84, 0.25);
+}
+
+.view-summary__item--approved .view-summary__value,
+.view-summary__value--approved {
+  color: #11795c;
+}
 
 
+.view-table-controls {
+  background: #ffffff;
+  border: 1px solid #e5e9f2;
+  border-radius: 0.65rem;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.view-table-controls label {
+  font-weight: 500;
+  color: #48525f;
+}
+
+@media (max-width: 991.98px) {
+  .view-toolbar__actions .btn {
+    min-width: 100px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .view-toolbar {
+    padding: 0.9rem 1rem;
+  }
+
+  .view-toolbar__actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .view-toolbar__actions .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .view-toolbar__search {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .view-toolbar__filters {
+    order: 1;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .view-filter {
+    min-width: 100%;
+  }
+
+  .view-summary__items {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
 
 </style>
