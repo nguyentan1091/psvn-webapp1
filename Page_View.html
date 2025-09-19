@@ -1,56 +1,66 @@
 <div class="card">
     <div class="card-header">
         <i class="fas fa-table me-1"></i>
-        <span data-translate="view_header">Dữ liệu xe đã đăng ký</span>
+        <span data-translate="view_header">Registered Vehicle Data</span>
     </div>
     <div class="card-body">
-        <div class="row mb-3 align-items-center">
-            <div class="col-md-4" id="date-filter-container"></div>
-            <div class="col-md-5">
-                <div class="input-group">
-                    <input type="text" id="table-search-input" class="form-control" data-translate-placeholder="search_in_table_placeholder">
+        <div class="view-toolbar mb-3">
+            <div class="view-toolbar__filters">
+                <div class="view-filter">
+                    <label class="form-label mb-1" data-translate="view_filter_label">View date</label>
+                    <div id="date-filter-control"></div>
+                </div>
+                <div class="view-filter">
+                    <label class="form-label mb-1" data-translate="view_filter_contract_label">Contract No</label>
+                    <select id="contract-filter" class="form-select form-select-sm">
+                        <option value="" data-translate="view_filter_contract_all" selected>All contracts</option>
+                    </select>
+                </div>
+            </div>
+            <div class="view-toolbar__search">
+                <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" id="table-search-input" class="form-control" placeholder="Search in table..." data-translate-placeholder="search_in_table_placeholder">                    
                 </div>
             </div>
             <div class="col-md-3 text-end">
-                 <button id="exportBtn" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Xuất Excel</span></button>
-                 <button id="deleteSelectedBtn" class="btn btn-danger btn-sm disabled"><i class="fas fa-trash-alt me-1"></i> <span data-translate="delete_button">Xóa</span></button>
-                 <button id="refreshBtn" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> <span data-translate="reload_button">Tải lại</span></button>
+            <div class="view-toolbar__actions">
+                <button id="exportBtn" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Export Excel</span></button>
+                <button id="deleteSelectedBtn" class="btn btn-danger btn-sm disabled"><i class="fas fa-trash-alt me-1"></i> <span data-translate="delete_button">Delete</span></button>
+                <button id="refreshBtn" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> <span data-translate="reload_button">Reload</span></button>                 
             </div>
         </div>
         
         <div id="edit-rules-notice" class="alert alert-info d-none" role="alert"></div>
 
-        <!-- NEW: Stats bar -->
-        <div id="statsBar" class="stats-bar mb-2">
-          <div class="stat-item">
-            <span class="label" data-translate="view_stat_total_label">Tổng số xe đã đăng ký:</span>
-            <span id="stat-total" class="stat-num stat-num--primary">0</span>
-          </div>
-          <div class="stat-item">
-            <span class="label" data-translate="view_stat_pending_label">Tổng số xe chưa được phê duyệt:</span>
-            <span id="stat-pending" class="stat-num stat-num--danger">0</span>
-          </div>
-          <div class="stat-item">
-            <span class="label" data-translate="view_stat_approved_label">Tổng số xe đã được phê duyệt:</span>
-            <span id="stat-approved" class="stat-num stat-num--success">0</span>
-          </div>
+        <div class="view-summary mb-3">
+            <div id="statsBar" class="view-summary__items">
+                <div class="view-summary__item view-summary__item--primary">
+                    <div class="view-summary__label" data-translate="view_stat_total_label">Total registered vehicles:</div>
+                    <div id="stat-total" class="view-summary__value view-summary__value--primary">0</div>
+                </div>
+                <div class="view-summary__item view-summary__item--pending">
+                    <div class="view-summary__label" data-translate="view_stat_pending_label">Total pending approval:</div>
+                    <div id="stat-pending" class="view-summary__value view-summary__value--pending">0</div>
+                </div>
+                <div class="view-summary__item view-summary__item--approved">
+                    <div class="view-summary__label" data-translate="view_stat_approved_label">Total approved vehicles:</div>
+                    <div id="stat-approved" class="view-summary__value view-summary__value--approved">0</div>
+                </div>
+            </div>
         </div>
 
-        <div class="row align-items-center mb-2">
-            <div class="col-md-auto">
-              <div id="registered-count" class="fw-bold"></div>
-                <div class="dataTables_length">
-                    <label>
-                        <span data-translate="show_label">Hiển thị</span> 
-                        <select id="page-length-select" class="form-select form-select-sm d-inline-block w-auto">
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                            <option value="200">200</option>
-                        </select> 
-                        <span data-translate="entries_label">dòng</span>
-                    </label>
-                </div>
+        <div class="view-table-controls d-flex flex-wrap align-items-center gap-3 mb-2">
+            <div class="dataTables_length mb-0">
+                <label class="mb-0">
+                    <span data-translate="show_label">Show</span>
+                    <select id="page-length-select" class="form-select form-select-sm d-inline-block w-auto">
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                    <span data-translate="entries_label">entries</span>
+                </label>
             </div>
         </div>
 
