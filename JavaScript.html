@@ -165,6 +165,10 @@ const translations = {
     "view_filter_label": "Xem ngày",
     "view_today_label": "(Hôm nay)",
     "view_tomorrow_label": "(Ngày mai)",
+    "view_filter_contract_label": "Số hợp đồng",
+    "view_filter_contract_all": "Tất cả hợp đồng",
+    "view_filter_contract_loading": "Đang tải...",
+    "view_filter_contract_empty": "Không có hợp đồng trong ngày đã chọn",    
     "view_stat_total_label": "Tổng số xe đã đăng ký:",
     "view_stat_pending_label": "Tổng số xe chưa được phê duyệt:",
     "view_stat_approved_label": "Tổng số xe đã được phê duyệt:",
@@ -314,6 +318,7 @@ const translations = {
     "add_button": "Add",
     "edit_button": "Edit",
     "delete_button": "Delete",
+    "cancel_button": "Cancel",    
     "reload_button": "Reload",
     "action_column": "Actions",
     "show_label": "Show",
@@ -409,13 +414,28 @@ const translations = {
 
     // View Page
     "view_header": "Registered Vehicle Data",
+    "view_filter_label": "View date",    
     "search_in_table_placeholder": "Search in table...",
     "export_excel_button": "Export Excel",
     "edit_rules_notice_line1": "<strong>Editing Rules:</strong><br>- Data registered from <strong>8:00 - 16:00</strong> can only be edited within this time frame.",
     "edit_rules_notice_line2": "- Data registered from <strong>20:00 - 22:00</strong> can only be edited within this time frame.",
     "view_stat_total_label": "Total registered vehicles:",
     "view_stat_pending_label": "Total pending approval:",
-    "view_stat_approved_label": "Total approved vehicles:",    
+    "view_stat_approved_label": "Total approved vehicles:",
+    "view_filter_contract_label": "Contract No",
+    "view_filter_contract_all": "All contracts",
+    "view_filter_contract_loading": "Loading...",
+    "view_filter_contract_empty": "No contracts for the selected date",
+    "no_selection_title": "No selection",
+    "no_selection_message": "Please select at least one item to delete.",
+    "delete_selected_confirm_title": "Are you sure you want to delete {count} item(s)?",
+    "delete_selected_confirm_text": "This action cannot be undone!",
+    "confirm_delete_button": "Yes, delete!",
+    "delete_success_title": "Deleted!",
+    "loading_deleting": "Deleting...",
+    "loading_updating": "Updating...",
+    "edit_vehicle_title": "Edit vehicle information",
+    "edit_validation_message": "Please complete all required fields with valid values.",    
     "register_contract_placeholder": "Enter or select Contract No",
     "register_tomorrow_label": "(Tomorrow)",
     "register_upload_date_note": "File upload only accepts registration date {date}.",
@@ -1817,7 +1837,8 @@ function initializeDataTable(config) {
 }
 
 function initViewPage() {
-  const dateFilterContainer = $('#date-filter-container');
+  const dateFilterControl = $('#date-filter-control');
+  const contractFilter = $('#contract-filter');
   const today = new Date();
   const tomorrow = new Date();
   tomorrow.setDate(today.getDate() + 1);
@@ -1826,35 +1847,117 @@ function initViewPage() {
   const t = translations[currentLang];
   const role = getUserRole();
   const isAdmin = role === 'admin';
-  const isAdminXppl = role === 'admin-xppl';
   const isUser = role === 'user';
-  const isSupervision = role === 'user-supervision';
-  const showSelectActions = isAdmin || isUser; 
+  const showSelectActions = isAdmin || isUser;
+  const useDateInput = hasAnyRole(['admin', 'admin-xppl', 'user-supervision']); 
 
- const filterLabel = t.view_filter_label || 'Select Date';
-  if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
-    dateFilterContainer.html(
-      `<div class="input-group">
-         <span class="input-group-text">${filterLabel}</span>
-         <input type="date" id="date-filter-input" class="form-control">
-       </div>`
-    );
+  const contractAllLabel = t.view_filter_contract_all || 'All contracts';
+  const contractLoadingLabel = t.view_filter_contract_loading || 'Loading...';
+  const contractEmptyLabel = t.view_filter_contract_empty || 'No contracts for the selected date';
+
+  contractFilter.empty().append($('<option>').val('').text(contractAllLabel)).prop('disabled', true);
+
+  if (useDateInput) {
+    dateFilterControl.html('<input type="date" id="date-filter-input" class="form-control form-control-sm">');
     $('#date-filter-input').val(today.toISOString().split('T')[0]);
   } else {
     const todayLabel = t.view_today_label ? ` ${t.view_today_label}` : '';
     const tomorrowLabel = t.view_tomorrow_label ? ` ${t.view_tomorrow_label}` : '';
-    dateFilterContainer.html(
-      `<div class="input-group">
-         <span class="input-group-text">${filterLabel}</span>
-         <select id="date-filter-select" class="form-select">
-           <option value="${todayStr}">${todayStr}${todayLabel}</option>
-           <option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>
-         </select>
-       </div>`
+    dateFilterControl.html(
+      `<select id="date-filter-select" class="form-select form-select-sm">
+         <option value="${todayStr}">${todayStr}${todayLabel}</option>
+         <option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>
+       </select>`
     );
   }
 
-  $('#date-filter-container').on('change', () => registeredVehicleTable.draw());
+  const dateInput = useDateInput ? $('#date-filter-input') : $('#date-filter-select');
+
+  const getSelectedDateString = () => {
+    if (useDateInput) {
+      const raw = dateInput.val();
+      return raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date());
+    }
+    return dateInput.val();
+  };
+
+  const getSelectedContract = () => String(contractFilter.val() || '').trim();
+
+  function renderContractOptions(list, preferredValue) {
+    const options = Array.isArray(list)
+      ? list.map(item => String(item == null ? '' : item).replace(/^'+/, '').trim()).filter(Boolean)
+      : [];
+
+    contractFilter.empty();
+    contractFilter.append($('<option>').val('').text(contractAllLabel));
+
+    if (!options.length) {
+      contractFilter.append(
+        $('<option>').val('').prop('disabled', true).text(contractEmptyLabel)
+      );
+      contractFilter.prop('disabled', true);
+      contractFilter.val('');
+      return;
+    }
+
+    options.forEach(value => {
+      contractFilter.append($('<option>').val(value).text(value));
+    });
+    contractFilter.prop('disabled', false);
+
+    if (preferredValue && options.includes(preferredValue)) {
+      contractFilter.val(preferredValue);
+    } else {
+      contractFilter.val('');
+    }
+  }
+
+  function refreshContractOptions({ resetSelection = true } = {}) {
+    const previous = resetSelection ? '' : getSelectedContract();
+
+    if (resetSelection) {
+      contractFilter.val('');
+      contractFilter.prop('disabled', true).empty().append(
+        $('<option>').val('').text(contractLoadingLabel)
+      );
+    } else {
+      contractFilter.prop('disabled', true);
+    }
+
+    const dateString = getSelectedDateString();
+    if (!dateString) {
+      renderContractOptions([], '');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(res => {
+        const contracts = res && Array.isArray(res.contracts) ? res.contracts : [];
+        renderContractOptions(contracts, previous);
+      })
+      .withFailureHandler(err => {
+        renderContractOptions([], '');
+        showError(err);
+      })
+      .getRegisteredContractOptions({ dateString }, userSession.token);
+  }
+
+  function handleDateChange() {
+    refreshContractOptions({ resetSelection: true });
+    if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) {
+      registeredVehicleTable.draw();
+    }
+  }
+
+  dateInput.off('change.view').on('change.view', handleDateChange);
+
+  contractFilter.off('change.view').on('change.view', function () {
+    if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) {
+      registeredVehicleTable.draw();
+    }
+  });
+
+  refreshContractOptions({ resetSelection: true });
 
   const baseColumns = [
     { data: 'ID', title: t.col_id },
@@ -1897,15 +2000,10 @@ function initViewPage() {
         .withFailureHandler(showError)
         .getRegisteredDataServerSide(params);
     },
-    getExtraParams: () => {
-      if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
-        const raw = $('#date-filter-input').val();
-        return {
-          dateString: raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date())
-        };
-      }
-      return { dateString: $('#date-filter-select').val() };
-    },
+    getExtraParams: () => ({
+      dateString: getSelectedDateString(),
+      contractNo: getSelectedContract()
+    }),
     searchControl: '#table-search-input',
     lengthControl: '#page-length-select',
     deleteButton: showSelectActions ? '#deleteSelectedBtn' : null,
@@ -1913,79 +2011,81 @@ function initViewPage() {
     enableSelect: showSelectActions
   });
 
-// ===== Tổng số xe đã đăng ký (theo ngày lọc) =====
-var __registeredUseServerSummary = false; // đã có tổng từ server hay chưa
+// ===== Summary cards for registered vehicles =====
+let useServerSummary = false;
 
-function updateRegisteredCount(total) {
-  const label = t.view_total_badge || 'Tổng số xe đã đăng ký:';  
-  $('#registered-count').html(
-   `${label} <span class="badge bg-primary">${total || 0}</span>`
-  );
-}
+const updateSummaryValues = (total, pending, approved) => {
+  $('#stat-total').text(typeof total === 'number' ? total : 0);
+  $('#stat-pending').text(typeof pending === 'number' ? pending : 0);
+  $('#stat-approved').text(typeof approved === 'number' ? approved : 0);
+};
 
-// ƯU TIÊN số tổng do server trả (đã tính trên TOÀN BỘ dữ liệu sau lọc ngày/search – trước phân trang)
+const countStatuses = rows => {
+  let pending = 0;
+  let approved = 0;
+  rows.forEach(row => {
+    const status = String(row['Registration Status'] || '').toLowerCase();
+    if (status === 'approved') {
+      approved += 1;
+    } else if (status === 'pending approval') {
+      pending += 1;
+    }
+  });
+  return { pending, approved };
+};
+
+
 $('#registeredVehicleTable')
-  .off('xhr.dt') // tránh gắn trùng
-  .on('xhr.dt', function (e, settings, json) {
+  .off('xhr.dt.summary xhr.dt')
+  .on('xhr.dt.summary', function (_e, _settings, json) {
     try {
-      var hasSummary = json && json.summary;
-
-      if (hasSummary) {
-        __registeredUseServerSummary = true;
-
-        // 3 số thống kê: tổng / pending / approved (toàn bộ sau lọc)
-        $('#stat-total').text(typeof json.summary.total === 'number' ? json.summary.total : 0);
-        $('#stat-pending').text(typeof json.summary.pending === 'number' ? json.summary.pending : 0);
-        $('#stat-approved').text(typeof json.summary.approved === 'number' ? json.summary.approved : 0);
-
-        // Badge "Tổng số xe đã đăng ký:" — recordsFiltered (nếu có) hoặc dùng summary.total
+      if (json && json.summary) {
+        useServerSummary = true;
+        updateSummaryValues(
+          typeof json.summary.total === 'number' ? json.summary.total : 0,
+          typeof json.summary.pending === 'number' ? json.summary.pending : 0,
+          typeof json.summary.approved === 'number' ? json.summary.approved : 0
+        );
 
       } else {
-        // Fallback khi server chưa trả summary (giữ nguyên logic cũ – tránh crash)
-        __registeredUseServerSummary = false;
-
-        var rows = (json && json.data && json.data.length) ? json.data : [];
-        var totalBadge =
-          (json && typeof json.recordsFiltered === 'number') ? json.recordsFiltered : rows.length;
-
-        var p = 0, a = 0;
-        for (var i = 0; i < rows.length; i++) {
-          var st = String(rows[i]['Registration Status'] || '').toLowerCase();
-          if (st === 'approved') a++;
-          else if (st === 'pending approval') p++;
-        }
-        $('#stat-total').text(totalBadge);
-        $('#stat-pending').text(p);
-        $('#stat-approved').text(a);
+        useServerSummary = false;
+        const rows = (json && json.data && json.data.length) ? json.data : [];
+        const { pending, approved } = countStatuses(rows);
+        const totalValue = (json && typeof json.recordsFiltered === 'number')
+          ? json.recordsFiltered
+          : rows.length;
+        updateSummaryValues(totalValue, pending, approved);
       }
-    } catch (err) { console && console.warn && console.warn('xhr.dt summary error:', err); }
+    } catch (err) {
+      if (console && console.warn) console.warn('xhr.dt summary error:', err);
+    }
   });
 
-// Đếm lại khi người dùng search/sort/paginate: chỉ chạy nếu KHÔNG có summary từ server
 $('#registeredVehicleTable')
   .off('draw.dt.summaryLocal')
   .on('draw.dt.summaryLocal', function () {
     try {
-      if (__registeredUseServerSummary) return; // đã có số tổng của toàn bộ -> không đè theo trang
+      if (useServerSummary) return;
 
-      var dt = $.fn.DataTable.isDataTable('#registeredVehicleTable') ?
-        $('#registeredVehicleTable').DataTable() : null;
-      if (!dt) return;
-
-      var rows = dt.rows({ search: 'applied' }).data().toArray();
-      if (!rows || !rows.length) return;
-
-      var p = 0, a = 0;
-      for (var i = 0; i < rows.length; i++) {
-        var st = String(rows[i]['Registration Status'] || '').toLowerCase();
-        if (st === 'approved') a++;
-        else if (st === 'pending approval') p++;
+      const dt = $.fn.DataTable.isDataTable('#registeredVehicleTable')
+        ? $('#registeredVehicleTable').DataTable()
+        : null;
+      if (!dt) {
+        updateSummaryValues(0, 0, 0);
+        return;
       }
-      updateRegisteredCount(rows.length);
-      $('#stat-total').text(rows.length);
-      $('#stat-pending').text(p);
-      $('#stat-approved').text(a);
-    } catch (err2) { console && console.warn && console.warn('draw.dt summaryLocal error:', err2); }
+
+      const rows = dt.rows({ search: 'applied' }).data().toArray();
+      if (!rows || !rows.length) {
+        updateSummaryValues(0, 0, 0);
+        return;
+      }
+
+      const { pending, approved } = countStatuses(rows);
+      updateSummaryValues(rows.length, pending, approved);
+    } catch (err2) {
+      if (console && console.warn) console.warn('draw.dt summaryLocal error:', err2);
+    }
   });
 
   // ----- Phần còn lại giữ nguyên -----
@@ -1995,7 +2095,10 @@ $('#registeredVehicleTable')
     notice.html(`${t.edit_rules_notice_line1}<br>${t.edit_rules_notice_line2}`);
   }
 
-  $('#refreshBtn').on('click', () => registeredVehicleTable.ajax.reload(null, false));
+  $('#refreshBtn').on('click', () => {
+    refreshContractOptions({ resetSelection: false });
+    registeredVehicleTable.ajax.reload(null, false);
+  });
   if (showSelectActions) {
     $('#deleteSelectedBtn').removeClass('d-none disabled').off('click').on('click', handleDeleteSelected);
   } else {
@@ -2061,8 +2164,15 @@ function handleExportExcel() {
     selectedDateStr = $('#date-filter-select').val();
   }
 
-  var table = registeredVehicleTable;
- const t = translations[currentLang];  
+  const table = registeredVehicleTable;
+  const t = translations[currentLang];
+  const selectedContract = ($('#contract-filter').val() || '').toString().trim();
+  const contractLabel = selectedContract || (t.view_filter_contract_all || 'All contracts');
+  let safeContractLabel = contractLabel.replace(/[\\/:*?"<>|]/g, '_').trim();
+  if (!safeContractLabel) {
+    safeContractLabel = 'All contracts';
+  }
+  const fileDatePart = selectedDateStr.replace(/\//g, '-');
 
   // Lấy cột ĐANG HIỂN THỊ theo thứ tự (bỏ cột select + action vì data = null)
   var colIdxs = table.columns({ visible: true, order: 'index' }).indexes().toArray();
@@ -2120,10 +2230,10 @@ function handleExportExcel() {
         colWidths.push({ wch: width });
       }
       ws['!cols'] = colWidths;
-    })();    
+    })();
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "VehicleData");
-    var fileName = 'Registration Trucklist_' + selectedDateStr.replace(/\//g, '-') + '.xlsx';
+    var fileName = `${safeContractLabel}-Registration Trucklist-${fileDatePart}.xlsx`;
     XLSX.writeFile(wb, fileName);
   }
 
@@ -2137,7 +2247,7 @@ function handleExportExcel() {
   // Mặc định: gọi server để lấy TOÀN BỘ dữ liệu theo ngày (và theo search nếu có)
   var searchVal = table.search() || '';
   var $btn = $('#exportBtn').prop('disabled', true);
-  showLoading(t.loading_preparing_data || 'Đang chuẩn bị dữ liệu...');
+  showLoading(t.loading_preparing_data || 'Preparing data...');
 
   google.script.run
     .withSuccessHandler(function(data){
@@ -2145,13 +2255,13 @@ function handleExportExcel() {
       if (Array.isArray(data) && data.length) {
         exportRows(data); // <-- data đã là toàn bộ (không phân trang)
       } else {
-        Swal.fire(t.no_data_title || 'Không có dữ liệu',
-                  t.no_data_export_message || 'Không có dữ liệu để xuất file.',
+        Swal.fire(t.no_data_title || 'No data',
+                  t.no_data_export_message || 'There is no data to export.',
                   'info');
       }
     })
     .withFailureHandler(function(err){ Swal.close(); $btn.prop('disabled', false); showError(err); })
-    .getAllDataForExport(selectedDateStr, userSession.token, searchVal);
+    .getAllDataForExport(selectedDateStr, userSession.token, searchVal, selectedContract);
 }
 
 
@@ -2162,25 +2272,25 @@ function handleDeleteSelected() {
     const t = translations[currentLang];    
 
     if (selectedIds.length === 0) {
-        Swal.fire(t.no_selection_title || 'Chưa chọn mục',
-                  t.no_selection_message || 'Vui lòng chọn ít nhất một mục để xóa.',
+        Swal.fire(t.no_selection_title || 'No selection',
+                  t.no_selection_message || 'Please select at least one item to delete.',
                   'warning');
     }
 
     Swal.fire({
-        title: (t.delete_selected_confirm_title || 'Bạn có chắc muốn xóa {count} mục?').replace('{count}', selectedIds.length),
-        text: t.delete_selected_confirm_text || 'Hành động này không thể hoàn tác!',
+        title: (t.delete_selected_confirm_title || 'Are you sure you want to delete {count} item(s)?').replace('{count}', selectedIds.length),
+        text: t.delete_selected_confirm_text || 'This action cannot be undone!',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc3545',
-        cancelButtonText: t.cancel_button || 'Hủy',
-        confirmButtonText: t.confirm_delete_button || 'Vâng, xóa đi!'
+        cancelButtonText: t.cancel_button || 'Cancel',
+        confirmButtonText: t.confirm_delete_button || 'Yes, delete!'
     }).then((result) => {
         if (result.isConfirmed) {
-            showLoading(t.loading_deleting || 'Đang xóa...');
+            showLoading(t.loading_deleting || 'Deleting...');
             google.script.run
                 .withSuccessHandler(message => {
-                    Swal.fire(t.delete_success_title || 'Đã xóa!', message, 'success');
+                    Swal.fire(t.delete_success_title || 'Deleted!', message, 'success');
                     registeredVehicleTable.draw(false);
                 })
                 .withFailureHandler(showError)
@@ -2226,16 +2336,16 @@ function handleEdit(rowData) {
         </form>`;
 
     Swal.fire({
-        title: t.edit_vehicle_title || 'Chỉnh sửa thông tin xe',
+        title: t.edit_vehicle_title || 'Edit vehicle information',
         html: formHtml,
         width: '90%',
         showCancelButton: true,
-        confirmButtonText: t.save_changes_button || 'Lưu thay đổi',
-        cancelButtonText: t.cancel_button || 'Hủy bỏ',
+        confirmButtonText: t.save_changes_button || 'Save changes',
+        cancelButtonText: t.cancel_button || 'Cancel',
         preConfirm: () => {
             const form = $('#editForm')[0];
             if (!form.checkValidity()) {
-                Swal.showValidationMessage(t.edit_validation_message || 'Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.');
+                Swal.showValidationMessage(t.edit_validation_message || 'Please complete all required fields with valid values.');
                 return false;
             }
             const updatedRecord = { ...rowData };
@@ -2259,10 +2369,10 @@ function handleEdit(rowData) {
         }
     }).then((result) => {
         if (result.isConfirmed) {
-            showLoading(t.loading_updating || 'Đang cập nhật...');
+            showLoading(t.loading_updating || 'Updating...');
             google.script.run
                 .withSuccessHandler(message => {
-                    Swal.fire(t.success_title || 'Thành công', message, 'success');
+                    Swal.fire(t.success_title || 'Success', message, 'success');
                     registeredVehicleTable.draw(false);
                 })
                 .withFailureHandler(showError)
