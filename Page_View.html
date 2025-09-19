@@ -36,21 +36,36 @@
         <div class="view-summary mb-3">
             <div id="statsBar" class="view-summary__items">
                 <div class="view-summary__item view-summary__item--primary">
-                    <div class="view-summary__label" data-translate="view_stat_total_label">Total registered vehicles:</div>
-                    <div id="stat-total" class="view-summary__value view-summary__value--primary">0</div>
+                    <div class="view-summary__icon">
+                        <i class="fas fa-truck"></i>
+                    </div>
+                    <div class="view-summary__details">
+                        <div class="view-summary__label" data-translate="view_stat_total_label">Total registered vehicles:</div>
+                        <div id="stat-total" class="view-summary__value view-summary__value--primary">0</div>
+                    </div>
                 </div>
                 <div class="view-summary__item view-summary__item--pending">
-                    <div class="view-summary__label" data-translate="view_stat_pending_label">Total pending approval:</div>
-                    <div id="stat-pending" class="view-summary__value view-summary__value--pending">0</div>
+                    <div class="view-summary__icon">
+                        <i class="fas fa-hourglass-half"></i>
+                    </div>
+                    <div class="view-summary__details">
+                        <div class="view-summary__label" data-translate="view_stat_pending_label">Total pending approval:</div>
+                        <div id="stat-pending" class="view-summary__value view-summary__value--pending">0</div>
+                    </div>
                 </div>
                 <div class="view-summary__item view-summary__item--approved">
-                    <div class="view-summary__label" data-translate="view_stat_approved_label">Total approved vehicles:</div>
-                    <div id="stat-approved" class="view-summary__value view-summary__value--approved">0</div>
+                    <div class="view-summary__icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="view-summary__details">
+                        <div class="view-summary__label" data-translate="view_stat_approved_label">Total approved vehicles:</div>
+                        <div id="stat-approved" class="view-summary__value view-summary__value--approved">0</div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="view-table-controls d-flex flex-wrap align-items-center gap-3 mb-2">
+        <div class="view-table-controls d-flex flex-wrap align-items-center gap-3 justify-content-between mb-2">
             <div class="dataTables_length mb-0">
                 <label class="mb-0">
                     <span data-translate="show_label">Show</span>
