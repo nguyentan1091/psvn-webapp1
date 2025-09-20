@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = ''; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -3034,31 +3034,66 @@ function getWeighResultData(params) {
   const contractFilter = normalizeListInput(f.contracts);
   const customerFilter = normalizeListInput(f.customers);
   const draw = Number(params.draw || 1);
-  const empty = {
-    draw: draw,
-    recordsTotal: 0,
-    recordsFiltered: 0,
-    data: [],
-    counts: { unassigned: 0, unknown: 0, assigned: 0 },
-    summary: { trucks: 0, weight: 0 },    
-    options: { contracts: [], customers: [] }
+  const isUser = String(session.role || '').toLowerCase() === 'user';
+  const parseCustomerAssignment = function(value) {
+    if (value == null) return [];
+    if (Array.isArray(value)) {
+      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
+    }
+    return String(value)
+      .split(/[\r\n;|]+/)
+      .map(function(v){ return v.trim(); })
+      .filter(function(v){ return v; });
+  };
+  const assignedCustomerNames = isUser
+    ? parseCustomerAssignment(session.customerName || session.customerNames)
+    : [];
+  const uniqueSortedList = function(list) {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const out = [];
+    for (var i = 0; i < list.length; i++) {
+      var val = String(list[i] == null ? '' : list[i]).trim();
+      if (!val) continue;
+      var key = val.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(val);
+    }
+    return out.sort(function(a, b) {
+      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  };
+  const buildEmpty = function(customerNames) {
+    return {
+      draw: draw,
+      recordsTotal: 0,
+      recordsFiltered: 0,
+      data: [],
+      counts: { unassigned: 0, unknown: 0, assigned: 0 },
+      summary: { trucks: 0, weight: 0 },
+      options: {
+        contracts: [],
+        customers: uniqueSortedList(customerNames)
+      }
+    };
   };
 
   if (!from && !to && !contractFilter.length && !customerFilter.length && !(params.search && params.search.value)) {
-    return empty;
+    return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
   if (lr < 2) {
-    return empty;
+   return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
   const idxDateOut = headers.indexOf('Date Out');
   const idxContract = headers.indexOf('ContractNo');
   const idxCompany = headers.indexOf('Transportion Company');
   const idxCustomer = headers.indexOf('Customer Name');
-  const idxNetWeight = headers.indexOf('Net Weight');  
+  const idxNetWeight = headers.indexOf('Net Weight');
   if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
-    return empty;
+   return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
   let rows = [];
@@ -3081,35 +3116,65 @@ function getWeighResultData(params) {
   }
 
   if (!rows.length) {
-    return empty;
+    var fallbackCustomers = null;
+    if (isUser) {
+      fallbackCustomers = assignedCustomerNames.length ? assignedCustomerNames : customerFilter;
+    }
+    return buildEmpty(fallbackCustomers);
   }
 
-  const isUser = session.role === 'user';
-  const parseCustomerAssignment = function(value) {
-    if (value == null) return [];
-    if (Array.isArray(value)) {
-      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
-    }
-    return String(value)
-      .split(/[\n,;|]+/)
-      .map(function(v){ return v.trim(); })
-      .filter(function(v){ return v; });
-  };
-
-  const userCustomerList = isUser ? parseCustomerAssignment(session.customerName || session.customerNames) : [];
-  const userCustomerSet = isUser && userCustomerList.length
-    ? new Set(userCustomerList.map(function(v){ return v.toLowerCase(); }))
+  const assignedCustomerLowerSet = assignedCustomerNames.length
+    ? new Set(assignedCustomerNames.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
+    : null;
+  const requestedCustomerLowerSet = customerFilter.length
+    ? new Set(customerFilter.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
     : null;
 
-  if (isUser && (!userCustomerSet || !userCustomerSet.size)) {
-    return empty;
+  let accessibleCustomerLowerSet = null;
+  let accessibleCustomerNamesForOptions = [];
+  if (isUser) {
+    if (assignedCustomerLowerSet && assignedCustomerLowerSet.size) {
+      accessibleCustomerLowerSet = assignedCustomerLowerSet;
+      accessibleCustomerNamesForOptions = assignedCustomerNames.slice();
+    } else if (requestedCustomerLowerSet && requestedCustomerLowerSet.size) {
+      accessibleCustomerLowerSet = requestedCustomerLowerSet;
+      accessibleCustomerNamesForOptions = customerFilter.slice();
+    } else {
+      return buildEmpty(assignedCustomerNames);
+    }
+  }    
+
+  let filterCustomerLowerSet = null;
+  if (isUser) {
+    if (assignedCustomerLowerSet && assignedCustomerLowerSet.size) {
+      if (requestedCustomerLowerSet && requestedCustomerLowerSet.size) {
+        const intersection = [];
+        requestedCustomerLowerSet.forEach(function(name){
+          if (assignedCustomerLowerSet.has(name)) {
+            intersection.push(name);
+          }
+        });
+        filterCustomerLowerSet = new Set(intersection);
+        if (filterCustomerLowerSet.size === 0) {
+          return buildEmpty(accessibleCustomerNamesForOptions.length ? accessibleCustomerNamesForOptions : assignedCustomerNames);
+        }
+      } else {
+        filterCustomerLowerSet = assignedCustomerLowerSet;
+      }
+    } else {
+      filterCustomerLowerSet = requestedCustomerLowerSet;
+    }
+  } else {
+    filterCustomerLowerSet = requestedCustomerLowerSet;
   }
+
+  const restrictByCustomer = Boolean(accessibleCustomerLowerSet && accessibleCustomerLowerSet.size);
 
   const contractSet = contractFilter.length
     ? new Set(contractFilter.map(function(v){ return String(v); }))
     : null;
-  const customerSet = customerFilter.length
-    ? new Set(customerFilter.map(function(v){ return String(v).toLowerCase(); }))
+  const customerSet = filterCustomerLowerSet && filterCustomerLowerSet.size
+    ? filterCustomerLowerSet
     : null;
 
   const baseRows = [];
@@ -3125,7 +3190,7 @@ function getWeighResultData(params) {
     var rowCustomer = String(stripLeadingApostrophe(row[idxCustomer]) || '').trim();
     var rowCustomerKey = rowCustomer.toLowerCase();
 
-    if (isUser && (!rowCustomerKey || !userCustomerSet.has(rowCustomerKey))) continue;
+    if (restrictByCustomer && (!rowCustomerKey || !accessibleCustomerLowerSet.has(rowCustomerKey))) continue;
   
     if (rowContract) optionContracts.add(rowContract);
     if (rowCustomer) optionCustomers.add(rowCustomer);
@@ -3142,6 +3207,9 @@ function getWeighResultData(params) {
   var availableCustomers = Array.from(optionCustomers).sort(function(a, b) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   });
+  if (!availableCustomers.length && accessibleCustomerNamesForOptions.length) {
+    availableCustomers = uniqueSortedList(accessibleCustomerNamesForOptions);
+  }
 
   var totalRecords = baseRows.length;
   if (!totalRecords) {
