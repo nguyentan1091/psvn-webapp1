@@ -4610,7 +4610,7 @@ function parseMultiValueInput(value) {
   if (value == null) return [];
   const arr = Array.isArray(value)
     ? value
-    : String(value).split(/[\n,;|]+/);
+    : String(value).split(/[\r\n;|]+/);
   return arr
     .map(v => String(v == null ? '' : v).trim())
     .filter(Boolean);
@@ -4633,16 +4633,16 @@ function uniqueCasePreserveOrder(list) {
 function getWrAllowedCustomers() {
   if (!userSession || !isRole('user')) return [];
   const raw = userSession.customerName || userSession.customerNames || '';
-  return uniqueCasePreserveOrder(parseMultiValueInput(raw));
+  const parsed = parseMultiValueInput(raw);
+  return uniqueCasePreserveOrder(parsed);
 }
 
 function sanitizeWrCustomerSelection(values) {
   const allowed = getWrAllowedCustomers();
-  if (!allowed.length) return [];
+  const selected = uniqueCasePreserveOrder(parseMultiValueInput(values));
+  if (!allowed.length) return selected;
   const allowedSet = new Set(allowed.map(name => name.toLowerCase()));
-  const filtered = uniqueCasePreserveOrder(
-    parseMultiValueInput(values).filter(name => allowedSet.has(name.toLowerCase()))
-  );
+  const filtered = selected.filter(name => allowedSet.has(name.toLowerCase()));
   return filtered.length ? filtered : allowed.slice();
 }
 
@@ -4674,13 +4674,19 @@ function getWrFilters(){
   };
 
   if (isRole('user')) {
-    const allowed = getWrAllowedCustomers();
-    if (allowed.length) {
-      const sanitized = sanitizeWrCustomerSelection(filter.customers);
+    const sanitized = sanitizeWrCustomerSelection(filter.customers);
+    if (sanitized.length) {
       filter.customers = sanitized;
       syncWrCustomerSelection(sanitized);
     } else {
-      filter.customers = [];
+      const allowed = getWrAllowedCustomers();
+      if (allowed.length) {
+        filter.customers = allowed.slice();
+        syncWrCustomerSelection(allowed);
+      } else {
+        filter.customers = [];
+        syncWrCustomerSelection([]);
+      }
     }
   }
 
@@ -4736,7 +4742,7 @@ function updateWrAdvancedFilters(options){
     $sel.val(selected);
     $sel.prop('disabled', false);
 
-   if (selector === '#wr-customers' && isRole('user')) {
+    if (selector === '#wr-customers' && isRole('user')) {
       const sanitized = sanitizeWrCustomerSelection($sel.val());
       if (sanitized.length) {
         const normalizedList = list.map(val => val.toLowerCase());
@@ -4744,9 +4750,17 @@ function updateWrAdvancedFilters(options){
         const finalSelection = sanitizedExisting.length ? sanitizedExisting : sanitized;
         $sel.val(finalSelection);
       } else {
-        $sel.val([]);
+        const allowed = getWrAllowedCustomers();
+        if (allowed.length) {
+          const normalizedList = list.map(val => val.toLowerCase());
+          const allowedExisting = allowed.filter(name => normalizedList.includes(name.toLowerCase()));
+          const finalSelection = allowedExisting.length ? allowedExisting : allowed;
+          $sel.val(finalSelection);
+        } else {
+          $sel.val([]);
+        }
       }
-    }    
+    }
   }
 
   refreshSelect('#wr-contracts', options.contracts);
