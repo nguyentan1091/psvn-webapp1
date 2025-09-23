@@ -1,10 +1,15 @@
-<div class="card">
-    <div class="card-header">
-        <i class="fas fa-table me-1"></i>
-        <span data-translate="view_header">Registered Vehicle Data</span>
+<div class="card registered-vehicles-card">
+    <div class="card-header registered-vehicles-card__header">
+        <div class="registered-vehicles-card__icon">
+            <i class="fas fa-table"></i>
+        </div>
+        <div class="registered-vehicles-card__titles">
+            <h3 class="registered-vehicles-card__title mb-1" data-translate="sidebar_view">Registered Vehicles</h3>
+            <p class="registered-vehicles-card__subtitle mb-0" data-translate="view_header">Registered Vehicle Data</p>
+        </div>
     </div>
-    <div class="card-body">
-        <div class="view-toolbar mb-3">
+    <div class="card-body registered-vehicles-card__body">
+        <div class="view-toolbar mb-4">
             <div class="view-toolbar__filters">
                 <div class="view-filter">
                     <label class="form-label mb-1" data-translate="view_filter_label">View date</label>
@@ -20,20 +25,14 @@
             <div class="view-toolbar__search">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
-                    <input type="text" id="table-search-input" class="form-control" placeholder="Search in table..." data-translate-placeholder="search_in_table_placeholder">                    
+                    <input type="text" id="table-search-input" class="form-control" placeholder="Search in table..." data-translate-placeholder="search_in_table_placeholder">
                 </div>
             </div>
-            <div class="col-md-3 text-end">
-            <div class="view-toolbar__actions">
-                <button id="exportBtn" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Export Excel</span></button>
-                <button id="deleteSelectedBtn" class="btn btn-danger btn-sm disabled"><i class="fas fa-trash-alt me-1"></i> <span data-translate="delete_button">Delete</span></button>
-                <button id="refreshBtn" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> <span data-translate="reload_button">Reload</span></button>                 
-            </div>
         </div>
-        
-        <div id="edit-rules-notice" class="alert alert-info d-none" role="alert"></div>
 
-        <div class="view-summary mb-3">
+        <div id="edit-rules-notice" class="alert alert-info d-none mb-4" role="alert"></div>
+
+        <div class="view-summary mb-4">
             <div id="statsBar" class="view-summary__items">
                 <div class="view-summary__item view-summary__item--primary">
                     <div class="view-summary__icon">
@@ -65,8 +64,8 @@
             </div>
         </div>
 
-        <div class="view-table-controls d-flex flex-wrap align-items-center gap-3 justify-content-between mb-2">
-            <div class="dataTables_length mb-0">
+        <div class="view-table-controls">
+            <div class="dataTables_length">
                 <label class="mb-0">
                     <span data-translate="show_label">Show</span>
                     <select id="page-length-select" class="form-select form-select-sm d-inline-block w-auto">
@@ -77,9 +76,14 @@
                     <span data-translate="entries_label">entries</span>
                 </label>
             </div>
+            <div class="view-table-controls__actions">
+                <button id="exportBtn" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Export Excel</span></button>
+                <button id="deleteSelectedBtn" class="btn btn-danger btn-sm disabled"><i class="fas fa-trash-alt me-1"></i> <span data-translate="delete_button">Delete</span></button>
+                <button id="refreshBtn" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> <span data-translate="reload_button">Reload</span></button>
+            </div>            
         </div>
 
-        <div class="table-responsive mt-2">
+        <div class="table-responsive mt-3">
             <table id="registeredVehicleTable" class="table table-bordered table-striped" style="width:100%;"></table>
         </div>
     </div>
