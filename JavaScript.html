@@ -25,6 +25,96 @@ let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
 let currentLang = 'en'; // Ngôn ngữ mặc định
 
+const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY = 700;
+const MAX_RETRY_DELAY = 5000;
+
+let wrReloadTimer = null;
+
+function getRawErrorMessage(error) {
+    if (error == null) return '';
+    if (typeof error === 'string') return error;
+    if (typeof error.message === 'string') return error.message;
+    if (typeof error.details === 'string') return error.details;
+    try { return String(error); } catch (_) { return ''; }
+}
+
+function getCleanErrorMessage(error) {
+    const raw = getRawErrorMessage(error);
+    return raw ? raw.replace(/^Error:\s*/i, '').trim() : '';
+}
+
+function isTransientError(error) {
+    const raw = getRawErrorMessage(error);
+    if (!raw) return false;
+    return /(http\s*503|service unavailable|networkerror|connection failure|server error)/i.test(raw);
+}
+
+function callServerWithRetry(methodName, args = [], options = {}) {
+    if (!methodName || typeof google === 'undefined' || !google.script || !google.script.run) {
+        return;
+    }
+
+    const {
+        onSuccess,
+        onFailure,
+        attempts = DEFAULT_RETRY_ATTEMPTS,
+        initialDelay = DEFAULT_RETRY_DELAY,
+        backoff = 2,
+        maxDelay = MAX_RETRY_DELAY,
+        onRetry
+    } = options || {};
+
+    const callArgs = Array.isArray(args) ? args.slice() : [args];
+    const totalAttempts = Math.max(1, attempts);
+    let retryCount = 0;
+
+    const execute = () => {
+        let runner = google.script.run;
+
+        if (typeof onSuccess === 'function') {
+            runner = runner.withSuccessHandler(result => {
+                onSuccess(result);
+            });
+        }
+
+        runner = runner.withFailureHandler(err => {
+            const shouldRetry = isTransientError(err) && retryCount < totalAttempts - 1;
+            if (shouldRetry) {
+                const wait = Math.min(maxDelay, Math.round(initialDelay * Math.pow(backoff, retryCount)));
+                retryCount += 1;
+                if (typeof onRetry === 'function') {
+                    try { onRetry(retryCount, wait, err); } catch (retryErr) { console.error(retryErr); }
+                } else {
+                    const info = getCleanErrorMessage(err) || getRawErrorMessage(err) || 'Transient error';
+                    console.warn(`Retrying ${methodName} due to transient error (attempt ${retryCount + 1}/${totalAttempts}) in ${wait}ms: ${info}`);
+                }
+                setTimeout(execute, wait);
+            } else {
+                if (typeof onFailure === 'function') {
+                    onFailure(err);
+                } else {
+                    showError(err);
+                }
+            }
+        });
+
+        if (typeof runner[methodName] === 'function') {
+            runner[methodName].apply(runner, callArgs);
+        } else {
+            const err = new Error(`google.script.run.${methodName} is not available`);
+            if (typeof onFailure === 'function') {
+                onFailure(err);
+            } else {
+                showError(err);
+            }
+        }
+    };
+
+    execute();
+}
+
 function normalizeRole(role) {
     return typeof role === 'string' ? role.trim().toLowerCase() : '';
 }
@@ -59,6 +149,8 @@ const translations = {
     // General
     "hello_user": "Xin chào, {username} ({role})",
     "logout_button": "Đăng xuất",
+    "server_busy_title": "Máy chủ bận",
+    "server_busy_message": "Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.",    
     "save_changes_button": "Lưu thay đổi",
     "add_button": "Thêm",
     "edit_button": "Sửa",
@@ -314,6 +406,8 @@ const translations = {
     // General
     "hello_user": "Hello, {username} ({role})",
     "logout_button": "Logout",
+    "server_busy_title": "Server is busy",
+    "server_busy_message": "The system is receiving too many requests. Please try again in a moment.",    
     "save_changes_button": "Save Changes",
     "add_button": "Add",
     "edit_button": "Edit",
@@ -642,7 +736,11 @@ $(document).on('click', '.lang-btn', function(e) {
 
 
 $(document).ready(function() {
-    renderLoginTemplate();  
+    if (!sessionStorage.getItem(SESSION_FLAG_KEY)) {
+        renderLoginTemplate();
+    } else {
+        showLoader();
+    }
     initializeApp();
 });
 
@@ -650,8 +748,9 @@ $(document).ready(function() {
 function initializeApp() {
     google.script.run
         .withSuccessHandler(session => {
-            userSession = session;
+            userSession = session || { isLoggedIn: false, role: null, contractor: null, token: null };
             if (userSession.isLoggedIn) {
+                sessionStorage.setItem(SESSION_FLAG_KEY, '1');              
                 loadDashboard();
                 setupInactivityTimer();
                 google.script.run
@@ -659,10 +758,12 @@ function initializeApp() {
                   .withFailureHandler(showError)
                   .getTransportCompanies();
             } else {
+                sessionStorage.removeItem(SESSION_FLAG_KEY);
                 loadLoginPage();
             }
         })
         .withFailureHandler(error => {
+            sessionStorage.removeItem(SESSION_FLAG_KEY);          
             $('#loader-wrapper').hide();
             showError(error);
         })
@@ -696,7 +797,7 @@ function showApp() {
         loader.hide();
         app.show();
         setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
-    }, 500);
+    }, 200);
 }
 
 function bindLoginEvents() {
@@ -907,11 +1008,13 @@ function handleLogin(e) {
 
     google.script.run
         .withSuccessHandler(session => {
-            userSession = session;
+            userSession = session || { isLoggedIn: false };
             if (userSession.isLoggedIn) {
+                sessionStorage.setItem(SESSION_FLAG_KEY, '1');              
                 loadDashboard();
                 setupInactivityTimer();
             } else {
+                sessionStorage.removeItem(SESSION_FLAG_KEY);
                 showError({ message: translations[currentLang].login_failed });
             }
         })
@@ -927,22 +1030,22 @@ function handleLogout() {
     clearTimeout(inactivityTimer);
     $(document).off('mousemove mousedown keypress scroll touchstart');
 
-    Swal.fire({
-        title: translations[currentLang].logging_out,
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-            try { localStorage.removeItem('userSession'); sessionStorage.clear(); if (typeof userSession !== 'undefined') { try { userSession = null; } catch(_){} } } catch(_){}
-            setTimeout(() => { try { window.location.reload(); } catch(_) { window.location.replace(window.location.href); } }, 3000);
-            google.script.run
-                .withSuccessHandler(() => {
-                    window.location.reload();
-                })
-                .withFailureHandler((err) => {
-                    showError(err);
-                    setTimeout(() => window.location.reload(), 2000);
-                })
-                .logout();
+    showLoader();
+
+    try { localStorage.removeItem('userSession'); } catch(_) {}
+    try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch(_) {}
+    try { sessionStorage.clear(); } catch(_) {}
+    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch(_) {}
+
+    callServerWithRetry('logout', [], {
+        attempts: 2,
+        initialDelay: 400,
+        onSuccess: () => {
+            window.location.reload();
+        },
+        onFailure: err => {
+            showError(err);
+            setTimeout(() => { window.location.reload(); }, 1500);
         }
     });
 }
@@ -3132,14 +3235,17 @@ function showLoading(title) {
 }
 
 function showError(error) {
-  const raw = (error && (error.message || error)) ? String(error.message || error) : 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
+  const t = translations[currentLang] || translations.vi || {};
+  let raw = getRawErrorMessage(error);
+  if (!raw) raw = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
 
-  // GIỮ NGUYÊN: hết phiên đăng nhập
+
   if (raw.includes('Bạn chưa đăng nhập')) {
+    try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch (_) {}
     Swal.fire({
       icon: 'error',
-      title: translations[currentLang].session_expired_title,
-      text: translations[currentLang].session_expired_text,
+      title: t.session_expired_title || 'Phiên làm việc đã hết hạn',
+      text: t.session_expired_text || 'Vui lòng đăng nhập lại.',
       timer: 3000,
       timerProgressBar: true,
       didClose: () => { window.location.reload(); }
@@ -3147,13 +3253,22 @@ function showError(error) {
     return;
   }
 
-  // Bỏ "Error: " nếu có
-  const msg = raw.replace(/^Error:\s*/i, '');
+  if (/(http\s*503|service unavailable|networkerror|connection failure)/i.test(raw)) {
+    Swal.fire({
+      icon: 'info',
+      title: t.server_busy_title || 'Máy chủ bận',
+      text: t.server_busy_message || 'Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.'
+    });
+    return;
+  }
+
+  const cleanMsg = getCleanErrorMessage(error) || raw;
+  const safeMsg = cleanMsg || raw || 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
 
   // --- Nhận diện "Xe mới" ---
   const mNew =
-    msg.match(/Xe\s+(.+?)\s+là xe mới/i) ||
-    msg.match(/Vehicle plate\(s\)\s+(.+?)\s+are new/i);
+    safeMsg.match(/Xe\s+(.+?)\s+là xe mới/i) ||
+    safeMsg.match(/Vehicle plate\(s\)\s+(.+?)\s+are new/i);
   if (mNew && mNew[1]) {
     const platesNew = mNew[1].split(/[,\n\r\t ]+/).map(s => s.trim()).filter(Boolean);
     if (platesNew.length) { showNewVehiclePopup(platesNew); return; }
@@ -3162,19 +3277,19 @@ function showError(error) {
   // --- Nhận diện "Xe trùng đơn vị khác" ---
   const dupPatternVi = /đã được đăng ký với (công ty|đơn vị)(?:\s+vận chuyển)? khác/i;
   const dupPatternEn = /have already been registered with another transport company/i;
-  if (dupPatternVi.test(msg) || dupPatternEn.test(msg) || /->\s*\"/.test(msg)) {
+  if (dupPatternVi.test(safeMsg) || dupPatternEn.test(safeMsg) || /->\s*\"/.test(safeMsg)) {
     // Cố gắng bóc biển số từ dạng "PLATE -> "Company""
     const found = [];
     const pairRegex = /([A-Z0-9\-\.]+)\s*->/gi;
     let p;
-    while ((p = pairRegex.exec(msg)) !== null) found.push(p[1]);
+    while ((p = pairRegex.exec(safeMsg)) !== null) found.push(p[1]);
 
     if (!found.length) {
       let extracted = null;
-      const mDupVi = msg.match(/Xe\s+(.+?)\s+đã được đăng ký/i);
+      const mDupVi = safeMsg.match(/Xe\s+(.+?)\s+đã được đăng ký/i);
       if (mDupVi && mDupVi[1]) extracted = mDupVi[1];
       else {
-        const mDupEn = msg.match(/Vehicle plate\(s\)\s+(.+?)\s+have already been registered/i);
+        const mDupEn = safeMsg.match(/Vehicle plate\(s\)\s+(.+?)\s+have already been registered/i);
         if (mDupEn && mDupEn[1]) extracted = mDupEn[1];
       }
       if (extracted) {
@@ -3187,8 +3302,8 @@ function showError(error) {
   // Mặc định: báo lỗi chuẩn
   Swal.fire({
     icon: 'error',
-    title: translations[currentLang].error_title,
-    text: msg
+    title: t.error_title || 'Lỗi',
+    text: safeMsg
   });
 }
 
@@ -4022,8 +4137,10 @@ function loadXpplWeighingData() {
   };
 
   showLoading(t.xppl_loading_data || 'Đang tải dữ liệu...');
-  google.script.run
-    .withSuccessHandler(res => {
+  callServerWithRetry('getXpplWeighingData', [filter, userSession.token], {
+    attempts: 3,
+    initialDelay: 700,
+    onSuccess: res => {
       Swal.close();
       if (!res) res = {};
       if (res.contracts) {
@@ -4044,9 +4161,12 @@ function loadXpplWeighingData() {
         xpplWeighingTable.clear().rows.add(res.data || []).draw();
         xpplWeighingTable.columns.adjust().draw();
       }
-    })
-    .withFailureHandler(err => { Swal.close(); showError(err); })
-    .getXpplWeighingData(filter, userSession.token);
+    },
+    onFailure: err => {
+      Swal.close();
+      showError(err);
+    }
+  });
 }
 
 function exportXpplWeighingExcel() {
@@ -4808,8 +4928,12 @@ function updateWrAdvancedFilters(options){
 }
 
 function reloadWrTables(){
-  if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
-  if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload();
+  if (wrReloadTimer) clearTimeout(wrReloadTimer);
+  wrReloadTimer = setTimeout(() => {
+    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
+    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload();
+    wrReloadTimer = null;
+  }, 200);
 }
 
 function deleteWrRows(table){
@@ -4900,8 +5024,10 @@ function exportWrTable(table, name){
     ...extra
   };
 
-  google.script.run
-    .withSuccessHandler(res => {
+  callServerWithRetry('getWeighResultData', [req], {
+    attempts: 3,
+    initialDelay: 700,
+    onSuccess: res => {
       Swal.close();
       const rows = (res && Array.isArray(res.data)) ? res.data : [];
       if (!rows.length) {
@@ -4955,9 +5081,12 @@ function exportWrTable(table, name){
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, sheet, name);
       XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
-    })
-    .withFailureHandler(err => { Swal.close(); showError(err); })
-    .getWeighResultData(req);
+    },
+    onFailure: err => {
+      Swal.close();
+      showError(err);
+    }
+  });
 }
 
 function normalizeDtResponse(res, draw){
@@ -5007,23 +5136,25 @@ function buildWeighResultTables(isAdmin) {
         filter: getWrFilters(),
         excludeUnknown: true
       };
-      google.script.run
-        .withSuccessHandler(res => {
-          updateWrSummary(res.counts, res.summary);
+      callServerWithRetry('getWeighResultData', [req], {
+        attempts: 3,
+        initialDelay: 700,
+        onSuccess: res => {
+          updateWrSummary(res && res.counts, res && res.summary);
           if (res && res.options) updateWrAdvancedFilters(res.options);
           const dtRes = {
-            draw: Number(res.draw) || dtReq.draw || 0,
-            recordsTotal: Number(res.recordsTotal) || 0,
-            recordsFiltered: Number(res.recordsFiltered) || 0,
-            data: res.data || []
+            draw: Number(res && res.draw) || dtReq.draw || 0,
+            recordsTotal: Number(res && res.recordsTotal) || 0,
+            recordsFiltered: Number(res && res.recordsFiltered) || 0,
+            data: (res && res.data) || []
           };
           callback(dtRes);
-        })
-        .withFailureHandler(err => {
+        },
+        onFailure: err => {
           showError(err);
-          callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
-        })
-        .getWeighResultData(req);
+          callback({ draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: [] });
+        }
+      });
     },
     columns: cols,
     drawCallback:function(){ this.api().columns.adjust(); }    
@@ -5073,23 +5204,25 @@ function buildWeighResultTables(isAdmin) {
           filter: getWrFilters(),
           onlyUnknown: true
         };
-        google.script.run
-          .withSuccessHandler(res => {
-            updateWrSummary(res.counts, res.summary);
+        callServerWithRetry('getWeighResultData', [req], {
+          attempts: 3,
+          initialDelay: 700,
+          onSuccess: res => {
+            updateWrSummary(res && res.counts, res && res.summary);
             if (res && res.options) updateWrAdvancedFilters(res.options);
             const dtRes = {
-              draw: Number(res.draw) || dtReq.draw || 0,
-              recordsTotal: Number(res.recordsTotal) || 0,
-              recordsFiltered: Number(res.recordsFiltered) || 0,
-              data: res.data || []
+              draw: Number(res && res.draw) || dtReq.draw || 0,
+              recordsTotal: Number(res && res.recordsTotal) || 0,
+              recordsFiltered: Number(res && res.recordsFiltered) || 0,
+              data: (res && res.data) || []
             };
             callback(dtRes);
-          })
-          .withFailureHandler(err => {
+          },
+          onFailure: err => {
             showError(err);
-            callback({draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: []});
-          })
-          .getWeighResultData(req);
+            callback({ draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: [] });
+          }
+        });
       },
       columns: uCols,
       drawCallback:function(){ this.api().columns.adjust(); }
