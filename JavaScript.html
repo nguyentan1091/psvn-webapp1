@@ -642,6 +642,7 @@ $(document).on('click', '.lang-btn', function(e) {
 
 
 $(document).ready(function() {
+    renderLoginTemplate();  
     initializeApp();
 });
 
@@ -672,6 +673,20 @@ function initializeApp() {
 // PAGE & VIEW MANAGEMENT
 // =================================================================
 
+function showLoader() {
+    const loader = $('#loader-wrapper');
+    const app = $('#app-container');
+
+    app.hide();
+    loader.show();
+
+    if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => loader.css('opacity', '1'));
+    } else {
+        loader.css('opacity', '1');
+    }
+}
+
 function showApp() {
     const loader = $('#loader-wrapper');
     const app = $('#app-container');
@@ -684,15 +699,39 @@ function showApp() {
     }, 500);
 }
 
+function bindLoginEvents() {
+    const loginForm = $('#loginForm');
+    if (loginForm.length) {
+        loginForm.off('submit').on('submit', handleLogin);
+    }
+
+    const forgotLink = $('#forgotPasswordLink');
+    if (forgotLink.length) {
+        forgotLink.off('click').on('click', handleForgotPassword);
+    }
+}
+
+function renderLoginTemplate() {
+    const template = document.getElementById('login-template');
+    if (!template) return false;
+
+    document.body.className = 'login-view-active';
+    $('#app-container').html(template.innerHTML);
+    bindLoginEvents();
+    showApp();
+    return true;
+}
+
 function loadLoginPage() {
+  if (renderLoginTemplate()) {
+      return;
+  }
+
   google.script.run
     .withSuccessHandler(html => {
-        // Dòng mã thêm vào:
-        document.body.className = 'login-view-active'; // "Đánh dấu" là trang login
-
+        document.body.className = 'login-view-active';
         $('#app-container').html(html);
-        $('#loginForm').on('submit', handleLogin);
-        $('#forgotPasswordLink').on('click', handleForgotPassword);
+        bindLoginEvents();
         showApp();
     })
     .withFailureHandler(showError)
@@ -700,6 +739,7 @@ function loadLoginPage() {
 }
 
 function loadDashboard() {
+  showLoader();  
   google.script.run
     .withSuccessHandler(html => {
         // Dòng mã thêm vào:
