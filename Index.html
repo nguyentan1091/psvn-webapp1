@@ -18,6 +18,11 @@
         </div>
     </div>
 
+    <!-- **MỚI:** Template trang đăng nhập được nhúng sẵn để hiển thị ngay lập tức -->
+    <template id="login-template">
+      <?!= include('Login'); ?>
+    </template>
+
     <!-- Container chính của ứng dụng, ban đầu sẽ bị ẩn đi -->
     <div id="app-container" style="display: none;">
       <!-- Nội dung ứng dụng (trang đăng nhập hoặc dashboard) sẽ được tải vào đây -->
