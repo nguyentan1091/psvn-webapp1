@@ -31,6 +31,7 @@ let loginFallbackTimer = null;
 let sessionCheckCompleted = false;
 
 const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
+const SESSION_STORAGE_KEY = 'psvn_userSession';
 const DEFAULT_RETRY_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY = 700;
 const MAX_RETRY_DELAY = 5000;
@@ -39,6 +40,74 @@ let wrReloadTimer = null;
 
 let serverBusyToastEl = null;
 let serverBusyToastTimer = null;
+
+@@ -9,59 +9,92 @@
+<script src="https://cdn.datatables.net/select/1.7.0/js/dataTables.select.min.js"></script>
+<!-- SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<!-- SheetJS for Excel file reading -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<script>
+// =================================================================
+// GLOBAL VARIABLES & INITIALIZATION
+// =================================================================
+let userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+let inactivityTimer;
+let registeredVehicleTable, totalListTable, usersTable;
+let wrResultTable, wrUnknownTable;
+let previewDataTable, totalListPreviewTable;
+let previewTableData = [], totalListPreviewData = [];
+let allowedCompanies = [];
+let currentLang = 'en'; // Ngôn ngữ mặc định
+let $loaderWrapper = null;
+let $appContainer = null;
+let loginTemplateHTML = '';
+let loginFallbackTimer = null;
+let sessionCheckCompleted = false;
+
+const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
+const SESSION_STORAGE_KEY = 'psvn_userSession';
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY = 700;
+const MAX_RETRY_DELAY = 5000;
+
+let wrReloadTimer = null;
+
+let serverBusyToastEl = null;
+let serverBusyToastTimer = null;
+
+function getStoredSession() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.isLoggedIn && parsed.token) {
+            return parsed;
+        }
+    } catch (err) {
+        clearStoredSession();
+    }
+    return null;
+}
+
+function persistUserSession(session) {
+    if (session && session.isLoggedIn && session.token) {
+        try {
+            sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+        } catch (err) {
+            // Ignore storage errors (e.g., private mode)
+        }
+    } else {
+        clearStoredSession();
+    }
+}
+
+function clearStoredSession() {
+    try {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (err) { /* ignore */ }
+}
 
 function ensureToastContainer() {
     let container = document.getElementById('app-toast-container');
@@ -925,12 +994,21 @@ $(document).ready(function() {
     $appContainer = getAppContainer();
     preloadLoginTemplate();
 
+    const storedSession = getStoredSession();
+    if (storedSession) {
+        userSession = storedSession;
+        if (storedSession.token && !sessionStorage.getItem(SESSION_FLAG_KEY)) {
+            sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+        }
+    }
+
+    const existingToken = storedSession && storedSession.token ? storedSession.token : null;
     const hasSessionFlag = !!sessionStorage.getItem(SESSION_FLAG_KEY);
     sessionCheckCompleted = false;
 
     showLoader();
 
-    if (!hasSessionFlag) {
+    if (!hasSessionFlag && !existingToken) {
         loginFallbackTimer = setTimeout(() => {
             if (!sessionCheckCompleted) {
                 renderLoginTemplate();
@@ -938,18 +1016,21 @@ $(document).ready(function() {
         }, 450);
     }
 
-    initializeApp();
+    initializeApp(existingToken);
 });
 
 
-function initializeApp() {
+function initializeApp(existingToken) {
     google.script.run
         .withSuccessHandler(session => {
             sessionCheckCompleted = true;
-            clearLoginFallbackTimer();          
-            userSession = session || { isLoggedIn: false, role: null, contractor: null, token: null };
-            if (userSession.isLoggedIn) {
+            clearLoginFallbackTimer();
+            const normalizedSession = (session && typeof session === 'object') ? session : {};
+            const isValidSession = !!(normalizedSession.isLoggedIn && normalizedSession.token);
+            if (isValidSession) {
+                userSession = normalizedSession;
                 sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+                persistUserSession(userSession);
                 loadDashboard();
                 setupInactivityTimer();
                 google.script.run
@@ -957,6 +1038,8 @@ function initializeApp() {
                   .withFailureHandler(showError)
                   .getTransportCompanies();
             } else {
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                clearStoredSession();              
                 sessionStorage.removeItem(SESSION_FLAG_KEY);
                 loadLoginPage();
             }
@@ -964,6 +1047,8 @@ function initializeApp() {
         .withFailureHandler(error => {
             sessionCheckCompleted = true;
             clearLoginFallbackTimer();
+            userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+            clearStoredSession();            
             sessionStorage.removeItem(SESSION_FLAG_KEY);
             if (!renderLoginTemplate()) {
                 const loader = getLoaderWrapper();
@@ -971,7 +1056,7 @@ function initializeApp() {
             }
             showError(error);
         })
-        .getUserSession();
+        .getUserSession(existingToken || null);
 }
 
 // =================================================================
@@ -1221,14 +1306,21 @@ function handleLogin(e) {
 
     google.script.run
         .withSuccessHandler(session => {
-            userSession = session || { isLoggedIn: false };
-            if (userSession.isLoggedIn) {
-                sessionStorage.setItem(SESSION_FLAG_KEY, '1');              
+            const normalizedSession = (session && typeof session === 'object') ? session : {};
+            const isValid = !!(normalizedSession.isLoggedIn && normalizedSession.token);
+            if (isValid) {
+                userSession = normalizedSession;
+                sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+                persistUserSession(userSession);         
                 loadDashboard();
                 setupInactivityTimer();
             } else {
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                clearStoredSession();
                 sessionStorage.removeItem(SESSION_FLAG_KEY);
                 showError({ message: translations[currentLang].login_failed });
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                clearStoredSession();
             }
         })
         .withFailureHandler(error => {
@@ -1240,17 +1332,19 @@ function handleLogin(e) {
 }
 
 function handleLogout() {
+    const token = userSession && userSession.token ? userSession.token : null;  
     clearTimeout(inactivityTimer);
     $(document).off('mousemove mousedown keypress scroll touchstart');
 
     showLoader();
 
     try { localStorage.removeItem('userSession'); } catch(_) {}
+    clearStoredSession();    
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch(_) {}
     try { sessionStorage.clear(); } catch(_) {}
     try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch(_) {}
 
-    callServerWithRetry('logout', [], {
+    callServerWithRetry('logout', [token], {
         attempts: 2,
         initialDelay: 400,
         onSuccess: () => {
@@ -3460,6 +3554,8 @@ function showError(error) {
   }
 
   if (raw.includes('Bạn chưa đăng nhập')) {
+    clearStoredSession();
+    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch (_) {}    
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch (_) {}
     Swal.fire({
       icon: 'error',
