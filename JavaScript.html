@@ -3646,6 +3646,7 @@ function highlightDuplicatedVehicles(plates) {
 let contractTable;
 
 function initContractPage() {
+  const t = translations[currentLang] || {};
   // Quyền: admin thấy khung nhập + thao tác, user thì ẩn
   const isAdmin = isRole('admin');
   if (isAdmin) $('#contract-entry-card').removeClass('d-none');
