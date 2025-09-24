@@ -31,6 +31,7 @@ let loginFallbackTimer = null;
 let sessionCheckCompleted = false;
 
 const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
+const SESSION_STORAGE_KEY = 'psvn_session_data';
 const DEFAULT_RETRY_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY = 700;
 const MAX_RETRY_DELAY = 5000;
@@ -264,6 +265,40 @@ function callServerWithRetry(methodName, args = [], options = {}) {
     };
 
     execute();
+}
+
+function loadStoredSession() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && parsed.token) {
+            return parsed;
+        }
+    } catch (err) {
+        console.warn('Failed to parse stored session:', err);
+    }
+    try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+    return null;
+}
+
+function persistSession(session) {
+    if (!session || !session.token) return;
+    const payload = {
+        token: session.token,
+        username: session.username || null,
+        role: session.role || null,
+        roleDisplay: session.roleDisplay || session.role || null,
+        contractor: session.contractor || null,
+        customerName: session.customerName || null
+    };
+    try { sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload)); } catch (err) {
+        console.warn('Unable to persist session:', err);
+    }
+}
+
+function clearStoredSession() {
+    try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
 }
 
 function normalizeRole(role) {
@@ -925,12 +960,13 @@ $(document).ready(function() {
     $appContainer = getAppContainer();
     preloadLoginTemplate();
 
-    const hasSessionFlag = !!sessionStorage.getItem(SESSION_FLAG_KEY);
+    const storedSession = loadStoredSession();
+    const hasStoredToken = !!(storedSession && storedSession.token);
     sessionCheckCompleted = false;
 
     showLoader();
 
-    if (!hasSessionFlag) {
+    if (!hasStoredToken) {
         loginFallbackTimer = setTimeout(() => {
             if (!sessionCheckCompleted) {
                 renderLoginTemplate();
@@ -938,18 +974,33 @@ $(document).ready(function() {
         }, 450);
     }
 
-    initializeApp();
+    initializeApp(storedSession);
 });
 
 
-function initializeApp() {
+function initializeApp(storedSession) {
+    const sessionInfo = storedSession || loadStoredSession();
+    const token = sessionInfo && sessionInfo.token;
+
+    if (!token) {
+        sessionCheckCompleted = true;
+        clearLoginFallbackTimer();
+        sessionStorage.removeItem(SESSION_FLAG_KEY);
+        clearStoredSession();
+        if (!renderLoginTemplate()) {
+            loadLoginPage();
+        }
+        return;
+    }
+
     google.script.run
         .withSuccessHandler(session => {
             sessionCheckCompleted = true;
-            clearLoginFallbackTimer();          
+            clearLoginFallbackTimer();
             userSession = session || { isLoggedIn: false, role: null, contractor: null, token: null };
-            if (userSession.isLoggedIn) {
+            if (userSession.isLoggedIn && userSession.token) {
                 sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+                persistSession(userSession);
                 loadDashboard();
                 setupInactivityTimer();
                 google.script.run
@@ -958,20 +1009,24 @@ function initializeApp() {
                   .getTransportCompanies();
             } else {
                 sessionStorage.removeItem(SESSION_FLAG_KEY);
-                loadLoginPage();
+                clearStoredSession();
+                if (!renderLoginTemplate()) {
+                    loadLoginPage();
+                }
             }
         })
         .withFailureHandler(error => {
             sessionCheckCompleted = true;
             clearLoginFallbackTimer();
             sessionStorage.removeItem(SESSION_FLAG_KEY);
+            clearStoredSession();
             if (!renderLoginTemplate()) {
                 const loader = getLoaderWrapper();
                 loader.hide();
             }
             showError(error);
         })
-        .getUserSession();
+        .getUserSession(token);
 }
 
 // =================================================================
@@ -1223,15 +1278,19 @@ function handleLogin(e) {
         .withSuccessHandler(session => {
             userSession = session || { isLoggedIn: false };
             if (userSession.isLoggedIn) {
-                sessionStorage.setItem(SESSION_FLAG_KEY, '1');              
+                sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+                persistSession(userSession);
                 loadDashboard();
                 setupInactivityTimer();
             } else {
                 sessionStorage.removeItem(SESSION_FLAG_KEY);
+                clearStoredSession();
                 showError({ message: translations[currentLang].login_failed });
             }
         })
         .withFailureHandler(error => {
+            sessionStorage.removeItem(SESSION_FLAG_KEY);
+            clearStoredSession();
             showError(error);
             loginBtn.find('.spinner-border').addClass('d-none');
             loginBtn.prop('disabled', false);
@@ -1245,12 +1304,15 @@ function handleLogout() {
 
     showLoader();
 
+    const token = userSession && userSession.token ? userSession.token : null;
+
     try { localStorage.removeItem('userSession'); } catch(_) {}
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch(_) {}
+    try { clearStoredSession(); } catch(_) {}
     try { sessionStorage.clear(); } catch(_) {}
     try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch(_) {}
 
-    callServerWithRetry('logout', [], {
+    callServerWithRetry('logout', [token], {
         attempts: 2,
         initialDelay: 400,
         onSuccess: () => {
@@ -3461,6 +3523,7 @@ function showError(error) {
 
   if (raw.includes('Bạn chưa đăng nhập')) {
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch (_) {}
+    try { clearStoredSession(); } catch (_) {}
     Swal.fire({
       icon: 'error',
       title: t.session_expired_title || 'Phiên làm việc đã hết hạn',

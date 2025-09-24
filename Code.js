@@ -292,19 +292,6 @@ function include(filename) {
 // QUẢN LÝ PHIÊN LÀM VIỆC VÀ XÁC THỰC
 // =================================================================
 
-function validateSession(sessionToken) {
-  const userCache = CacheService.getUserCache();
-  const sessionData = userCache.get('user_session');
-  if (sessionData) {
-    const session = JSON.parse(sessionData);
-    if (session.token === sessionToken) {
-      userCache.put('user_session', JSON.stringify(session), SESSION_TIMEOUT_SECONDS);
-      return session;
-    }
-  }
-  throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
-}
-
 /** ADMIN GUARD (XPPL admin-only) */
 function requireAdmin_(sessionToken) {
   const s = validateSession(sessionToken);
@@ -521,8 +508,7 @@ function checkLogin(credentials) {
       token: newSessionToken
     };
 
-    const userCache = CacheService.getUserCache();
-    userCache.put('user_session', JSON.stringify(userSession), SESSION_TIMEOUT_SECONDS);
+    safePutUserCacheJSON(getSessionCacheKey_(newSessionToken), userSession, SESSION_TIMEOUT_SECONDS);
 
     return userSession;
   } catch (e) {
@@ -532,39 +518,48 @@ function checkLogin(credentials) {
 }
 
 
-function logout() {
-  const userCache = CacheService.getUserCache();
-  const sessionData = userCache.get('user_session');
-  if (sessionData) {
-    const session = JSON.parse(sessionData);
+function logout(sessionToken) {
+  let token = typeof sessionToken === 'string' ? sessionToken.trim() : '';
+
+  if (!token) {
+    const cachedSession = safeGetUserCacheJSON('user_session');
+    if (cachedSession && cachedSession.token) {
+      token = String(cachedSession.token).trim();
+    }
+  }
+
+  try {
     const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    if (userSheet.getLastRow() > 1) {
+    if (token && userSheet && userSheet.getLastRow() > 1) {
       const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
       const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
-      const usernameIdx = normalizedHeaders.indexOf('username');
       const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
       const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
 
-      if (usernameIdx !== -1) {
-        const usernameValues = userSheet
-          .getRange(2, usernameIdx + 1, userSheet.getLastRow() - 1, 1)
-          .getValues()
-          .map(r => String(r[0] == null ? '' : r[0]).trim());
-        const targetUsername = String(session.username == null ? '' : session.username).trim();
-        const userRowIndex = usernameValues.indexOf(targetUsername);
-
-        if (userRowIndex !== -1) {
-          if (activeTokenIdx !== -1) {
-            userSheet.getRange(userRowIndex + 2, activeTokenIdx + 1).clearContent();
-          }
-          if (tokenExpiryIdx !== -1) {
-            userSheet.getRange(userRowIndex + 2, tokenExpiryIdx + 1).clearContent();
-          }
+      if (activeTokenIdx !== -1) {
+        const rowCount = userSheet.getLastRow() - 1;
+        const tokens = rowCount > 0
+          ? userSheet
+              .getRange(2, activeTokenIdx + 1, rowCount, 1)
+              .getValues()
+              .map(r => String(r[0] == null ? '' : r[0]).trim())
+          : [];
+        const matchIndex = tokens.indexOf(token);
+        if (matchIndex !== -1) {
+          clearSessionTokenAtRow_(userSheet, matchIndex + 2, activeTokenIdx, tokenExpiryIdx);
         }
       }
     }
+  } catch (e) {
+    Logger.log('logout error: ' + e);
   }
-  userCache.remove('user_session');
+
+  if (token) {
+    clearCachedSession_(token);
+  }
+  // Xóa khóa cũ nếu còn tồn tại
+  clearCachedSession_('');
+
   return { success: true };
 }
 
@@ -2114,6 +2109,20 @@ function updateTotalListVehicle(rowData, sessionToken) {
 }
 
 // --- Helpers an toàn cho CacheService ---
+function getSessionCacheKey_(token) {
+  const trimmed = typeof token === 'string' ? token.trim() : '';
+  return trimmed ? `user_session_${trimmed}` : 'user_session';
+}
+
+function clearCachedSession_(token) {
+  const cacheKey = getSessionCacheKey_(token);
+  try {
+    CacheService.getUserCache().remove(cacheKey);
+  } catch (e) {
+    Logger.log('CacheService remove error: ' + e);
+  }
+}
+
 function safeGetUserCacheJSON(key) {
   try {
     const v = CacheService.getUserCache().get(key);
@@ -2249,15 +2258,18 @@ function lookupSessionFromSheet(sessionToken) {
 
       const rawCustomer = customerNameIdx !== -1 ? row[customerNameIdx] : '';
       const customerName = String(rawCustomer == null ? '' : rawCustomer).trim();
+      const rawRole = String(row[roleIdx] == null ? '' : row[roleIdx]).trim();
+      const normalizedRole = rawRole.toLowerCase();
 
       return {
         isLoggedIn: true,
         username: String(row[usernameIdx] == null ? '' : row[usernameIdx]).trim(),
-        role: String(row[roleIdx] == null ? '' : row[roleIdx]).trim(),
+        role: normalizedRole,
+        roleDisplay: rawRole || normalizedRole,
         contractor: String(row[contractorIdx] == null ? '' : row[contractorIdx]).trim(),
         customerName: customerName,
         token: tk
-      };      
+      };
     }
   } catch (e) {
     Logger.log('lookupSessionFromSheet error: ' + e);
@@ -2269,20 +2281,32 @@ function lookupSessionFromSheet(sessionToken) {
 // THAY THẾ validateSession()
 // ==========================
 function validateSession(sessionToken) {
+  const token = typeof sessionToken === 'string' ? sessionToken.trim() : '';
+  if (!token) {
+    throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
+  }
+
+  const cacheKey = getSessionCacheKey_(token);
+
   // 1) Thử đọc từ cache (an toàn)
-  let session = safeGetUserCacheJSON('user_session');
-  if (session && session.token === sessionToken) {
-    // refresh TTL
-    safePutUserCacheJSON('user_session', session, SESSION_TIMEOUT_SECONDS);
+  let session = safeGetUserCacheJSON(cacheKey);
+  if (session && session.token === token) {
+    safePutUserCacheJSON(cacheKey, session, SESSION_TIMEOUT_SECONDS);
     refreshSessionExpiry_(session.username, session.token);
+    if (cacheKey !== 'user_session') {
+      clearCachedSession_('');
+    }
     return session;
   }
 
   // 2) Fallback: tra Users sheet theo token nếu cache lỗi / rỗng
-  session = lookupSessionFromSheet(sessionToken);
+  session = lookupSessionFromSheet(token);
   if (session) {
-    safePutUserCacheJSON('user_session', session, SESSION_TIMEOUT_SECONDS);
-    refreshSessionExpiry_(session.username, session.token);    
+    safePutUserCacheJSON(cacheKey, session, SESSION_TIMEOUT_SECONDS);
+    refreshSessionExpiry_(session.username, session.token);
+    if (cacheKey !== 'user_session') {
+      clearCachedSession_('');
+    }
     return session;
   }
 
@@ -2293,21 +2317,26 @@ function validateSession(sessionToken) {
 // ==========================
 // THAY THẾ getUserSession()
 // ==========================
-function getUserSession() {
+function getUserSession(sessionToken) {
   try {
     ensureSupervisionAccount_();
   } catch (e) {
     Logger.log('ensureSupervisionAccount_ wrapper error: ' + e);
-  }  
-  try {
-    // Ưu tiên cache user nếu có
-    var userCache = CacheService.getUserCache();
-    var sessionData = userCache.get('user_session');
-    if (sessionData) return JSON.parse(sessionData);
-  } catch (e) {
-    // Bỏ qua lỗi cache, trả về khách ẩn danh
   }
-  return { isLoggedIn: false, role: null, contractor: null, customerName: null };
+  const token = typeof sessionToken === 'string' ? sessionToken.trim() : '';
+  if (!token) {
+    return { isLoggedIn: false, role: null, contractor: null, customerName: null, token: null };
+  }
+
+  try {
+    const session = validateSession(token);
+    if (session) {
+      return session;
+    }
+  } catch (e) {
+    // Session không hợp lệ, trả về mặc định
+  }
+  return { isLoggedIn: false, role: null, contractor: null, customerName: null, token: null };
 }
 
 // Trả về Map: company (UPPER) -> Set(contractNo) chỉ chứa hợp đồng Active
