@@ -24,6 +24,11 @@ let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
 let currentLang = 'en'; // Ngôn ngữ mặc định
+let $loaderWrapper = null;
+let $appContainer = null;
+let loginTemplateHTML = '';
+let loginFallbackTimer = null;
+let sessionCheckCompleted = false;
 
 const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
 const DEFAULT_RETRY_ATTEMPTS = 3;
@@ -140,6 +145,34 @@ function hasAnyRole(roles) {
 
 const SUPERVISION_ALLOWED_PAGES = new Set(['Page_View', 'Page_WeighResult', 'Page_Account']);
 
+function getLoaderWrapper() {
+    if (!$loaderWrapper || !$loaderWrapper.length) {
+        $loaderWrapper = $('#loader-wrapper');
+    }
+    return $loaderWrapper;
+}
+
+function getAppContainer() {
+    if (!$appContainer || !$appContainer.length) {
+        $appContainer = $('#app-container');
+    }
+    return $appContainer;
+}
+
+function preloadLoginTemplate() {
+    if (loginTemplateHTML) return;
+    const template = document.getElementById('login-template');
+    if (template) {
+        loginTemplateHTML = template.innerHTML;
+    }
+}
+
+function clearLoginFallbackTimer() {
+    if (loginFallbackTimer) {
+        clearTimeout(loginFallbackTimer);
+        loginFallbackTimer = null;
+    }
+}
 
 // =================================================================
 // **MỚI:** HỆ THỐNG DỊCH
@@ -736,11 +769,23 @@ $(document).on('click', '.lang-btn', function(e) {
 
 
 $(document).ready(function() {
-    if (!sessionStorage.getItem(SESSION_FLAG_KEY)) {
-        renderLoginTemplate();
-    } else {
-        showLoader();
+    $loaderWrapper = getLoaderWrapper();
+    $appContainer = getAppContainer();
+    preloadLoginTemplate();
+
+    const hasSessionFlag = !!sessionStorage.getItem(SESSION_FLAG_KEY);
+    sessionCheckCompleted = false;
+
+    showLoader();
+
+    if (!hasSessionFlag) {
+        loginFallbackTimer = setTimeout(() => {
+            if (!sessionCheckCompleted) {
+                renderLoginTemplate();
+            }
+        }, 450);
     }
+
     initializeApp();
 });
 
@@ -748,9 +793,11 @@ $(document).ready(function() {
 function initializeApp() {
     google.script.run
         .withSuccessHandler(session => {
+            sessionCheckCompleted = true;
+            clearLoginFallbackTimer();          
             userSession = session || { isLoggedIn: false, role: null, contractor: null, token: null };
             if (userSession.isLoggedIn) {
-                sessionStorage.setItem(SESSION_FLAG_KEY, '1');              
+                sessionStorage.setItem(SESSION_FLAG_KEY, '1');
                 loadDashboard();
                 setupInactivityTimer();
                 google.script.run
@@ -763,8 +810,13 @@ function initializeApp() {
             }
         })
         .withFailureHandler(error => {
-            sessionStorage.removeItem(SESSION_FLAG_KEY);          
-            $('#loader-wrapper').hide();
+            sessionCheckCompleted = true;
+            clearLoginFallbackTimer();
+            sessionStorage.removeItem(SESSION_FLAG_KEY);
+            if (!renderLoginTemplate()) {
+                const loader = getLoaderWrapper();
+                loader.hide();
+            }
             showError(error);
         })
         .getUserSession();
@@ -775,11 +827,17 @@ function initializeApp() {
 // =================================================================
 
 function showLoader() {
-    const loader = $('#loader-wrapper');
-    const app = $('#app-container');
+    const loader = getLoaderWrapper();
+    const app = getAppContainer();
+    if (!loader.length || !app.length) return;
 
     app.hide();
-    loader.show();
+    if (!loader.is(':visible')) {
+        loader.css('opacity', '0');
+        loader.show();
+    } else {
+        loader.show();
+    }
 
     if (window.requestAnimationFrame) {
         window.requestAnimationFrame(() => loader.css('opacity', '1'));
@@ -789,15 +847,16 @@ function showLoader() {
 }
 
 function showApp() {
-    const loader = $('#loader-wrapper');
-    const app = $('#app-container');
+    const loader = getLoaderWrapper();
+    const app = getAppContainer();
+    if (!loader.length || !app.length) return;
 
     loader.css('opacity', '0');
     setTimeout(() => {
         loader.hide();
         app.show();
         setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
-    }, 200);
+    }, 180);
 }
 
 function bindLoginEvents() {
@@ -813,11 +872,13 @@ function bindLoginEvents() {
 }
 
 function renderLoginTemplate() {
-    const template = document.getElementById('login-template');
-    if (!template) return false;
+    preloadLoginTemplate();
+    const app = getAppContainer();
+    if (!loginTemplateHTML || !app.length) return false;
 
+    loginFallbackTimer = null;
     document.body.className = 'login-view-active';
-    $('#app-container').html(template.innerHTML);
+    app.html(loginTemplateHTML);
     bindLoginEvents();
     showApp();
     return true;
