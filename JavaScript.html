@@ -41,72 +41,154 @@ let wrReloadTimer = null;
 let serverBusyToastEl = null;
 let serverBusyToastTimer = null;
 
-@@ -9,59 +9,92 @@
-<script src="https://cdn.datatables.net/select/1.7.0/js/dataTables.select.min.js"></script>
-<!-- SweetAlert2 -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<!-- SheetJS for Excel file reading -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', handleStorageEvent);
+}
 
-<script>
-// =================================================================
-// GLOBAL VARIABLES & INITIALIZATION
-// =================================================================
-let userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
-let inactivityTimer;
-let registeredVehicleTable, totalListTable, usersTable;
-let wrResultTable, wrUnknownTable;
-let previewDataTable, totalListPreviewTable;
-let previewTableData = [], totalListPreviewData = [];
-let allowedCompanies = [];
-let currentLang = 'en'; // Ngôn ngữ mặc định
-let $loaderWrapper = null;
-let $appContainer = null;
-let loginTemplateHTML = '';
-let loginFallbackTimer = null;
-let sessionCheckCompleted = false;
-
-const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
-const SESSION_STORAGE_KEY = 'psvn_userSession';
-const DEFAULT_RETRY_ATTEMPTS = 3;
-const DEFAULT_RETRY_DELAY = 700;
-const MAX_RETRY_DELAY = 5000;
-
-let wrReloadTimer = null;
-
-let serverBusyToastEl = null;
-let serverBusyToastTimer = null;
-
-function getStoredSession() {
+function parseStoredSession(raw) {
+    if (!raw) return null;
     try {
-        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
-        if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (parsed && parsed.isLoggedIn && parsed.token) {
             return parsed;
         }
     } catch (err) {
-        clearStoredSession();
+        // ignore and fall through to clear
     }
     return null;
 }
 
-function persistUserSession(session) {
+function getStoredSession() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        const parsed = parseStoredSession(raw);
+        if (parsed) {
+            return parsed;
+        }        
+    } catch (err) {
+        clearStoredSession();
+    }
+
+    try {
+        const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+        const parsed = parseStoredSession(raw);
+        if (parsed) {
+            persistUserSession(parsed, { persistLocal: false });
+            return parsed;
+        }
+    } catch (err) {
+        clearStoredSession({ persistLocal: true });
+    }
+
+    return null;
+}
+
+function persistUserSession(session, options = {}) {
+    const persistLocal = options.persistLocal !== false;
     if (session && session.isLoggedIn && session.token) {
+        const serialized = JSON.stringify(session);      
         try {
-            sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+            sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
         } catch (err) {
             // Ignore storage errors (e.g., private mode)
         }
+        if (persistLocal) {
+            try {
+                localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+            } catch (err) {
+                // Ignore storage errors
+            }
+        }        
     } else {
-        clearStoredSession();
+        clearStoredSession({ persistLocal });
     }
 }
 
-function clearStoredSession() {
+function clearStoredSession(options = {}) {
+    const persistLocal = options.persistLocal !== false;
     try {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
     } catch (err) { /* ignore */ }
+    if (persistLocal) {
+        try {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+        } catch (err) { /* ignore */ }
+    }
+}
+
+function setSessionFlag(options = {}) {
+    const persistLocal = options.persistLocal !== false;
+    try {
+        sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+    } catch (err) { /* ignore */ }
+    if (persistLocal) {
+        try {
+            localStorage.setItem(SESSION_FLAG_KEY, '1');
+        } catch (err) { /* ignore */ }
+    }
+}
+
+function clearSessionFlag(options = {}) {
+    const persistLocal = options.persistLocal !== false;
+    try {
+        sessionStorage.removeItem(SESSION_FLAG_KEY);
+    } catch (err) { /* ignore */ }
+    if (persistLocal) {
+        try {
+            localStorage.removeItem(SESSION_FLAG_KEY);
+        } catch (err) { /* ignore */ }
+    }
+}
+
+function hasStoredSessionFlag() {
+    try {
+        if (sessionStorage.getItem(SESSION_FLAG_KEY)) {
+            return true;
+        }
+    } catch (err) { /* ignore */ }
+    try {
+        return !!localStorage.getItem(SESSION_FLAG_KEY);
+    } catch (err) {
+        return false;
+    }
+}
+
+function handleStorageEvent(event) {
+    if (!event) return;
+
+    if (event.key === SESSION_STORAGE_KEY) {
+        const newValue = event.newValue;
+        if (!newValue) {
+            clearStoredSession({ persistLocal: false });
+            clearSessionFlag({ persistLocal: false });
+            if (userSession && userSession.isLoggedIn) {
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                if (typeof loadLoginPage === 'function') {
+                    showLoader();
+                    loadLoginPage();
+                } else {
+                    window.location.reload();
+                }
+            }
+            return;
+        }
+
+        const parsed = parseStoredSession(newValue);
+        if (!parsed) return;
+
+        persistUserSession(parsed, { persistLocal: false });
+        setSessionFlag({ persistLocal: false });
+        const wasLoggedIn = userSession && userSession.isLoggedIn;
+        userSession = parsed;
+        if (!wasLoggedIn && typeof initializeApp === 'function') {
+            initializeApp(parsed.token);
+        }
+        return;
+    }
+
+    if (event.key === SESSION_FLAG_KEY && !event.newValue) {
+        clearSessionFlag({ persistLocal: false });
+    }    
 }
 
 function ensureToastContainer() {
@@ -995,15 +1077,22 @@ $(document).ready(function() {
     preloadLoginTemplate();
 
     const storedSession = getStoredSession();
+    let sessionFlagInTab = false;    
     if (storedSession) {
         userSession = storedSession;
-        if (storedSession.token && !sessionStorage.getItem(SESSION_FLAG_KEY)) {
-            sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+        try {
+            sessionFlagInTab = !!sessionStorage.getItem(SESSION_FLAG_KEY);
+        } catch (err) {
+            sessionFlagInTab = false;
+        }
+        if (storedSession.token && !sessionFlagInTab) {
+            setSessionFlag({ persistLocal: false });
+            sessionFlagInTab = true;
         }
     }
 
     const existingToken = storedSession && storedSession.token ? storedSession.token : null;
-    const hasSessionFlag = !!sessionStorage.getItem(SESSION_FLAG_KEY);
+    const hasSessionFlag = sessionFlagInTab;
     sessionCheckCompleted = false;
 
     showLoader();
@@ -1029,7 +1118,7 @@ function initializeApp(existingToken) {
             const isValidSession = !!(normalizedSession.isLoggedIn && normalizedSession.token);
             if (isValidSession) {
                 userSession = normalizedSession;
-                sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+                setSessionFlag();
                 persistUserSession(userSession);
                 loadDashboard();
                 setupInactivityTimer();
@@ -1039,8 +1128,8 @@ function initializeApp(existingToken) {
                   .getTransportCompanies();
             } else {
                 userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
-                clearStoredSession();              
-                sessionStorage.removeItem(SESSION_FLAG_KEY);
+                clearStoredSession();
+                clearSessionFlag();
                 loadLoginPage();
             }
         })
@@ -1048,8 +1137,8 @@ function initializeApp(existingToken) {
             sessionCheckCompleted = true;
             clearLoginFallbackTimer();
             userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
-            clearStoredSession();            
-            sessionStorage.removeItem(SESSION_FLAG_KEY);
+            clearStoredSession();
+            clearSessionFlag();
             if (!renderLoginTemplate()) {
                 const loader = getLoaderWrapper();
                 loader.hide();
@@ -1310,14 +1399,14 @@ function handleLogin(e) {
             const isValid = !!(normalizedSession.isLoggedIn && normalizedSession.token);
             if (isValid) {
                 userSession = normalizedSession;
-                sessionStorage.setItem(SESSION_FLAG_KEY, '1');
-                persistUserSession(userSession);         
+                setSessionFlag();
+                persistUserSession(userSession);
                 loadDashboard();
                 setupInactivityTimer();
             } else {
                 userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
                 clearStoredSession();
-                sessionStorage.removeItem(SESSION_FLAG_KEY);
+                clearSessionFlag();
                 showError({ message: translations[currentLang].login_failed });
                 userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
                 clearStoredSession();
@@ -1339,7 +1428,7 @@ function handleLogout() {
     showLoader();
 
     try { localStorage.removeItem('userSession'); } catch(_) {}
-    clearStoredSession();    
+    clearStoredSession();
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch(_) {}
     try { sessionStorage.clear(); } catch(_) {}
     try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch(_) {}
@@ -3555,7 +3644,7 @@ function showError(error) {
 
   if (raw.includes('Bạn chưa đăng nhập')) {
     clearStoredSession();
-    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch (_) {}    
+    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch (_) {}
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch (_) {}
     Swal.fire({
       icon: 'error',
