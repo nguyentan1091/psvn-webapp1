@@ -464,11 +464,25 @@ function checkLogin(credentials) {
       tokenExpiry = userRecord[tokenExpiryIdx];
     }
 
-    if (activeToken && tokenExpiry) {
-      const expiryDate = tokenExpiry instanceof Date ? tokenExpiry : new Date(tokenExpiry);
-      if (!isNaN(expiryDate.getTime()) && new Date().getTime() < expiryDate.getTime()) {
+
+
+    const nowMs = Date.now();
+    if (activeToken) {
+      let expiryDate = null;
+      if (tokenExpiry instanceof Date) {
+        expiryDate = tokenExpiry;
+      } else if (tokenExpiry) {
+        const parsedExpiry = new Date(tokenExpiry);
+        if (!isNaN(parsedExpiry.getTime())) {
+          expiryDate = parsedExpiry;
+        }
+      }
+      if (expiryDate && nowMs < expiryDate.getTime()) {
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
+      clearSessionTokenAtRow_(userSheet, userRowIndex + 2, activeTokenIdx, tokenExpiryIdx);
+      activeToken = '';
+      tokenExpiry = '';      
     }
 
     if (activeTokenIdx === -1 || tokenExpiryIdx === -1) {
@@ -2117,6 +2131,72 @@ function safePutUserCacheJSON(key, obj, seconds) {
   }
 }
 
+function clearSessionTokenAtRow_(sheet, rowNumber, activeTokenIdx, tokenExpiryIdx) {
+  try {
+    if (!sheet || !rowNumber) return;
+    if (activeTokenIdx !== -1) {
+      sheet.getRange(rowNumber, activeTokenIdx + 1).clearContent();
+    }
+    if (tokenExpiryIdx !== -1) {
+      sheet.getRange(rowNumber, tokenExpiryIdx + 1).clearContent();
+    }
+  } catch (e) {
+    Logger.log('clearSessionTokenAtRow_ error: ' + e);
+  }
+}
+
+function refreshSessionExpiry_(username, token) {
+  if (!username || !token) return;
+  try {
+    const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
+    const lastRow = userSheet.getLastRow();
+    if (lastRow < 2) return;
+
+    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
+    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
+
+    const usernameIdx = normalizedHeaders.indexOf('username');
+    const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
+    const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
+
+    if (usernameIdx === -1 || activeTokenIdx === -1 || tokenExpiryIdx === -1) return;
+
+    const rowCount = lastRow - 1;
+    const targetUsername = String(username == null ? '' : username).trim();
+    const usernames = userSheet
+      .getRange(2, usernameIdx + 1, rowCount, 1)
+      .getValues()
+      .map(r => String(r[0] == null ? '' : r[0]).trim());
+
+    const userIndex = usernames.indexOf(targetUsername);
+    if (userIndex === -1) return;
+
+    const tokenCell = userSheet.getRange(userIndex + 2, activeTokenIdx + 1);
+    const storedToken = String(tokenCell.getValue() == null ? '' : tokenCell.getValue()).trim();
+    if (storedToken !== token) return;
+
+    const expiryRange = userSheet.getRange(userIndex + 2, tokenExpiryIdx + 1);
+    const currentExpiryValue = expiryRange.getValue();
+    const nowMs = Date.now();
+    const halfWindowMs = (SESSION_TIMEOUT_SECONDS * 1000) / 2;
+    const desiredExpiry = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
+
+    let currentExpiryMs = NaN;
+    if (currentExpiryValue instanceof Date) {
+      currentExpiryMs = currentExpiryValue.getTime();
+    } else if (currentExpiryValue) {
+      const parsed = new Date(currentExpiryValue);
+      if (!isNaN(parsed.getTime())) currentExpiryMs = parsed.getTime();
+    }
+
+    if (isNaN(currentExpiryMs) || currentExpiryMs - nowMs < halfWindowMs) {
+      expiryRange.setValue(desiredExpiry);
+    }
+  } catch (e) {
+    Logger.log('refreshSessionExpiry_ error: ' + e);
+  }
+}
+
 // --- Fallback lookup trong sheet Users bằng sessionToken ---
 function lookupSessionFromSheet(sessionToken) {
   if (!sessionToken) return null;
@@ -2125,37 +2205,59 @@ function lookupSessionFromSheet(sessionToken) {
     const lastRow = userSheet.getLastRow();
     if (lastRow < 2) return null;
 
-    const rowCount = lastRow - 1;
 
-    // Cột G (token) & H (expiry)
-    const tokens = userSheet.getRange(2, 7, rowCount, 2).getValues(); // [ [token, expiry], ... ]
-    const usernames = userSheet.getRange(2, 1, rowCount, 1).getValues().flat();
-    const roles = userSheet.getRange(2, 3, rowCount, 1).getValues().flat();
-    const contractors = userSheet.getRange(2, 4, rowCount, 1).getValues().flat();
-
-    let customerNames = [];
     const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
     const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
+
+    const usernameIdx = normalizedHeaders.indexOf('username');
+    const roleIdx = normalizedHeaders.indexOf('role');
+    const contractorIdx = normalizedHeaders.indexOf('contractor');
+    const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
+    const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');    
     const customerNameIdx = normalizedHeaders.indexOf('customer name');
-    if (customerNameIdx !== -1) {
-      customerNames = userSheet.getRange(2, customerNameIdx + 1, rowCount, 1).getValues().flat();
+
+    if (usernameIdx === -1 || roleIdx === -1 || contractorIdx === -1 ||
+        activeTokenIdx === -1 || tokenExpiryIdx === -1) {
+      Logger.log('lookupSessionFromSheet missing required columns.');
+      return null;
     }
 
-    for (let i = 0; i < tokens.length; i++) {
-      const tk = tokens[i][0];
-      const exp = tokens[i][1];
-      if (tk === sessionToken && exp && new Date().getTime() < new Date(exp).getTime()) {
-        const rawCustomer = customerNames[i];
-        const customerName = String(rawCustomer == null ? '' : rawCustomer).trim();        
-        return {
-          isLoggedIn: true,
-          username: usernames[i],
-          role: roles[i],
-          contractor: contractors[i],
-          customerName: customerName,
-          token: tk
-        };
+    const rowCount = lastRow - 1;
+    const data = userSheet.getRange(2, 1, rowCount, headerRow.length).getValues();
+    const nowMs = Date.now();
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const tk = String(row[activeTokenIdx] == null ? '' : row[activeTokenIdx]).trim();
+      if (tk !== sessionToken) continue;
+
+      const expiryRaw = row[tokenExpiryIdx];
+      let expiryDate = null;
+      if (expiryRaw instanceof Date) {
+        expiryDate = expiryRaw;
+      } else if (expiryRaw) {
+        const parsedExpiry = new Date(expiryRaw);
+        if (!isNaN(parsedExpiry.getTime())) {
+          expiryDate = parsedExpiry;
+        }
       }
+
+      if (!expiryDate || nowMs >= expiryDate.getTime()) {
+        clearSessionTokenAtRow_(userSheet, i + 2, activeTokenIdx, tokenExpiryIdx);
+        return null;
+      }
+
+      const rawCustomer = customerNameIdx !== -1 ? row[customerNameIdx] : '';
+      const customerName = String(rawCustomer == null ? '' : rawCustomer).trim();
+
+      return {
+        isLoggedIn: true,
+        username: String(row[usernameIdx] == null ? '' : row[usernameIdx]).trim(),
+        role: String(row[roleIdx] == null ? '' : row[roleIdx]).trim(),
+        contractor: String(row[contractorIdx] == null ? '' : row[contractorIdx]).trim(),
+        customerName: customerName,
+        token: tk
+      };      
     }
   } catch (e) {
     Logger.log('lookupSessionFromSheet error: ' + e);
@@ -2172,6 +2274,7 @@ function validateSession(sessionToken) {
   if (session && session.token === sessionToken) {
     // refresh TTL
     safePutUserCacheJSON('user_session', session, SESSION_TIMEOUT_SECONDS);
+    refreshSessionExpiry_(session.username, session.token);
     return session;
   }
 
@@ -2179,6 +2282,7 @@ function validateSession(sessionToken) {
   session = lookupSessionFromSheet(sessionToken);
   if (session) {
     safePutUserCacheJSON('user_session', session, SESSION_TIMEOUT_SECONDS);
+    refreshSessionExpiry_(session.username, session.token);    
     return session;
   }
 
