@@ -851,69 +851,175 @@ function getCustomersByContracts(contracts, sessionToken) {
   return outArr;
 }
 
+function buildEmptyResult_(draw, includeSummary) {
+  const result = {
+    draw: parseInt(draw, 10),
+    recordsTotal: 0,
+    recordsFiltered: 0,
+    data: []
+  };
+  if (includeSummary) {
+    result.summary = { total: 0, pending: 0, approved: 0 };
+  }
+  return result;
+}
+
+function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
+  if (!Array.isArray(rowIndices) || !rowIndices.length) return [];
+
+  const sorted = rowIndices.slice().sort((a, b) => a - b);
+  const collected = [];
+
+  const pushBlock = (startIdx, length) => {
+    if (length <= 0) return;
+    const startRow = startIdx + 2; // +2 vì dữ liệu bắt đầu từ dòng 2
+    const values = sheet.getRange(startRow, 1, length, columnCount).getValues();
+    for (var i = 0; i < values.length; i++) {
+      collected.push(values[i]);
+    }
+  };
+
+  var blockStart = sorted[0];
+  var blockLength = 1;
+  for (var i = 1; i < sorted.length; i++) {
+    if (sorted[i] === sorted[i - 1] + 1) {
+      blockLength++;
+    } else {
+      pushBlock(blockStart, blockLength);
+      blockStart = sorted[i];
+      blockLength = 1;
+    }
+  }
+  pushBlock(blockStart, blockLength);
+
+  return collected;
+}
+
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   const userSession = validateSession(params.sessionToken);
-  const userRole = String(userSession.role || '').toLowerCase();  
+  const userRole = String(userSession.role || '').toLowerCase();
+  const includeSummary = sheetName === DATA_SHEET;
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
-    return { draw: params.draw, recordsTotal: 0, recordsFiltered: 0, data: [] };
+    return buildEmptyResult_(params.draw, includeSummary);
   }
 
-  let allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  const totalRows = lastRow - 1;
+  const columnCount = headers.length;
 
-   if (userRole === 'user') {
-    const companyColumnIndex = headers.indexOf('Transportion Company');
-    if (companyColumnIndex !== -1) {
-        allData = allData.filter(row => row[companyColumnIndex] === userSession.contractor);
-    }
-    const activityColumnIndex = headers.indexOf('Activity Status');
-    if (activityColumnIndex !== -1) {
-        allData = allData.filter(row => String(row[activityColumnIndex]).toUpperCase() === 'ACTIVE');
-    }
-  } else if (userRole === 'user-supervision') {
-    const statusIdx = headers.indexOf('Registration Status');
-    if (statusIdx !== -1) {
-      allData = allData.filter(row => String(row[statusIdx] || '').trim().toLowerCase() === 'approved');
-    }    
+  const idxRegisterDate = headers.indexOf('Register Date');
+  const idxContract = headers.indexOf('Contract No');
+  const idxCompany = headers.indexOf('Transportion Company');
+  const idxActivity = headers.indexOf('Activity Status');
+  const idxStatus = headers.indexOf('Registration Status');
+
+  if (params.dateString && idxRegisterDate === -1) {
+    return buildEmptyResult_(params.draw, includeSummary);
   }
 
-  if (params.dateString) {
-    const dateColumnIndex = headers.indexOf('Register Date');
-    allData = allData.filter(row => {
-      let cellValue = row[dateColumnIndex];
-      if (!cellValue) return false;
-      let cmp = '';
-      if (cellValue instanceof Date) cmp = Utilities.formatDate(cellValue, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
-      else cmp = String(cellValue).trim().replace("'", "");
-      return cmp === params.dateString;
-    });
-  }
-
-  if (params.contractNo) {
-    const contractIndex = headers.indexOf('Contract No');
-    if (contractIndex !== -1) {
-      const target = String(params.contractNo).replace(/^'+/, '').trim().toLowerCase();
-      if (target) {
-        allData = allData.filter(row => {
-          const raw = row[contractIndex];
-          const value = String(raw == null ? '' : raw).replace(/^'+/, '').trim().toLowerCase();
-          return value === target;
-        });
+  const columnCache = {};
+  function getColumnValues(idx) {
+    if (idx === -1) return null;
+    if (!(idx in columnCache)) {
+      if (totalRows <= 0) {
+        columnCache[idx] = [];
+      } else {
+        const rangeValues = sheet.getRange(2, idx + 1, totalRows, 1).getValues();
+        columnCache[idx] = rangeValues.map(function (row) { return row[0]; });
       }
     }
+    return columnCache[idx];
   }
+
+  const valuesRegisterDate = (params.dateString && idxRegisterDate !== -1)
+    ? getColumnValues(idxRegisterDate)
+    : null;
+  const valuesContract = (params.contractNo && idxContract !== -1)
+    ? getColumnValues(idxContract)
+    : null;
+  const valuesCompany = (userRole === 'user' && idxCompany !== -1)
+    ? getColumnValues(idxCompany)
+    : null;
+  const valuesActivity = (userRole === 'user' && idxActivity !== -1)
+    ? getColumnValues(idxActivity)
+    : null;
+  const valuesStatus = (userRole === 'user-supervision' && idxStatus !== -1)
+    ? getColumnValues(idxStatus)
+    : null;
+
+  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
+  const contractFilter = params.contractNo
+    ? String(params.contractNo).replace(/^'+/, '').trim().toLowerCase()
+    : '';
+  const contractorValue = String(userSession.contractor == null ? '' : userSession.contractor);
+
+  const timezone = 'Asia/Ho_Chi_Minh';
+  const matchedIndices = [];
+
+  for (var r = 0; r < totalRows; r++) {
+    if (userRole === 'user') {
+      if (valuesCompany) {
+        const rawCompany = valuesCompany[r];
+        const companyString = String(rawCompany == null ? '' : rawCompany);
+        if (companyString !== contractorValue) continue;
+      }
+      if (valuesActivity) {
+        const rawActivity = valuesActivity[r];
+        const activityString = String(rawActivity == null ? '' : rawActivity).toUpperCase();
+        if (activityString !== 'ACTIVE') continue;
+      }
+    } else if (userRole === 'user-supervision') {
+      if (valuesStatus) {
+        const rawStatus = valuesStatus[r];
+        const statusString = String(rawStatus == null ? '' : rawStatus).trim().toLowerCase();
+        if (statusString !== 'approved') continue;
+      }
+    }
+
+    if (dateFilter) {
+      const cellValue = valuesRegisterDate ? valuesRegisterDate[r] : null;
+      if (!cellValue) continue;
+      var cmp = '';
+      if (cellValue instanceof Date) {
+        cmp = Utilities.formatDate(cellValue, timezone, 'dd/MM/yyyy');
+      } else {
+        cmp = String(cellValue).trim().replace(/^'+/, '');
+      }
+      if (cmp !== dateFilter) continue;
+    }
+
+    if (contractFilter && valuesContract) {
+      const rawContract = valuesContract[r];
+      const contractString = String(rawContract == null ? '' : rawContract)
+        .replace(/^'+/, '')
+        .trim()
+        .toLowerCase();
+      if (contractString !== contractFilter) continue;
+    }
+
+    matchedIndices.push(r);
+  }
+
+  if (!matchedIndices.length) {
+    return buildEmptyResult_(params.draw, includeSummary);
+  }
+
+  let allData = fetchRowsByIndices_(sheet, matchedIndices, columnCount);
 
   const recordsTotal = allData.length;
   let filteredData = allData;
 
   if (params.search && params.search.value) {
     const searchValue = params.search.value.toLowerCase();
-    filteredData = filteredData.filter(row => {
-      return row.some(cell => String(cell).toLowerCase().includes(searchValue));
+    filteredData = filteredData.filter(function (row) {
+      return row.some(function (cell) {
+        return String(cell).toLowerCase().includes(searchValue);
+      });
     });
   }
+
   const recordsFiltered = filteredData.length;
 
   
@@ -927,8 +1033,9 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
         var pending = 0, approved = 0;
         for (var i = 0; i < filteredData.length; i++) {
           var v = filteredData[i][statusIdx];
-          v = (v instanceof Date) ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-                                  : String(v || '').replace(/^'/, '').trim();
+          v = (v instanceof Date)
+            ? Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy')
+            : String(v || '').replace(/^'/, '').trim();
           if (/^pending approval$/i.test(v)) pending++;
           else if (/^approved$/i.test(v)) approved++;
         }
@@ -936,11 +1043,11 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
       }
     }
   } catch (e) { /* ignore summary errors */ }
-if (params.order && params.order.length > 0) {
+  if (params.order && params.order.length > 0) {
     const orderInfo = params.order[0];
     const columnIndex = orderInfo.column;
     const direction = orderInfo.dir === 'asc' ? 1 : -1;
-    filteredData.sort((a, b) => {
+    filteredData.sort(function (a, b) {
       const valA = a[columnIndex];
       const valB = b[columnIndex];
       if (valA < valB) return -1 * direction;
@@ -948,14 +1055,17 @@ if (params.order && params.order.length > 0) {
       return 0;
     });
   } else if (defaultSortColumnIndex !== -1) {
-    filteredData.sort((a, b) => (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1));
+    filteredData.sort(function (a, b) {
+      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
+    });
   }
 
 
   const paginatedData = filteredData.slice(params.start, params.start + params.length);
-  const data = paginatedData.map(row => formatRowForClient_(row, headers));
-return {
-    draw: parseInt(params.draw),
+  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
+
+  return {
+    draw: parseInt(params.draw, 10),
     recordsTotal: recordsTotal,
     recordsFiltered: recordsFiltered,
     data: data,
