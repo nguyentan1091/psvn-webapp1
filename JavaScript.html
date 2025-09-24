@@ -37,6 +37,146 @@ const MAX_RETRY_DELAY = 5000;
 
 let wrReloadTimer = null;
 
+let serverBusyToastEl = null;
+let serverBusyToastTimer = null;
+
+function ensureToastContainer() {
+    let container = document.getElementById('app-toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'app-toast-container';
+        container.setAttribute('role', 'status');
+        container.setAttribute('aria-live', 'polite');
+        const parent = document.body || document.documentElement;
+        if (!parent) return null;
+        parent.appendChild(container);
+    }
+    return container;
+}
+
+function closeServerBusyToast(immediate = false) {
+    if (!serverBusyToastEl) return;
+    const toast = serverBusyToastEl;
+    if (serverBusyToastTimer) {
+        clearTimeout(serverBusyToastTimer);
+        serverBusyToastTimer = null;
+    }
+
+    const remove = () => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+        if (serverBusyToastEl === toast) {
+            serverBusyToastEl = null;
+        }
+    };
+
+    toast.classList.remove('show');
+    toast.classList.add('closing');
+
+    if (immediate) {
+        remove();
+        return;
+    }
+
+    const handleTransitionEnd = function (evt) {
+        if (evt.target !== toast) return;
+        toast.removeEventListener('transitionend', handleTransitionEnd);
+        remove();
+    };
+
+    toast.addEventListener('transitionend', handleTransitionEnd);
+    setTimeout(remove, 240);
+}
+
+function showServerBusyToast(options = {}) {
+    const t = translations[currentLang] || translations.vi || {};
+    const container = ensureToastContainer();
+    if (!container) return;
+
+    const title = options.title || t.server_busy_title || 'Máy chủ bận';
+    let message = options.message || t.server_busy_message || 'Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.';
+
+    if (typeof options.retryIn === 'number' && options.retryIn > 0) {
+        const seconds = Math.max(1, Math.round(options.retryIn / 1000));
+        const template = t.server_busy_retrying || 'Hệ thống sẽ thử lại sau {seconds} giây...';
+        const retryText = template.replace('{seconds}', seconds);
+        message = `${message} ${retryText}`.trim();
+    }
+
+    if (!serverBusyToastEl || !serverBusyToastEl.isConnected) {
+        serverBusyToastEl = document.createElement('div');
+        serverBusyToastEl.className = 'app-toast info server-busy-toast';
+        serverBusyToastEl.innerHTML = `
+      <div class="toast-icon"><i class="fas fa-circle-notch fa-spin"></i></div>
+      <div class="toast-content">
+        <div class="toast-title"></div>
+        <div class="toast-message"></div>
+      </div>
+      <button type="button" class="toast-close" aria-label="${esc(t.close_button || 'Đóng')}">&times;</button>
+    `;
+        container.appendChild(serverBusyToastEl);
+
+        requestAnimationFrame(() => {
+            if (serverBusyToastEl) {
+                serverBusyToastEl.classList.add('show');
+            }
+        });
+
+        const closeBtn = serverBusyToastEl.querySelector('.toast-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => closeServerBusyToast(true));
+        }
+
+        serverBusyToastEl.addEventListener('mouseenter', () => {
+            if (serverBusyToastTimer) {
+                clearTimeout(serverBusyToastTimer);
+                serverBusyToastTimer = null;
+            }
+        });
+
+        serverBusyToastEl.addEventListener('mouseleave', () => {
+            if (!serverBusyToastEl || serverBusyToastEl.dataset.sticky === '1') return;
+            if (!serverBusyToastTimer) {
+                serverBusyToastTimer = setTimeout(() => closeServerBusyToast(), 2000);
+            }
+        });
+    } else {
+        serverBusyToastEl.classList.remove('closing');
+        requestAnimationFrame(() => {
+            if (serverBusyToastEl) {
+                serverBusyToastEl.classList.add('show');
+            }
+        });
+    }
+
+    const titleNode = serverBusyToastEl.querySelector('.toast-title');
+    if (titleNode) titleNode.textContent = title;
+
+    const messageNode = serverBusyToastEl.querySelector('.toast-message');
+    if (messageNode) messageNode.textContent = message;
+
+    const iconNode = serverBusyToastEl.querySelector('.toast-icon i');
+    if (iconNode) {
+        iconNode.className = options.sticky ? 'fas fa-server' : 'fas fa-circle-notch fa-spin';
+    }
+
+    if (serverBusyToastTimer) {
+        clearTimeout(serverBusyToastTimer);
+        serverBusyToastTimer = null;
+    }
+
+    if (options.sticky) {
+        serverBusyToastEl.dataset.sticky = '1';
+    } else {
+        serverBusyToastEl.dataset.sticky = '0';
+        const duration = typeof options.duration === 'number' ? options.duration : 5000;
+        if (duration > 0) {
+            serverBusyToastTimer = setTimeout(() => closeServerBusyToast(), duration);
+        }
+    }
+}
+
 function getRawErrorMessage(error) {
     if (error == null) return '';
     if (typeof error === 'string') return error;
@@ -78,17 +218,20 @@ function callServerWithRetry(methodName, args = [], options = {}) {
     const execute = () => {
         let runner = google.script.run;
 
-        if (typeof onSuccess === 'function') {
-            runner = runner.withSuccessHandler(result => {
+        runner = runner.withSuccessHandler(result => {
+            closeServerBusyToast();
+            if (typeof onSuccess === 'function') {
                 onSuccess(result);
-            });
-        }
+            }
+        });
 
         runner = runner.withFailureHandler(err => {
             const shouldRetry = isTransientError(err) && retryCount < totalAttempts - 1;
             if (shouldRetry) {
                 const wait = Math.min(maxDelay, Math.round(initialDelay * Math.pow(backoff, retryCount)));
                 retryCount += 1;
+                const displayDuration = Math.min(10000, Math.max(3500, wait + 1500));
+                showServerBusyToast({ retryIn: wait, duration: displayDuration });                
                 if (typeof onRetry === 'function') {
                     try { onRetry(retryCount, wait, err); } catch (retryErr) { console.error(retryErr); }
                 } else {
@@ -97,6 +240,9 @@ function callServerWithRetry(methodName, args = [], options = {}) {
                 }
                 setTimeout(execute, wait);
             } else {
+                if (!isTransientError(err)) {
+                    closeServerBusyToast();
+                }              
                 if (typeof onFailure === 'function') {
                     onFailure(err);
                 } else {
@@ -183,7 +329,10 @@ const translations = {
     "hello_user": "Xin chào, {username} ({role})",
     "logout_button": "Đăng xuất",
     "server_busy_title": "Máy chủ bận",
-    "server_busy_message": "Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.",    
+    "server_busy_message": "Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.",
+    "server_busy_retrying": "Hệ thống sẽ thử lại sau {seconds} giây...",
+    "server_busy_final_message": "Máy chủ vẫn đang bận. Vui lòng thử lại thao tác sau ít phút.",
+    "close_button": "Đóng",
     "save_changes_button": "Lưu thay đổi",
     "add_button": "Thêm",
     "edit_button": "Sửa",
@@ -440,7 +589,10 @@ const translations = {
     "hello_user": "Hello, {username} ({role})",
     "logout_button": "Logout",
     "server_busy_title": "Server is busy",
-    "server_busy_message": "The system is receiving too many requests. Please try again in a moment.",    
+    "server_busy_message": "The system is receiving too many requests. Please try again in a moment.",
+    "server_busy_retrying": "The system will retry in {seconds} second(s)...",
+    "server_busy_final_message": "The server is still busy. Please try again in a few moments.",
+    "close_button": "Close",  
     "save_changes_button": "Save Changes",
     "add_button": "Add",
     "edit_button": "Edit",
@@ -3300,6 +3452,12 @@ function showError(error) {
   let raw = getRawErrorMessage(error);
   if (!raw) raw = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
 
+  const serverBusyRegex = /(http\s*503|service unavailable|networkerror|connection failure)/i;
+  const isServerBusy = serverBusyRegex.test(raw);
+
+  if (!isServerBusy) {
+    closeServerBusyToast();
+  }
 
   if (raw.includes('Bạn chưa đăng nhập')) {
     try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch (_) {}
@@ -3314,12 +3472,9 @@ function showError(error) {
     return;
   }
 
-  if (/(http\s*503|service unavailable|networkerror|connection failure)/i.test(raw)) {
-    Swal.fire({
-      icon: 'info',
-      title: t.server_busy_title || 'Máy chủ bận',
-      text: t.server_busy_message || 'Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.'
-    });
+  if (isServerBusy) {
+    const message = t.server_busy_final_message || t.server_busy_message || 'Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.';
+    showServerBusyToast({ sticky: true, message, title: t.server_busy_title || 'Máy chủ bận' });
     return;
   }
 
