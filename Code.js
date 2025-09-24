@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = ''; 
+const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
 const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
@@ -292,18 +292,6 @@ function include(filename) {
 // QUẢN LÝ PHIÊN LÀM VIỆC VÀ XÁC THỰC
 // =================================================================
 
-function validateSession(sessionToken) {
-  const userCache = CacheService.getUserCache();
-  const sessionData = userCache.get('user_session');
-  if (sessionData) {
-    const session = JSON.parse(sessionData);
-    if (session.token === sessionToken) {
-      userCache.put('user_session', JSON.stringify(session), SESSION_TIMEOUT_SECONDS);
-      return session;
-    }
-  }
-  throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
-}
 
 /** ADMIN GUARD (XPPL admin-only) */
 function requireAdmin_(sessionToken) {
@@ -480,9 +468,10 @@ function checkLogin(credentials) {
       if (expiryDate && nowMs < expiryDate.getTime()) {
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
+      removeSessionFromCache_(activeToken);      
       clearSessionTokenAtRow_(userSheet, userRowIndex + 2, activeTokenIdx, tokenExpiryIdx);
       activeToken = '';
-      tokenExpiry = '';      
+      tokenExpiry = '';
     }
 
     if (activeTokenIdx === -1 || tokenExpiryIdx === -1) {
@@ -521,8 +510,7 @@ function checkLogin(credentials) {
       token: newSessionToken
     };
 
-    const userCache = CacheService.getUserCache();
-    userCache.put('user_session', JSON.stringify(userSession), SESSION_TIMEOUT_SECONDS);
+    cacheSession_(userSession);
 
     return userSession;
   } catch (e) {
@@ -532,11 +520,24 @@ function checkLogin(credentials) {
 }
 
 
-function logout() {
-  const userCache = CacheService.getUserCache();
-  const sessionData = userCache.get('user_session');
-  if (sessionData) {
-    const session = JSON.parse(sessionData);
+function logout(sessionToken) {
+  let token = String(sessionToken == null ? '' : sessionToken).trim();
+  let session = null;
+
+  if (token) {
+    session = getSessionFromCache_(token);
+    if (!session) {
+      session = lookupSessionFromSheet(token);
+    }
+  } else {
+    const legacy = safeGetUserCacheJSON('user_session');
+    if (legacy && legacy.token) {
+      session = legacy;
+      token = legacy.token;
+    }
+  }
+
+  try {
     const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
     if (userSheet.getLastRow() > 1) {
       const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
@@ -545,26 +546,44 @@ function logout() {
       const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
       const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
 
-      if (usernameIdx !== -1) {
+      const rowCount = userSheet.getLastRow() - 1;
+      let targetRow = -1;
+
+      if (activeTokenIdx !== -1 && token) {
+        const tokenValues = userSheet
+          .getRange(2, activeTokenIdx + 1, rowCount, 1)
+          .getValues()
+          .map(r => String(r[0] == null ? '' : r[0]).trim());
+        const idx = tokenValues.indexOf(token);
+        if (idx !== -1) {
+          targetRow = idx + 2;
+        }
+      }
+
+      if (targetRow === -1 && session && usernameIdx !== -1) {
         const usernameValues = userSheet
-          .getRange(2, usernameIdx + 1, userSheet.getLastRow() - 1, 1)
+          .getRange(2, usernameIdx + 1, rowCount, 1)
           .getValues()
           .map(r => String(r[0] == null ? '' : r[0]).trim());
         const targetUsername = String(session.username == null ? '' : session.username).trim();
         const userRowIndex = usernameValues.indexOf(targetUsername);
-
         if (userRowIndex !== -1) {
-          if (activeTokenIdx !== -1) {
-            userSheet.getRange(userRowIndex + 2, activeTokenIdx + 1).clearContent();
-          }
-          if (tokenExpiryIdx !== -1) {
-            userSheet.getRange(userRowIndex + 2, tokenExpiryIdx + 1).clearContent();
-          }
+         targetRow = userRowIndex + 2;          
         }
       }
+
+      if (targetRow !== -1) {
+        clearSessionTokenAtRow_(userSheet, targetRow, activeTokenIdx, tokenExpiryIdx);
+      }      
     }
+  } catch (e) {
+    Logger.log('logout error: ' + e);
   }
-  userCache.remove('user_session');
+
+  if (token) {
+    removeSessionFromCache_(token);    
+  }
+  safeRemoveUserCacheKey('user_session');
   return { success: true };
 }
 
@@ -2131,6 +2150,37 @@ function safePutUserCacheJSON(key, obj, seconds) {
   }
 }
 
+function safeRemoveUserCacheKey(key) {
+  try {
+    CacheService.getUserCache().remove(key);
+  } catch (e) {
+    Logger.log('CacheService remove error: ' + e);
+  }
+}
+
+function buildSessionCacheKey_(token) {
+  return token ? 'user_session_' + token : '';
+}
+
+function getSessionFromCache_(token) {
+  const key = buildSessionCacheKey_(token);
+  if (!key) return null;
+  return safeGetUserCacheJSON(key);
+}
+
+function cacheSession_(session) {
+  if (!session || !session.token) return;
+  const key = buildSessionCacheKey_(session.token);
+  if (!key) return;
+  safePutUserCacheJSON(key, session, SESSION_TIMEOUT_SECONDS);
+}
+
+function removeSessionFromCache_(token) {
+  const key = buildSessionCacheKey_(token);
+  if (!key) return;
+  safeRemoveUserCacheKey(key);
+}
+
 function clearSessionTokenAtRow_(sheet, rowNumber, activeTokenIdx, tokenExpiryIdx) {
   try {
     if (!sheet || !rowNumber) return;
@@ -2269,41 +2319,42 @@ function lookupSessionFromSheet(sessionToken) {
 // THAY THẾ validateSession()
 // ==========================
 function validateSession(sessionToken) {
-  // 1) Thử đọc từ cache (an toàn)
-  let session = safeGetUserCacheJSON('user_session');
-  if (session && session.token === sessionToken) {
-    // refresh TTL
-    safePutUserCacheJSON('user_session', session, SESSION_TIMEOUT_SECONDS);
+  const token = String(sessionToken == null ? '' : sessionToken).trim();
+  if (!token) {
+    throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
+  }
+
+  let session = getSessionFromCache_(token);
+  if (session && session.token === token) {
+    cacheSession_(session);
     refreshSessionExpiry_(session.username, session.token);
     return session;
   }
 
-  // 2) Fallback: tra Users sheet theo token nếu cache lỗi / rỗng
-  session = lookupSessionFromSheet(sessionToken);
+  session = lookupSessionFromSheet(token);
   if (session) {
-    safePutUserCacheJSON('user_session', session, SESSION_TIMEOUT_SECONDS);
-    refreshSessionExpiry_(session.username, session.token);    
+    cacheSession_(session);
+    refreshSessionExpiry_(session.username, session.token);
     return session;
   }
 
-  // 3) Không tìm thấy → báo chưa đăng nhập (để client xử lý)
   throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
 }
 
 // ==========================
 // THAY THẾ getUserSession()
 // ==========================
-function getUserSession() {
+function getUserSession(sessionToken) {
   try {
     ensureSupervisionAccount_();
   } catch (e) {
     Logger.log('ensureSupervisionAccount_ wrapper error: ' + e);
-  }  
+  }
   try {
-    // Ưu tiên cache user nếu có
-    var userCache = CacheService.getUserCache();
-    var sessionData = userCache.get('user_session');
-    if (sessionData) return JSON.parse(sessionData);
+    const token = String(sessionToken == null ? '' : sessionToken).trim();
+    if (token) {
+      return validateSession(token);
+    }
   } catch (e) {
     // Bỏ qua lỗi cache, trả về khách ẩn danh
   }
