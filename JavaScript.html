@@ -973,7 +973,7 @@ const translations = {
 
     // SweetAlerts & Messages
     "loading_page": "Loading page...",
-    "error_title": "An error occurred!",
+    "error_title": "Something went wrong!",
     "session_expired_title": "Session Expired!",
     "session_expired_text": "Please log in again to continue.",
     "login_failed": "Login failed.",
@@ -3666,6 +3666,48 @@ function showLoading(title) {
     });
 }
 
+function formatMinutesForDisplay(minutes) {
+  const value = parseInt(minutes, 10);
+  if (isNaN(value) || value <= 0) return 'a few minutes';
+  return `${value} minute${value === 1 ? '' : 's'}`;
+}
+
+function localizeErrorMessage(message, lang) {
+  const rawMessage = (message || '').trim();
+  if (!rawMessage) return rawMessage;
+
+  const patterns = [
+    {
+      regex: /Tài khoản của bạn đã bị tạm khóa\. Vui lòng thử lại sau (\d+)\s*phút\./i,
+      en: match => `Your account has been temporarily locked. Please try again in ${formatMinutesForDisplay(match[1])}.`
+    },
+    {
+      regex: /Tên đăng nhập hoặc mật khẩu không đúng\./i,
+      en: () => 'The username or password is incorrect.'
+    },
+    {
+      regex: /Tài khoản này đã được đăng nhập trên một thiết bị khác\./i,
+      en: () => 'This account is already logged in on another device.'
+    }
+  ];
+
+  if (lang === 'en') {
+    for (const entry of patterns) {
+      const match = rawMessage.match(entry.regex);
+      if (match) {
+        if (typeof entry.en === 'function') {
+          const translated = entry.en(match);
+          if (translated) return translated;
+        } else if (entry.en) {
+          return entry.en;
+        }
+      }
+    }
+  }
+
+  return rawMessage;
+}
+
 function showError(error) {
   const t = translations[currentLang] || translations.vi || {};
   let raw = getRawErrorMessage(error);
@@ -3701,6 +3743,7 @@ function showError(error) {
 
   const cleanMsg = getCleanErrorMessage(error) || raw;
   const safeMsg = cleanMsg || raw || 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
+  const displayMsg = localizeErrorMessage(safeMsg, currentLang);  
 
   // --- Nhận diện "Xe mới" ---
   const mNew =
@@ -3738,9 +3781,11 @@ function showError(error) {
 
   // Mặc định: báo lỗi chuẩn
   Swal.fire({
-    icon: 'error',
+    icon: 'warning',
+    iconHtml: '⚠️',
     title: t.error_title || 'Lỗi',
-    text: safeMsg
+    text: displayMsg,
+    customClass: { icon: 'swal2-warning-emoji' }
   });
 }
 
@@ -4542,7 +4587,13 @@ function handleXpplWeighingUpload() {
           .saveXpplWeighingData(data, userSession.token);
       } catch(err) {
         Swal.close();
-        Swal.fire(t.error_title || 'Lỗi', err.message || String(err), 'error');
+        Swal.fire({
+          icon: 'warning',
+          iconHtml: '⚠️',
+          title: t.error_title || 'Lỗi',
+          text: err.message || String(err),
+          customClass: { icon: 'swal2-warning-emoji' }
+        });
       }
     };
     reader.readAsArrayBuffer(file);
