@@ -261,17 +261,31 @@ function formatRowForClient_(rowArray, headers) {
 
 
 const HEADERS_REGISTER = [
-  'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel', 
-  'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2', 
-  'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST', 
+  'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel',
+  'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2',
+  'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST',
   'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
 ];
+const NUMERIC_REGISTER_FIELDS = ['Wheel', 'Truck weight', 'Pay load'];
 const HEADERS_TOTAL_LIST = [
   'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
   'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
   'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
   'Activity Status', 'Register Date', 'Time'
 ];
+
+function coerceNumericRegisterFields_(record) {
+  if (!record) return;
+  NUMERIC_REGISTER_FIELDS.forEach(field => {
+    if (!(field in record)) return;
+    const value = record[field];
+    if (value === '' || value === null || value === undefined) return;
+    const parsed = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'));
+    if (!isNaN(parsed)) {
+      record[field] = parsed;
+    }
+  });
+}
 
 
 // =================================================================
@@ -518,7 +532,6 @@ function checkLogin(credentials) {
     throw new Error(e.message);
   }
 }
-
 
 function logout(sessionToken) {
   let token = String(sessionToken == null ? '' : sessionToken).trim();
@@ -1944,6 +1957,7 @@ function saveData(dataToSave, sessionToken, language) {
       if (userSession.role === 'user') {
         obj['Transportion Company'] = userSession.contractor;
       }
+      coerceNumericRegisterFields_(obj);      
       obj['Register Date'] = normalizeDate(obj['Register Date']);
       obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
       obj['Registration Status'] = 'Pending approval';
@@ -1993,8 +2007,9 @@ function updateData(rowData, sessionToken) {
     }
     
     if (rowData['Register Date']) {
-      rowData['Register Date'] = "'" + rowData['Register Date'];
+    rowData['Register Date'] = "'" + rowData['Register Date'];
     }
+    coerceNumericRegisterFields_(rowData);    
     rowData['Time'] = "'" + Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss");
     const dataArray = HEADERS_REGISTER.map(header => rowData[header] || "");
     sheet.getRange(rowToUpdate, 1, 1, HEADERS_REGISTER.length).setValues([dataArray]);
@@ -2771,6 +2786,8 @@ function addManualVehicle(record, sessionToken, language) {
     if (userSession.role === 'user') {
       rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
     }
+
+    coerceNumericRegisterFields_(rowObj);
 
     const activityCheck = checkVehicleActivityStatus([{ 'Truck Plate': rowObj['Truck Plate'] }]);
     if (!activityCheck.isValid) {
