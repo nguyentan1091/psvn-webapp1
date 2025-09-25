@@ -520,6 +520,22 @@ const translations = {
     "login_button": "Đăng nhập",
     "forgot_password_link": "Quên mật khẩu?",
     
+    "continue_button": "Tiếp tục",
+    "confirm_button": "Xác nhận",
+    "forgot_password_input_label": "Vui lòng nhập tên đăng nhập của bạn",
+    "forgot_password_input_placeholder": "Tên đăng nhập",
+    "forgot_password_input_required": "Bạn cần nhập tên đăng nhập!",
+    "reset_password_title": "Đặt lại mật khẩu",
+    "reset_password_security_placeholder": "Mã bảo mật",
+    "reset_password_new_placeholder": "Mật khẩu mới",
+    "reset_password_confirm_placeholder": "Xác nhận mật khẩu mới",
+    "reset_password_missing_fields": "Vui lòng điền đầy đủ thông tin",
+    "reset_password_mismatch": "Mật khẩu mới không khớp",
+    "loading_processing": "Đang xử lý...",
+    "inactivity_title": "Thông báo:",
+    "inactivity_message": "Bạn đã không sử dụng phần mềm quá lâu, vui lòng đăng nhập lại…",
+    "login_again_button": "Đăng nhập lại",
+
     // Dashboard & Sidebar
     "sidebar_title": "Quản lý Xe",
     "sidebar_register": "Đăng ký mới",
@@ -761,6 +777,21 @@ const translations = {
     "password_label": "Password",
     "login_button": "Login",
     "forgot_password_link": "Forgot password?",
+    "continue_button": "Continue",
+    "confirm_button": "Confirm",
+    "forgot_password_input_label": "Please enter your username",
+    "forgot_password_input_placeholder": "Username",
+    "forgot_password_input_required": "You must enter your username!",
+    "reset_password_title": "Reset password",
+    "reset_password_security_placeholder": "Security code",
+    "reset_password_new_placeholder": "New password",
+    "reset_password_confirm_placeholder": "Confirm new password",
+    "reset_password_missing_fields": "Please fill in all required information",
+    "reset_password_mismatch": "New password does not match",
+    "loading_processing": "Processing...",
+    "inactivity_title": "Notice:",
+    "inactivity_message": "You have been inactive for too long, please log in again.",
+    "login_again_button": "Log in again",    
 
     // Dashboard & Sidebar
     "sidebar_title": "Vehicle Management",
@@ -1205,6 +1236,7 @@ function renderLoginTemplate() {
     loginFallbackTimer = null;
     document.body.className = 'login-view-active';
     app.html(loginTemplateHTML);
+    setLanguage(currentLang);    
     bindLoginEvents();
     showApp();
     return true;
@@ -1219,6 +1251,7 @@ function loadLoginPage() {
     .withSuccessHandler(html => {
         document.body.className = 'login-view-active';
         $('#app-container').html(html);
+        setLanguage(currentLang);        
         bindLoginEvents();
         showApp();
     })
@@ -1449,11 +1482,12 @@ function handleLogout() {
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
+        const t = translations[currentLang] || translations.vi || {};      
         Swal.fire({
-            title: 'Thông báo:',
-            text: 'Bạn đã không sử dụng phần mềm quá lâu, vui lòng đăng nhập lại…',
+            title: t.inactivity_title || t.warning_title || 'Thông báo:',
+            text: t.inactivity_message || 'Bạn đã không sử dụng phần mềm quá lâu, vui lòng đăng nhập lại…',
             icon: 'warning',
-            confirmButtonText: 'Đăng nhập lại',
+            confirmButtonText: t.login_again_button || t.confirm_button || 'Đăng nhập lại',
             allowOutsideClick: false
         }).then(() => {
             handleLogout();
@@ -1468,49 +1502,51 @@ function setupInactivityTimer() {
 
 function handleForgotPassword(e) {
     e.preventDefault();
+    const t = translations[currentLang] || translations.vi || {};    
     Swal.fire({
-        title: translations[currentLang].forgot_password_title,
+        title: t.forgot_password_title || 'Quên mật khẩu',
         input: 'text',
-        inputLabel: 'Vui lòng nhập tên đăng nhập của bạn',
-        inputPlaceholder: 'Tên đăng nhập',
+        inputLabel: t.forgot_password_input_label || 'Vui lòng nhập tên đăng nhập của bạn',
+        inputPlaceholder: t.forgot_password_input_placeholder || 'Tên đăng nhập',
         showCancelButton: true,
-        confirmButtonText: 'Tiếp tục',
-        cancelButtonText: 'Hủy',
+        confirmButtonText: t.continue_button || 'Tiếp tục',
+        cancelButtonText: t.cancel_button || 'Hủy',
         inputValidator: (value) => {
             if (!value) {
-                return 'Bạn cần nhập tên đăng nhập!'
+                return t.forgot_password_input_required || 'Bạn cần nhập tên đăng nhập!';
             }
         }
     }).then((result) => {
         if (result.isConfirmed) {
             const username = result.value;
             Swal.fire({
-                title: 'Đặt lại mật khẩu',
+                title: t.reset_password_title || 'Đặt lại mật khẩu',
                 html: `
-                    <input type="text" id="swal-username" class="swal2-input" value="${username}" readonly>
-                    <input type="text" id="swal-securitycode" class="swal2-input" placeholder="Mã bảo mật">
-                    <input type="password" id="swal-newpassword" class="swal2-input" placeholder="Mật khẩu mới">
-                    <input type="password" id="swal-confirm" class="swal2-input" placeholder="Xác nhận mật khẩu mới">
+                    <input type="text" id="swal-securitycode" class="swal2-input" placeholder="${t.reset_password_security_placeholder || 'Mã bảo mật'}">
+                    <input type="password" id="swal-newpassword" class="swal2-input" placeholder="${t.reset_password_new_placeholder || 'Mật khẩu mới'}">
+                    <input type="password" id="swal-confirm" class="swal2-input" placeholder="${t.reset_password_confirm_placeholder || 'Xác nhận mật khẩu mới'}">
                 `,
-                confirmButtonText: 'Xác nhận',
+                confirmButtonText: t.confirm_button || 'Xác nhận',
                 focusConfirm: false,
                 preConfirm: () => {
                     const securityCode = $('#swal-securitycode').val();
                     const newPassword = $('#swal-newpassword').val();
                     const confirm = $('#swal-confirm').val();
                     if (!securityCode || !newPassword || !confirm) {
-                        Swal.showValidationMessage(`Vui lòng điền đầy đủ thông tin`);
+                        Swal.showValidationMessage(t.reset_password_missing_fields || 'Vui lòng điền đầy đủ thông tin');
+                        return false;
                     } else if (newPassword !== confirm) {
-                        Swal.showValidationMessage(`Mật khẩu mới không khớp`);
+                        Swal.showValidationMessage(t.reset_password_mismatch || 'Mật khẩu mới không khớp');
+                        return false;
                     }
                     return { username: username, securityCode: securityCode, newPassword: newPassword };
                 }
             }).then((formResult) => {
                 if (formResult.isConfirmed) {
-                    showLoading('Đang xử lý...');
+                    showLoading(t.loading_processing || 'Đang xử lý...');
                     google.script.run
                         .withSuccessHandler(message => {
-                            Swal.fire('Thành công!', message, 'success');
+                            Swal.fire(t.success_title || 'Thành công', message, 'success');
                         })
                         .withFailureHandler(showError)
                         .resetPassword(formResult.value);
