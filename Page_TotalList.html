@@ -5,8 +5,10 @@
     </div>
     <div class="card-body">
         <p class="form-text" data-translate="total_list_upload_note">Ghi chú: Chỉ chấp nhận file .xlsx, .xls, .csv.</p>
-        <div class="input-group mb-3">
-            <input type="file" class="form-control" id="total-list-fileUploader" accept=".xlsx, .xls, .csv">
+        <div class="input-group mb-3 file-upload-group">
+            <button type="button" class="btn btn-outline-secondary btn-sm file-upload-trigger" id="totalListFileTrigger" data-file-target="total-list-fileUploader" data-translate="file_choose_button">Chọn tệp</button>
+            <span class="form-control file-upload-label" id="totalListFileDisplay" data-file-display="total-list-fileUploader" data-file-default-key="file_no_file_selected" aria-live="polite">Không có tệp nào được chọn</span>
+            <input type="file" class="d-none" id="total-list-fileUploader" accept=".xlsx, .xls, .csv">
             <button id="total-list-uploadButton" class="btn btn-info" data-translate="preview_data_button">Xem trước dữ liệu</button>
         </div>
         <div id="total-list-previewContainer" class="d-none mt-3">
