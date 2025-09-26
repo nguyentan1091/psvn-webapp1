@@ -490,6 +490,9 @@ const translations = {
     "delete_button": "Xóa",
     "reload_button": "Tải lại",
     "action_column": "Hành động",
+    "file_choose_button": "Chọn tệp",
+    "file_no_file_selected": "Không có tệp nào được chọn",
+    "select_all_checkbox": "Chọn tất cả",    
     "show_label": "Hiển thị",
     "entries_label": "dòng",
     "sidebar_contracts": "Hợp đồng vận chuyển",
@@ -764,9 +767,12 @@ const translations = {
     "add_button": "Add",
     "edit_button": "Edit",
     "delete_button": "Delete",
-    "cancel_button": "Cancel",    
+    "cancel_button": "Cancel",
     "reload_button": "Reload",
     "action_column": "Actions",
+    "file_choose_button": "Choose file",
+    "file_no_file_selected": "No file selected",
+    "select_all_checkbox": "Select all",    
     "show_label": "Show",
     "entries_label": "entries",
 									
@@ -1093,6 +1099,99 @@ function setLanguage(lang) {
                 .replace('{role}', roleText)
          );
     }
+
+    refreshCustomFileDisplays(lang);
+}
+
+function refreshCustomFileDisplays(lang) {
+  const language = lang || currentLang || 'vi';
+  const dict = translations[language] || translations.vi || {};
+  $('[data-file-display]').each(function(){
+    const $display = $(this);
+    const inputId = $display.data('fileDisplay');
+    if (!inputId) return;
+    const $input = $('#' + inputId);
+    if (!$input.length) return;
+    const updateFn = $input.data('fileUpdateFn') || $display.data('fileUpdateFn');
+    if (typeof updateFn === 'function') {
+      updateFn();
+      return;
+    }
+    const files = ($input[0] && $input[0].files) || [];
+    if (files.length) return;
+    const key = $display.data('fileDefaultKey');
+    const fallback = $display.data('fileFallback') || '';
+    if (key && dict[key]) {
+      $display.text(dict[key]);
+    } else if (fallback) {
+      $display.text(fallback);
+    }
+    $display.toggleClass('file-upload-label--empty', !files.length);
+  });
+}
+
+function setupCustomFileInput(inputSelector, options = {}) {
+  const $input = $(inputSelector);
+  if (!$input.length) return;
+  const inputId = $input.attr('id');
+  const $display = options.display
+    ? $(options.display)
+    : (inputId ? $(`[data-file-display="${inputId}"]`) : $());
+  if (!$display.length) return;
+  const $trigger = options.trigger
+    ? $(options.trigger)
+    : (inputId ? $(`[data-file-target="${inputId}"]`) : $());
+  const defaultKey = options.defaultKey || $display.data('fileDefaultKey');
+  if (defaultKey) $display.data('fileDefaultKey', defaultKey);
+  if (!$display.data('fileFallback')) {
+    $display.data('fileFallback', $display.text().trim());
+  }
+
+  const updateDisplay = () => {
+    const inputEl = $input[0];
+    const files = (inputEl && inputEl.files) || [];
+    if (files.length) {
+      const names = Array.from(files).map(file => file.name).join(', ');
+      $display.text(names).removeClass('file-upload-label--empty');
+    } else {
+      const lang = currentLang || 'vi';
+      const dict = translations[lang] || translations.vi || {};
+      const key = $display.data('fileDefaultKey');
+      const fallback = $display.data('fileFallback') || '';
+      if (key && dict[key]) {
+        $display.text(dict[key]);
+      } else {
+        $display.text(fallback);
+      }
+      $display.addClass('file-upload-label--empty');
+    }
+  };
+
+  $input.data('fileUpdateFn', updateDisplay);
+  $display.data('fileUpdateFn', updateDisplay);
+
+  $input.off('change.customFile').on('change.customFile', updateDisplay);
+
+  if ($trigger.length) {
+    $trigger.off('click.customFile').on('click.customFile', function(e){
+      e.preventDefault();
+      $input.trigger('click');
+    });
+  }
+
+  $display.off('click.customFile').on('click.customFile', function(){
+    $input.trigger('click');
+  });
+
+  $display.attr('tabindex', 0);
+  $display.off('keydown.customFile').on('keydown.customFile', function(e){
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      $input.trigger('click');
+    }
+  });
+
+  updateDisplay();    
 }
 
 $(document).on('click', '.lang-btn', function(e) {
@@ -1830,7 +1929,13 @@ function initRegisterPage() {
   tomorrow.setDate(today.getDate() + 1);
   const todayStr = getFormattedDate(today);
   const tomorrowStr = getFormattedDate(tomorrow);
-  const t = translations[currentLang];  
+  const t = translations[currentLang];
+
+  setupCustomFileInput('#fileUploader', {
+    trigger: '#fileUploaderTrigger',
+    display: '#fileUploaderDisplay',
+    defaultKey: 'file_no_file_selected'
+  });
 
   const dateSelect = $('#formRegisterDate');
 
@@ -2294,7 +2399,7 @@ function handleSaveUploadedData() {
             previewTableData = [];
             if($.fn.DataTable.isDataTable('#previewDataTable')) $('#previewDataTable').DataTable().clear().destroy();
             $('#previewContainer').addClass('d-none');
-            $('#fileUploader').val('');
+            $('#fileUploader').val('').trigger('change');
         })
         .withFailureHandler(showError)
         .saveData(dataToSave, userSession.token, currentLang);
@@ -2960,6 +3065,12 @@ function initTotalListPage() {
     const t = translations[currentLang];
     const isAdmin = isRole('admin');
 
+    setupCustomFileInput('#total-list-fileUploader', {
+        trigger: '#totalListFileTrigger',
+        display: '#totalListFileDisplay',
+        defaultKey: 'file_no_file_selected'
+    });    
+
     // 1) Destroy sạch mọi instance/bộ nhớ cũ
     if ($.fn.DataTable.isDataTable('#totalListTable')) {
         const old = $('#totalListTable').DataTable();
@@ -3492,7 +3603,7 @@ function handleSaveTotalListUploadedData() {
       }
       $('#total-list-previewContainer').addClass('d-none');
       $('#total-list-saveUploadBtn').prop('disabled', true);
-      $('#total-list-fileUploader').val('');
+      $('#total-list-fileUploader').val('').trigger('change');
     })
     .withFailureHandler(err => { Swal.close(); showError(err); })
     .saveTotalListAppend(payload, userSession.token);   // <== APPEND, không ghi đè
@@ -4499,6 +4610,12 @@ let xpplWeighingTable;
 function initXPPLWeighingStationPage() {
   $('#xppl-filter-date').val('');
 
+  setupCustomFileInput('#xppl-weighing-file', {
+    trigger: '#xpplWeighingFileTrigger',
+    display: '#xpplWeighingFileDisplay',
+    defaultKey: 'file_no_file_selected'
+  });
+
   if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
     $('#xppl-weighing-table').DataTable().destroy();
   }
@@ -4578,7 +4695,7 @@ function handleXpplWeighingUpload() {
             Swal.close();
             Swal.fire(t.success_title || 'Thành công', msg || (t.xppl_upload_success_message || 'Tải lên thành công'), 'success');
             $('#xppl-weighing-file').val('');
-            $('#xppl-filter-date').val('');
+            $('#xppl-weighing-file').val('').trigger('change');
             $('#xppl-filter-contract').val('');
             $('#xppl-filter-customer').val('');
             loadXpplWeighingData();
@@ -5172,6 +5289,7 @@ function initWeighResultPage() {
   $('#wr-delete').toggleClass('d-none', !isAdmin);
   $('#wr-unknown-delete').toggleClass('d-none', !isAdmin);
   $('#wr-match-company').toggleClass('d-none', !isAdmin);
+  $('#wr-delete, #wr-unknown-delete').prop('disabled', true).addClass('disabled');  
   const hasActions = $('#wr-actions').find('button:not(.d-none)').length > 0;
   $('#wr-actions').toggleClass('d-none', !hasActions);
 
@@ -5598,7 +5716,14 @@ function buildWeighResultTables(isAdmin) {
 
   let cols = [];
   if (isAdmin) {
-    cols.push({ data:null, title:'select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`});
+    const selectAllLabel = (translations[currentLang] && translations[currentLang].select_all_checkbox) || 'Select all';
+    cols.push({
+      data: null,
+      title: `<input type="checkbox" class="form-check-input" id="wr-select-all" aria-label="${selectAllLabel}" title="${selectAllLabel}">`,
+      orderable: false,
+      className: 'no-export text-center',
+      render: () => `<input type="checkbox" class="row-checkbox form-check-input">`
+    });
     cols.push({ data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>`});
   }
   cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID') ? { data: row => row[h], title:h } : { data:h, title:h }));
@@ -5650,10 +5775,6 @@ function buildWeighResultTables(isAdmin) {
   });
   wrResultTable.columns.adjust();
 
-  $('#wr-result-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
-    $(this).closest('tr').toggleClass('selected', this.checked);
-  });
-
   $('#wr-result-table tbody').off('click','.wr-edit').on('click','.wr-edit', function(){
     if (!isAdmin) return;
     const row = wrResultTable.row($(this).closest('tr')).data();
@@ -5662,11 +5783,63 @@ function buildWeighResultTables(isAdmin) {
   });
 
   if (isAdmin) {
+    const $wrDelete = $('#wr-delete');
+    const $wrSelectAll = $('#wr-select-all');
+
+    const updateResultSelectionState = () => {
+      if (!wrResultTable) return;
+      const nodes = wrResultTable.rows({ page: 'current' }).nodes();
+      const $rows = $(nodes);
+      const selectedCount = $rows.filter('.selected').length;
+      const totalRows = $rows.length;
+      const disableDelete = selectedCount === 0;
+      if ($wrDelete.length) {
+        $wrDelete.prop('disabled', disableDelete).toggleClass('disabled', disableDelete);
+      }
+      if ($wrSelectAll.length) {
+        if (!totalRows) {
+          $wrSelectAll.prop({ checked: false, indeterminate: false });
+        } else if (selectedCount === totalRows) {
+          $wrSelectAll.prop({ checked: true, indeterminate: false });
+        } else if (selectedCount === 0) {
+          $wrSelectAll.prop({ checked: false, indeterminate: false });
+        } else {
+          $wrSelectAll.prop({ checked: false, indeterminate: true });
+        }
+      }
+    };
+
+    $('#wr-result-table').off('draw.dt.selection').on('draw.dt.selection', () => updateResultSelectionState());
+
+    if ($wrSelectAll.length) {
+      $wrSelectAll.prop({ checked: false, indeterminate: false });
+      $wrSelectAll.off('change').on('change', function(){
+        const isChecked = $(this).prop('checked');
+        const nodes = wrResultTable.rows({ page: 'current' }).nodes();
+        const $rows = $(nodes);
+        $rows.toggleClass('selected', isChecked);
+        $rows.find('.row-checkbox').prop('checked', isChecked);
+        updateResultSelectionState();
+      });
+    }
+
+    $('#wr-result-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
+      $(this).closest('tr').toggleClass('selected', this.checked);
+      updateResultSelectionState();
+    });
+
+    updateResultSelectionState();
+  } else {
+    $('#wr-result-table tbody').off('change','.row-checkbox');
+  }
+
+  if (isAdmin) {
     if ($.fn.DataTable.isDataTable('#wr-unknown-table')) $('#wr-unknown-table').DataTable().destroy();
     const uWrap = $('#wr-unknown-table').parent();
     const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
+    const unknownSelectAllLabel = (translations[currentLang] && translations[currentLang].select_all_checkbox) || 'Select all';    
     let uCols = [
-      { data:null, title:'Select', orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
+      { data:null, title:`<input type="checkbox" class="form-check-input" id="wru-select-all" aria-label="${unknownSelectAllLabel}" title="${unknownSelectAllLabel}">`, orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
       { data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>`}
     ];
     uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
@@ -5718,15 +5891,58 @@ function buildWeighResultTables(isAdmin) {
     });
     wrUnknownTable.columns.adjust();
 
+    const $unknownDelete = $('#wr-unknown-delete');
+    const $unknownSelectAll = $('#wru-select-all');
+
+    const updateUnknownSelectionState = () => {
+      if (!wrUnknownTable) return;
+      const nodes = wrUnknownTable.rows({ page: 'current' }).nodes();
+      const $rows = $(nodes);
+      const selectedCount = $rows.filter('.selected').length;
+      const totalRows = $rows.length;
+      const disableDelete = selectedCount === 0;
+      if ($unknownDelete.length) {
+        $unknownDelete.prop('disabled', disableDelete).toggleClass('disabled', disableDelete);
+      }
+      if ($unknownSelectAll.length) {
+        if (!totalRows) {
+          $unknownSelectAll.prop({ checked: false, indeterminate: false });
+        } else if (selectedCount === totalRows) {
+          $unknownSelectAll.prop({ checked: true, indeterminate: false });
+        } else if (selectedCount === 0) {
+          $unknownSelectAll.prop({ checked: false, indeterminate: false });
+        } else {
+          $unknownSelectAll.prop({ checked: false, indeterminate: true });
+        }
+      }
+    };
+
+    $('#wr-unknown-table').off('draw.dt.selection').on('draw.dt.selection', () => updateUnknownSelectionState());
+
+    if ($unknownSelectAll.length) {
+      $unknownSelectAll.prop({ checked: false, indeterminate: false });
+      $unknownSelectAll.off('change').on('change', function(){
+        const isChecked = $(this).prop('checked');
+        const nodes = wrUnknownTable.rows({ page: 'current' }).nodes();
+        const $rows = $(nodes);
+        $rows.toggleClass('selected', isChecked);
+        $rows.find('.row-checkbox').prop('checked', isChecked);
+        updateUnknownSelectionState();
+      });
+    }
+
     $('#wr-unknown-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
       $(this).closest('tr').toggleClass('selected', this.checked);
     });
+      updateUnknownSelectionState();    
 
     $('#wr-unknown-table tbody').off('click','.wru-edit').on('click','.wru-edit', function(){
       const row = wrUnknownTable.row($(this).closest('tr')).data();
       if (!row) return;
       showWrEditDialog(row);
     });
+
+    updateUnknownSelectionState();    
   }
 }
 
