@@ -151,7 +151,12 @@
         <div class="card-header"><i class="fas fa-file-upload me-1"></i><span data-translate="reg_upload_header">Thêm mới nhiều xe (Upload File)</span></div>
         <div class="card-body">
             <p class="form-text" data-translate="reg_upload_note">Ghi chú: Chỉ chấp nhận các file có định dạng .xlsx, .xls, .csv. <span id="upload-date-note" class="fw-bold text-danger"></span></p>
-            <div class="input-group mb-3"><input type="file" class="form-control form-control-sm" id="fileUploader" accept=".xlsx, .xls, .csv"><button id="uploadButton" class="btn btn-info" data-translate="preview_data_button">Xem trước dữ liệu</button></div>
+            <div class="input-group mb-3 file-upload-group">
+              <button type="button" class="btn btn-outline-secondary btn-sm file-upload-trigger" id="fileUploaderTrigger" data-file-target="fileUploader" data-translate="file_choose_button">Chọn tệp</button>
+              <span class="form-control form-control-sm file-upload-label" id="fileUploaderDisplay" data-file-display="fileUploader" data-file-default-key="file_no_file_selected" aria-live="polite">Không có tệp nào được chọn</span>
+              <input type="file" class="d-none" id="fileUploader" accept=".xlsx, .xls, .csv">
+              <button id="uploadButton" class="btn btn-info" data-translate="preview_data_button">Xem trước dữ liệu</button>
+            </div>
             <div id="previewContainer" class="d-none mt-3">
                 <h5 data-translate="preview_data_title">Dữ liệu xem trước</h5>
                 <div class="table-responsive"><table id="previewDataTable" class="table table-bordered table-striped" style="width:100%"></table></div>
