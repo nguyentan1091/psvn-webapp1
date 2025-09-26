@@ -8,34 +8,42 @@
 <div class="container-fluid px-4" id="xppl-weighing-page">
   <!-- Upload Section -->
   <div class="card mb-3">
-    <div class="card-header"><i class="fas fa-file-upload me-1"></i> Upload dữ liệu trạm cân</div>
+    <div class="card-header">
+      <i class="fas fa-file-upload me-1"></i>
+      <span data-translate="xppl_upload_card_title">Upload dữ liệu trạm cân</span>
+    </div>
     <div class="card-body">
-      <div class="input-group">
-        <input type="file" id="xppl-weighing-file" accept=".xls,.xlsx" class="form-control" />
-        <button type="button" id="xppl-weighing-upload" class="btn btn-primary">Tải lên</button>
+      <div class="input-group file-upload-group">
+        <button type="button" class="btn btn-outline-secondary btn-sm file-upload-trigger" id="xpplWeighingFileTrigger" data-file-target="xppl-weighing-file" data-translate="file_choose_button">Chọn tệp</button>
+        <span class="form-control file-upload-label" id="xpplWeighingFileDisplay" data-file-display="xppl-weighing-file" data-file-default-key="file_no_file_selected" aria-live="polite">Không có tệp nào được chọn</span>
+        <input type="file" id="xppl-weighing-file" accept=".xls,.xlsx" class="d-none" />
+        <button type="button" id="xppl-weighing-upload" class="btn btn-primary" data-translate="xppl_upload_button">Tải lên</button>
       </div>
     </div>
   </div>
 
   <!-- Filter & Summary Section -->
   <div class="card mb-3">
-    <div class="card-header"><i class="fas fa-filter me-1"></i> Bộ lọc</div>
+    <div class="card-header">
+      <i class="fas fa-filter me-1"></i>
+      <span data-translate="xppl_filter_card_title">Bộ lọc</span>
+    </div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
-          <label class="form-label">Ngày</label>
+          <label class="form-label" data-translate="xppl_filter_date_label">Ngày</label>
           <input type="date" id="xppl-filter-date" class="form-control" />
         </div>
         <div class="col-md-4">
-          <label class="form-label">Số hợp đồng</label>
+          <label class="form-label" data-translate="xppl_filter_contract_label">Số hợp đồng</label>
           <select id="xppl-filter-contract" class="form-select">
-            <option value="">Tất cả</option>
+            <option value="" data-translate="xppl_filter_all_option">Tất cả</option>
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label">Khách hàng</label>
+          <label class="form-label" data-translate="xppl_filter_customer_label">Khách hàng</label>
           <select id="xppl-filter-customer" class="form-select">
-            <option value="">Tất cả</option>
+            <option value="" data-translate="xppl_filter_all_option">Tất cả</option>
           </select>
         </div>
       </div>
@@ -43,19 +51,19 @@
       <div class="row g-3 xppl-summary-row">
         <div class="col-md-4 col-sm-6">
           <div class="xppl-summary-card">
-            <div class="xppl-summary-label">Tổng số xe</div>
+            <div class="xppl-summary-label" data-translate="xppl_summary_total_trucks">Tổng số xe</div>
             <div class="xppl-summary-value" id="xppl-summary-trucks">0</div>
-            <div class="xppl-summary-sub">Xe đã ghi nhận trong bộ lọc</div>
+            <div class="xppl-summary-sub" data-translate="xppl_summary_trucks_sub">Xe đã ghi nhận trong bộ lọc</div>
           </div>
         </div>
         <div class="col-md-8 col-sm-6">
           <div class="xppl-summary-card xppl-summary-card--weight">
             <div class="xppl-summary-header">
-              <span class="xppl-summary-title">Tổng khối lượng (Kg)</span>
+              <span class="xppl-summary-title" data-translate="xppl_summary_total_weight">Tổng khối lượng (Kg)</span>
               <span class="xppl-summary-chip"><i class="fas fa-weight-hanging me-1"></i>Kg</span>
             </div>
             <div class="xppl-summary-value" id="xppl-summary-weight">0</div>
-            <div class="xppl-summary-sub">Tổng khối lượng hàng đã cân</div>
+            <div class="xppl-summary-sub" data-translate="xppl_summary_weight_sub">Tổng khối lượng hàng đã cân</div>
           </div>
         </div>
       </div>
@@ -64,18 +72,21 @@
 
   <!-- DataTable Section -->
   <div class="card mb-4">
-    <div class="card-header"><i class="fas fa-table me-1"></i> Dữ liệu trạm cân</div>
+    <div class="card-header">
+      <i class="fas fa-table me-1"></i>
+      <span data-translate="xppl_data_card_title">Dữ liệu trạm cân</span>
+    </div>
     <div class="card-body">
       <div class="row mb-3 align-items-center">
         <div class="col-md-4">
           <div class="input-group">
-            <input type="text" id="xppl-search" class="form-control" placeholder="Tìm kiếm trong bảng..." />
+            <input type="text" id="xppl-search" class="form-control" placeholder="Tìm kiếm trong bảng..." data-translate-placeholder="xppl_search_placeholder" />
             <span class="input-group-text"><i class="fas fa-search"></i></span>
           </div>
         </div>
         <div class="col-md-8 text-end">
-          <button id="xppl-export" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> Xuất Excel</button>
-          <button id="xppl-refresh" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> Tải lại</button>
+          <button id="xppl-export" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> <span data-translate="export_excel_button">Xuất Excel</span></button>
+          <button id="xppl-refresh" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> <span data-translate="reload_button">Tải lại</span></button>
         </div>
       </div>
 
@@ -84,13 +95,13 @@
           <div id="xppl-count" class="fw-bold"></div>
           <div class="dataTables_length">
             <label>
-              Hiển thị
+              <span data-translate="show_label">Hiển thị</span>
               <select id="xppl-page-length" class="form-select form-select-sm d-inline-block w-auto">
                 <option value="50">50</option>
                 <option value="100">100</option>
                 <option value="200">200</option>
               </select>
-              dòng
+              <span data-translate="entries_label">dòng</span>
             </label>
           </div>
         </div>
