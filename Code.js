@@ -101,6 +101,9 @@ const SUPERVISION_DEFAULT_USERNAME = 'LA';
 const SUPERVISION_DEFAULT_PASSWORD = 'CRLF@LA111';
 const SUPERVISION_DEFAULT_ROLE = 'User-Supervision';
 
+const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
+const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
+
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
 function stripLeadingApostrophe(v) {
   if (typeof v === 'string' && v.length > 0 && v[0] === "'") return v.slice(1);
@@ -909,14 +912,28 @@ function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
 }
 
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
+  params = params || {};  
   const userSession = validateSession(params.sessionToken);
   const userRole = String(userSession.role || '').toLowerCase();
   const includeSummary = sheetName === DATA_SHEET;
 
+  const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
+  const cachedResult = cacheKey ? safeScriptCacheGetJSON_(cacheKey) : null;
+  if (cachedResult) {
+    return cachedResult;
+  }
+
+  const respondWithCache = function (result) {
+    if (cacheKey && result) {
+      safeScriptCachePutJSON_(cacheKey, result, SERVER_SIDE_CACHE_TTL_SECONDS);
+    }
+    return result;
+  };  
+
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
-    return buildEmptyResult_(params.draw, includeSummary);
+    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
   }
 
   const totalRows = lastRow - 1;
@@ -929,7 +946,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   const idxStatus = headers.indexOf('Registration Status');
 
   if (params.dateString && idxRegisterDate === -1) {
-    return buildEmptyResult_(params.draw, includeSummary);
+    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
   }
 
   const columnCache = {};
@@ -1016,7 +1033,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   }
 
   if (!matchedIndices.length) {
-    return buildEmptyResult_(params.draw, includeSummary);
+    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
   }
 
   let allData = fetchRowsByIndices_(sheet, matchedIndices, columnCount);
@@ -1077,13 +1094,14 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   const paginatedData = filteredData.slice(params.start, params.start + params.length);
   const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
 
-  return {
+  const result = {
     draw: parseInt(params.draw, 10),
     recordsTotal: recordsTotal,
     recordsFiltered: recordsFiltered,
     data: data,
     summary: summary
   };
+  return respondWithCache(result);  
 }
 
 function getRegisteredDataServerSide(params) {
@@ -1504,51 +1522,94 @@ function _exportXpplToTemplate_(sheetId, filter, rows) {
  * YÊU CẦU: bật Advanced Drive Service (Drive API v2).
  */
 function exportXpplAsXlsx(payload, sessionToken) {
-  const res = getXpplExportData(payload, sessionToken);
-  if (!res || !res.ok) {
-    return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try {
+    try {
+      lock.waitLock(30 * 1000); // đảm bảo tuần tự hoá khi nhiều người cùng export
+      locked = true;
+    } catch (e) {
+      return { ok:false, message:'Hệ thống đang bận. Vui lòng thử lại sau ít phút.' };
+    }
+
+    const res = getXpplExportData(payload, sessionToken);
+    if (!res || !res.ok) {
+      return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
+    }
+    const { dateString, contractNo, customerName } = res.filter;
+    const rows = res.rows || [];
+    if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
+
+    // 1) Copy template -> Google Sheet
+    const nameSuffix = dateString.replace(/\//g, '-');
+
+    // QUAN TRỌNG: thêm prefix để sweeper tìm và xoá
+    const copyName = `${XPPL_TEMP_PREFIX}(${contractNo}_${nameSuffix})-XPPL FORM`;
+    const copiedId = _copyTemplateAsGoogleSheet_(XPPL_TEMPLATE_ID, copyName);
+
+   // 2) Ghi dữ liệu vào bản copy
+   _exportXpplToTemplate_(copiedId, { dateString, contractNo, customerName }, rows);
+
+   // 3) Flush + đợi 1 nhịp rồi export đúng bản copy
+   SpreadsheetApp.flush();
+   Utilities.sleep(800);
+
+    const url  = `https://docs.google.com/spreadsheets/d/${copiedId}/export?format=xlsx`;
+    let resp;
+    try {
+      resp = _fetchWithRetry_(url, {
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      });
+    } catch (fetchErr) {
+      return { ok:false, message:'Export lỗi: ' + (fetchErr && fetchErr.message ? fetchErr.message : fetchErr) };
+    }
+    if (resp.getResponseCode() !== 200) {
+      return { ok:false, message:'Export lỗi: ' + resp.getContentText() };
+    }
+
+   // 4) Tên file tải về -> làm sạch ký tự cấm
+   const safeName = (copyName + '.xlsx').replace(/[\\\/:\*\?"<>\|]/g, '_');
+
+   // 5) (BỎ) trigger one-shot sau 3 phút — không cần nữa
+   // try { ScriptApp.newTrigger('cleanupXpplTempFiles').timeBased().after(3*60*1000).create(); } catch(e){}
+
+   // 6) ĐẢM BẢO đã có sweeper chạy định kỳ (nếu chưa có thì tạo 1 lần)
+   try { ensureXpplSweeper(); } catch (e) { /* ignore */ }
+
+    return {
+      ok: true,
+      fileName: safeName,
+      base64: Utilities.base64Encode(resp.getBlob().getBytes())
+    };
+  } finally {
+    if (locked) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
-  const { dateString, contractNo, customerName } = res.filter;
-  const rows = res.rows || [];
-  if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
+}
 
-  // 1) Copy template -> Google Sheet
-  const nameSuffix = dateString.replace(/\//g, '-');
-
-  // QUAN TRỌNG: thêm prefix để sweeper tìm và xoá
-  const copyName = `${XPPL_TEMP_PREFIX}(${contractNo}_${nameSuffix})-XPPL FORM`;
-  const copiedId = _copyTemplateAsGoogleSheet_(XPPL_TEMPLATE_ID, copyName);
-
-  // 2) Ghi dữ liệu vào bản copy
-  _exportXpplToTemplate_(copiedId, { dateString, contractNo, customerName }, rows);
-
-  // 3) Flush + đợi 1 nhịp rồi export đúng bản copy
-  SpreadsheetApp.flush();
-  Utilities.sleep(800);
-
-  const url  = `https://docs.google.com/spreadsheets/d/${copiedId}/export?format=xlsx`;
-  const resp = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-    muteHttpExceptions: true
-  });
-  if (resp.getResponseCode() !== 200) {
-    return { ok:false, message:'Export lỗi: ' + resp.getContentText() };
+function _fetchWithRetry_(url, options) {
+  const maxAttempts = 4;
+  const baseDelayMs = 500;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = UrlFetchApp.fetch(url, options);
+      const code = resp.getResponseCode();
+      if (code === 429 || (code >= 500 && code < 600)) {
+        throw new Error('Drive export quota hit: ' + code);
+      }
+      return resp;
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxAttempts) {
+        throw (err instanceof Error) ? err : new Error(err);
+      }
+      Utilities.sleep(baseDelayMs * Math.pow(2, attempt - 1));
+    }
   }
-
-  // 4) Tên file tải về -> làm sạch ký tự cấm
-  const safeName = (copyName + '.xlsx').replace(/[\\\/:\*\?"<>\|]/g, '_');
-
-  // 5) (BỎ) trigger one-shot sau 3 phút — không cần nữa
-  // try { ScriptApp.newTrigger('cleanupXpplTempFiles').timeBased().after(3*60*1000).create(); } catch(e){}
-
-  // 6) ĐẢM BẢO đã có sweeper chạy định kỳ (nếu chưa có thì tạo 1 lần)
-  try { ensureXpplSweeper(); } catch (e) { /* ignore */ }
-
-  return {
-    ok: true,
-    fileName: safeName,
-    base64: Utilities.base64Encode(resp.getBlob().getBytes())
-  };
+  throw (lastError instanceof Error) ? lastError : new Error(lastError);
 }
 
 
@@ -1963,7 +2024,23 @@ function saveData(dataToSave, sessionToken, language) {
       obj['Registration Status'] = 'Pending approval';
       return HEADERS_REGISTER.map(header => obj[header] || "");
     });
-    sheet.getRange(sheet.getLastRow() + 1, 1, dataArray.length, HEADERS_REGISTER.length).setValues(dataArray);
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(30000)) {
+      throw new Error(pickMessage(
+        'Hệ thống đang bận, vui lòng thử lại sau.',
+        'The system is busy, please try again later.'
+      ));
+    }
+
+    try {
+      const lastRow = sheet.getLastRow();
+      sheet
+        .getRange(lastRow + 1, 1, dataArray.length, HEADERS_REGISTER.length)
+        .setValues(dataArray);
+    } finally {
+      lock.releaseLock();
+    }
+    bumpSheetCacheVersion_(DATA_SHEET);    
     return pickMessage('Dữ liệu đã được lưu thành công!', 'Data saved successfully!');
   } catch (error) {
     Logger.log(error);
@@ -2013,6 +2090,7 @@ function updateData(rowData, sessionToken) {
     rowData['Time'] = "'" + Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss");
     const dataArray = HEADERS_REGISTER.map(header => rowData[header] || "");
     sheet.getRange(rowToUpdate, 1, 1, HEADERS_REGISTER.length).setValues([dataArray]);
+    bumpSheetCacheVersion_(DATA_SHEET);    
     return 'Dữ liệu đã được cập nhật thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật dữ liệu: ' + error.message); }
 }
@@ -2043,6 +2121,7 @@ function deleteMultipleData(ids,sessionToken) {
     rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
       sheet.deleteRow(rowNum);
     });
+    bumpSheetCacheVersion_(DATA_SHEET);    
     return `Đã xóa thành công ${rowsToDelete.length} mục.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa dữ liệu: ' + error.message); }
 }
@@ -2191,6 +2270,10 @@ function saveTotalTruckData(dataToSave, sessionToken) {
       inserted = rowsToAppend.length;
     }
 
+    if (inserted > 0) {
+      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
+    }    
+
     // Trả chi tiết để client hiển thị
     return {
       status: 'ok',
@@ -2227,6 +2310,10 @@ function deleteTotalListVehicles(ids, sessionToken) {
       sheet.deleteRow(rowNum);
     });
 
+    if (rowsToDelete.length > 0) {
+      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
+    }    
+
     return `Đã xóa thành công ${rowsToDelete.length} xe.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + error.message); }
 }
@@ -2253,11 +2340,102 @@ function updateTotalListVehicle(rowData, sessionToken) {
     rowData['Time'] = "'" + Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "HH:mm:ss");
     const dataArray = HEADERS_TOTAL_LIST.map(header => rowData[header] || "");
     sheet.getRange(rowToUpdate, 1, 1, HEADERS_TOTAL_LIST.length).setValues([dataArray]);
+    bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);    
     return 'Cập nhật thông tin xe thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật thông tin xe: ' + error.message); }
 }
 
 // --- Helpers an toàn cho CacheService ---
+function safeScriptCacheGetJSON_(key) {
+  if (!key) return null;
+  try {
+    const cache = CacheService.getScriptCache();
+    if (!cache) return null;
+    const value = cache.get(key);
+    return value ? JSON.parse(value) : null;
+  } catch (e) {
+    Logger.log('Script cache get error: ' + e);
+    return null;
+  }
+}
+
+function safeScriptCachePutJSON_(key, obj, seconds) {
+  if (!key) return;
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(obj), seconds || SERVER_SIDE_CACHE_TTL_SECONDS);
+  } catch (e) {
+    Logger.log('Script cache put error: ' + e);
+  }
+}
+
+function getSheetCacheVersion_(sheetName) {
+  if (!sheetName) return String(Date.now());
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const key = SHEET_CACHE_VERSION_PREFIX + sheetName;
+    let version = props.getProperty(key);
+    if (!version) {
+      version = String(Date.now());
+      props.setProperty(key, version);
+    }
+    return version;
+  } catch (e) {
+    Logger.log('getSheetCacheVersion_ error: ' + e);
+    return String(Date.now());
+  }
+}
+
+function bumpSheetCacheVersion_(sheetName) {
+  if (!sheetName) return;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const key = SHEET_CACHE_VERSION_PREFIX + sheetName;
+    const newVersion = String(Date.now()) + '_' + Math.floor(Math.random() * 1000);
+    props.setProperty(key, newVersion);
+  } catch (e) {
+    Logger.log('bumpSheetCacheVersion_ error: ' + e);
+  }
+}
+
+function buildServerSideCacheKey_(sheetName, params, userRole) {
+  if (!sheetName) return '';
+  try {
+    params = params || {};
+    const version = getSheetCacheVersion_(sheetName);
+    const payload = {
+      sheet: sheetName,
+      version: version,
+      role: userRole || '',
+      draw: params.draw || '',
+      start: params.start || 0,
+      length: params.length || 0,
+      dateString: params.dateString || '',
+      contractNo: params.contractNo || '',
+      search: params.search && params.search.value ? String(params.search.value) : '',
+      order: Array.isArray(params.order)
+        ? params.order.map(function (o) { return o ? [o.column, o.dir] : null; })
+        : [],
+      columns: Array.isArray(params.columns)
+        ? params.columns.map(function (col) {
+            return {
+              data: col && col.data,
+              search: col && col.search ? col.search.value : '',
+              searchable: col && col.searchable,
+              orderable: col && col.orderable
+            };
+          })
+        : []
+    };
+    const serialized = JSON.stringify(payload);
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, serialized);
+    const hash = Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, '');
+    return 'srv_cache:' + sheetName + ':' + version + ':' + hash;
+  } catch (e) {
+    Logger.log('buildServerSideCacheKey_ error: ' + e);
+    return '';
+  }
+}
+
 function safeGetUserCacheJSON(key) {
   try {
     const v = CacheService.getUserCache().get(key);
@@ -2759,6 +2937,7 @@ function saveTotalListAppend(rows, sessionToken) {
 
   const startRow = sh.getLastRow() + 1;
   sh.getRange(startRow, 1, values.length, header.length).setValues(values);
+  bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);  
 
   return `Đã thêm ${values.length} dòng mới vào Danh sách xe tổng.`;
 }
@@ -2843,6 +3022,7 @@ function addManualVehicle(record, sessionToken, language) {
     // Ghi theo đúng thứ tự header
     const values = [HEADERS_REGISTER.map(h => rowObj[h] ?? "")];
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, HEADERS_REGISTER.length).setValues(values);
+    bumpSheetCacheVersion_(DATA_SHEET);    
 
     return pickMessage('Đăng ký xe thành công!', 'Vehicle registered successfully!');
   } catch (e) {
@@ -2987,6 +3167,10 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
     sh.getRange(r+2, idxRS+1).setValue(newStatus);
     changed++;
   }
+
+  if (changed > 0) {
+    bumpSheetCacheVersion_(DATA_SHEET);
+  }  
 
   _bust(['SNAP_'+dateString+'_'+scope, 'SNAP_'+dateString+'_ALL']);
   return 'Đã cập nhật ' + changed + ' dòng.';
