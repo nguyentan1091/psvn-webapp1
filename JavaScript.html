@@ -4868,6 +4868,80 @@ function initXuLyXPPLPage() {
   // trạng thái export
   let xpplExportState = { confirmed: false, filter: null, rows: [] };
 
+  // tổng hợp số liệu theo từng hợp đồng (tổng xe / đã duyệt)
+  let contractSummary = {};
+  let fullyApprovedContracts = new Set();
+  const contractLabels = {};
+  const contractRawValues = {};
+
+  function normalizeContractValue(value) {
+    if (value == null) return '';
+    return String(value).trim();
+  }
+
+  function recordContractLabel(key, raw) {
+    if (!key) return;
+    const rawStr = raw == null ? '' : String(raw);
+    const trimmed = rawStr.trim();
+    if (trimmed) {
+      contractLabels[key] = trimmed;
+    } else if (!contractLabels[key]) {
+      contractLabels[key] = key;
+    }
+    if (!contractRawValues[key]) {
+      contractRawValues[key] = trimmed ? rawStr : key;
+    }
+  }
+
+  function computeContractSummary(rows) {
+    const summary = {};
+    (rows || []).forEach(row => {
+      const rawValue = row['Contract No'];
+      const contractNo = normalizeContractValue(rawValue);
+      if (!contractNo) return;
+      recordContractLabel(contractNo, rawValue);
+      const bucket = summary[contractNo] || { total: 0, approved: 0 };
+      bucket.total += 1;
+      if (String(row['Registration Status'] || '').toLowerCase() === 'approved') {
+        bucket.approved += 1;
+      }
+      summary[contractNo] = bucket;
+    });
+    return summary;
+  }
+
+  function formatContractLabel(contractNo, stats, markApproved) {
+    const total = stats && typeof stats.total === 'number' ? stats.total : 0;
+    const baseLabel = `${contractNo} / ${total}`;
+    return markApproved ? `${baseLabel} ✓` : baseLabel;
+  }
+
+  function isFullyApproved(contractNo, stats) {
+    const key = normalizeContractValue(contractNo);
+    if (stats && stats.total > 0) {
+      return stats.approved === stats.total;
+    }
+    return fullyApprovedContracts.has(key);
+  }
+
+  function updateContractOptionLabels() {
+    $('#xppl-contracts option').each(function () {
+      const rawValue = this.value;
+      const key = this.dataset.contractKey || normalizeContractValue(rawValue);
+      if (!key) return;
+      const stats = contractSummary[key];
+      const approved = isFullyApproved(key, stats);
+      const display = contractLabels[key] || normalizeContractValue(rawValue) || rawValue;
+      this.textContent = formatContractLabel(display, stats, approved);
+      this.classList.toggle('approved', !!approved);
+      const totalVal = stats && typeof stats.total === 'number' ? stats.total : 0;
+      const approvedVal = stats && typeof stats.approved === 'number' ? stats.approved : 0;
+      this.dataset.total = totalVal;
+      this.dataset.approved = approvedVal;
+      this.dataset.contractKey = key;
+    });
+  }  
+
   function toggleExportButtons(on){
     $('#xppl-form-preview').prop('disabled', !on);
     $('#xppl-form-export').prop('disabled', !on);
@@ -5180,18 +5254,52 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
     $('#btn-select-all-contracts').toggleClass('btn-primary', all).toggleClass('btn-outline-secondary', !all);
   }
   function fillContracts(contracts, fullyApproved) {
-    const $sel = $('#xppl-contracts').empty();
-    const full = new Set(fullyApproved||[]);
+    const $sel = $('#xppl-contracts');
+    const selEl = $sel[0];
+    if (!selEl) return;
+
+    const prevSelected = new Set(Array.from(selEl.selectedOptions || []).map(opt => opt.value));
+    const seen = new Set();
+    const list = Array.isArray(contracts) && contracts.length
+      ? contracts
+      : Object.keys(contractSummary).map(key => contractRawValues[key] || key);
+
+    fullyApprovedContracts = new Set((fullyApproved || []).map(normalizeContractValue));
+
+    selEl.innerHTML = '';
     const frag = document.createDocumentFragment();
-    (contracts||[]).forEach(no => {
-      const isFull = full.has(no);
+
+    (list || []).forEach(rawValue => {
+      const key = normalizeContractValue(rawValue);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      recordContractLabel(key, rawValue);
+      const stats = contractSummary[key];
+      if (stats) {
+        const statsApproved = stats.total > 0 && stats.approved === stats.total;
+        if (statsApproved) fullyApprovedContracts.add(key);
+        else fullyApprovedContracts.delete(key);
+      }
+      const approved = isFullyApproved(key, stats);
       const opt = document.createElement('option');
-      opt.value = no;
-      opt.textContent = isFull ? `${no} ✓` : no;
-      if (isFull) opt.classList.add('approved');
+      const rawString = rawValue == null ? key : String(rawValue);
+      opt.value = rawString;
+      const display = contractLabels[key] || key;
+      opt.textContent = formatContractLabel(display, stats, approved);
+      if (approved) opt.classList.add('approved');
+      const totalVal = stats && typeof stats.total === 'number' ? stats.total : 0;
+      const approvedVal = stats && typeof stats.approved === 'number' ? stats.approved : 0;
+      opt.dataset.total = totalVal;
+      opt.dataset.approved = approvedVal;
+      opt.dataset.contractKey = key;
+      if (prevSelected.has(opt.value)) {
+        opt.selected = true;
+      }
       frag.appendChild(opt);
     });
-    $sel[0].appendChild(frag);
+
+    selEl.appendChild(frag);
+    updateSelectAllStyles();
   }
   function renderRows(rows) {
     xpplDT.clear().rows.add(rows || []).draw();
@@ -5216,7 +5324,18 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
         $('#xppl-pending').text(res.pending||0);
         $('#xppl-approved').text(res.approved||0);
         $('#xppl-sent').text(res.sent||0);
-        fillContracts(res.contracts||[], res.fullyApproved||[]);
+        contractSummary = computeContractSummary(res.rows || []);
+        Object.keys(contractSummary).forEach(key => {
+          recordContractLabel(key, contractRawValues[key]);
+        });
+        (Array.isArray(res.contracts) ? res.contracts : []).forEach(no => {
+          recordContractLabel(normalizeContractValue(no), no);
+        });
+        const contractList = (Array.isArray(res.contracts) && res.contracts.length)
+          ? res.contracts
+          : Object.keys(contractSummary).map(key => contractRawValues[key] || key);
+        fillContracts(contractList, res.fullyApproved||[]);
+        updateContractOptionLabels();
         refreshTable(); // sau khi có hợp đồng -> tải bảng theo lựa chọn hiện tại
       })
       .withFailureHandler(err=>{ Swal.close(); showError(err); })
@@ -5231,15 +5350,26 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
         if (typeof res.pending === 'number')  $('#xppl-pending').text(res.pending);
         if (typeof res.approved === 'number') $('#xppl-approved').text(res.approved);
         if (typeof res.sent === 'number')     $('#xppl-sent').text(res.sent);
-        const per={};
-        (res.rows||[]).forEach(r=>{
-          const c=r['Contract No']; per[c]=per[c]||{t:0,a:0}; per[c].t++; if((r['Registration Status']||'').toLowerCase()==='approved') per[c].a++;
+        const per = computeContractSummary(res.rows || []);
+        Object.keys(per).forEach(contractNo => {
+          const stats = per[contractNo];
+          contractSummary[contractNo] = stats;
+          recordContractLabel(contractNo, contractRawValues[contractNo]);
+          if (stats.total > 0 && stats.approved === stats.total) {
+            fullyApprovedContracts.add(contractNo);
+          } else {
+            fullyApprovedContracts.delete(contractNo);
+          }
         });
-        $('#xppl-contracts option').each(function(){
-          const m=per[this.value]; const ok=m && m.t>0 && m.a===m.t;
-          this.textContent = ok ? `${this.value} ✓` : this.value;
-          this.classList.toggle('approved', !!ok);
-        });
+        // đảm bảo các hợp đồng mới xuất hiện trong bảng cũng có trong danh sách chọn
+        const currentOptions = new Set(Array.from($('#xppl-contracts option')).map(opt => opt.dataset.contractKey || normalizeContractValue(opt.value)));
+        const missingContracts = Object.keys(per).filter(key => key && !currentOptions.has(key));
+        if (missingContracts.length) {
+          const additions = missingContracts.map(key => contractRawValues[key] || key);
+          const currentValues = Array.from($('#xppl-contracts option')).map(opt => opt.value);
+          fillContracts([...currentValues, ...additions], Array.from(fullyApprovedContracts));
+        }
+        updateContractOptionLabels();        
       })
       .withFailureHandler(showError)
       .getRegistrationsForApproval({dateString:d, contracts:selected}, userSession.token);
