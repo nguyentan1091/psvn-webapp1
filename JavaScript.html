@@ -4781,6 +4781,28 @@ function exportXpplWeighingExcel() {
     Swal.fire(t.no_data_title || 'Không có dữ liệu', t.xppl_no_data_export_message || t.no_data_export_message || 'Không có dữ liệu để xuất.', 'info');
     return;
   }
+  const dateVal = $('#xppl-filter-date').val();
+  const contractVal = $('#xppl-filter-contract').val();
+  function formatExportDate(value) {
+    if (!value) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    }
+    const isoMatch = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+    }
+    const vnMatch = String(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (vnMatch) {
+      return `${vnMatch[1]}-${vnMatch[2]}-${vnMatch[3]}`;
+    }
+    return String(value);
+  }
+  const formattedDate = formatExportDate(dateVal);
+  const filePrefix = contractVal ? contractVal : 'All';  
   const aoa = [XPPL_WEIGHING_HEADERS];
   rows.forEach(r => {
     aoa.push(XPPL_WEIGHING_HEADERS.map(h => r[h] || ''));
@@ -4829,7 +4851,8 @@ function exportXpplWeighingExcel() {
   })();  
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'XPPL');
-  XLSX.writeFile(wb, 'XPPL_Weighing.xlsx');
+  const fileName = `${filePrefix}_Weighing Report_${formattedDate}.xlsx`;
+  XLSX.writeFile(wb, fileName);
 }
 
 // ===== XPPL Approval Page =====
