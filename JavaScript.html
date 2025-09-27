@@ -4597,11 +4597,10 @@ try {
 } catch (e) {}
 
 const XPPL_WEIGHING_HEADERS = [
-  'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
-  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
-  'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
-  'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type',
-  'WeighStationCode','Note','CreateUser'
+  'ID','No.','W.ID','Weighing Type','Ticket ID','Truck No','Date In','Time In','Date Out','Time Out',
+  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','Customer Name','CargoLot No',
+  'Cargo Company','Cargo Name','PackUnit','PackQtt','Driver Name','ID/Passport','Contract No','Invoice No',
+  'Co No','Order No','Plant','OVS_DMT','Trailer No','Truck Country','Truck Type','WS. Code','Note'
 ];
 // Excel files from the weighing station do not include the leading ID column
 const XPPL_FILE_HEADERS = XPPL_WEIGHING_HEADERS.slice(1);
@@ -5709,7 +5708,7 @@ function normalizeDtResponse(res, draw){
 }
 
 function buildWeighResultTables(isAdmin) {
-  const headers = ['ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out','Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name','DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo','ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode','Note','CreateUser','Transportion Company','Changed Date','Changed Time','Username'];
+  const headers = ['ID','No.','W.ID','Weighing Type','Ticket ID','Truck No','Date In','Time In','Date Out','Time Out','Weight In','Weight Out','Net Weight','Product Name','CoalSource','Customer Name','CargoLot No','Cargo Company','Cargo Name','PackUnit','PackQtt','Driver Name','ID/Passport','Contract No','Invoice No','Co No','Order No','Plant','OVS_DMT','Trailer No','Truck Country','Truck Type','WS. Code','Note','CreateUser','Transportation Company','Changed Date','Changed Time','Username'];
 
   if ($.fn.DataTable.isDataTable('#wr-result-table')) $('#wr-result-table').DataTable().destroy();
   const resWrap = $('#wr-result-table').parent();  
@@ -5726,7 +5725,7 @@ function buildWeighResultTables(isAdmin) {
     });
     cols.push({ data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>`});
   }
-  cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID') ? { data: row => row[h], title:h } : { data:h, title:h }));
+  cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID' || h === 'WS. Code') ? { data: row => row[h], title:h } : { data:h, title:h }));
 
   const resTable = `<table id="wr-result-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${cols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
   resWrap.html(resTable);
@@ -5836,7 +5835,7 @@ function buildWeighResultTables(isAdmin) {
   if (isAdmin) {
     if ($.fn.DataTable.isDataTable('#wr-unknown-table')) $('#wr-unknown-table').DataTable().destroy();
     const uWrap = $('#wr-unknown-table').parent();
-    const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportion Company','Changed Date','Changed Time','Username'];
+    const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','Contract No','Transportation Company','Changed Date','Changed Time','Username'];
     const unknownSelectAllLabel = (translations[currentLang] && translations[currentLang].select_all_checkbox) || 'Select all';    
     let uCols = [
       { data:null, title:`<input type="checkbox" class="form-check-input" id="wru-select-all" aria-label="${unknownSelectAllLabel}" title="${unknownSelectAllLabel}">`, orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
@@ -5948,7 +5947,7 @@ function buildWeighResultTables(isAdmin) {
 
 function showWrEditDialog(row){
   const opts = ['Unknown', ...(window.__wrCompanyList || [])]
-    .map(v => `<option value="${esc(v)}" ${v === (row['Transportion Company']||'') ? 'selected' : ''}>${esc(v)}</option>`)
+    .map(v => `<option value="${esc(v)}" ${v === (row['Transportation Company']||'') ? 'selected' : ''}>${esc(v)}</option>`)
     .join('');
   const t = translations[currentLang] || translations.vi || {};    
   Swal.fire({
@@ -5968,7 +5967,7 @@ function showWrEditDialog(row){
         reloadWrTables();
       })
       .withFailureHandler(showError)
-      .updateWeighResultCompany({ ID: row.ID, 'Transportion Company': res.value }, userSession.token);
+      .updateWeighResultCompany({ ID: row.ID, 'Transportation Company': res.value }, userSession.token);
   });
 }
 
