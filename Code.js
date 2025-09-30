@@ -1,7 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
 const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
-const USERS_SHEET = 'Users';
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
@@ -102,6 +101,169 @@ const SUPERVISION_DEFAULT_ROLE = 'User-Supervision';
 
 const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
+
+// ================= SUPABASE CONFIGURATION =================
+const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
+const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
+
+function buildSupabaseUrl_(path) {
+  const base = SUPABASE_URL.replace(/\/$/, '');
+  if (!path) return base;
+  return base + (path[0] === '/' ? path : '/' + path);
+}
+
+function supabaseRequest_(path, options) {
+  const opts = options || {};
+  const method = (opts.method || 'GET').toUpperCase();
+  const headers = Object.assign(
+    {
+      apikey: SUPABASE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_KEY
+    },
+    opts.headers || {}
+  );
+
+  if (method !== 'GET' && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const request = {
+    method: method,
+    headers: headers,
+    muteHttpExceptions: true
+  };
+
+  if (opts.payload != null) {
+    request.payload = typeof opts.payload === 'string' ? opts.payload : JSON.stringify(opts.payload);
+  }
+
+  if (opts.timeout != null) {
+    request.timeout = opts.timeout;
+  }
+
+  const url = buildSupabaseUrl_(path);
+  let response;
+  try {
+    response = UrlFetchApp.fetch(url, request);
+  } catch (fetchError) {
+    throw new Error('Supabase request failed: ' + fetchError);
+  }
+
+  const status = response.getResponseCode();
+  const text = response.getContentText();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (parseError) {
+      data = text;
+    }
+  }
+
+  if (status >= 200 && status < 300) {
+    return data;
+  }
+
+  const message = data && data.message ? data.message : text;
+  throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
+}
+
+function getSupabaseUserByUsername_(username) {
+  if (!username) return null;
+  const query = '?select=*&username=eq.' + encodeURIComponent(username) + '&limit=1';
+  const data = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT + query);
+  if (Array.isArray(data) && data.length > 0) {
+    return data[0];
+  }
+  return null;
+}
+
+function updateSupabaseUserByUsername_(username, payload) {
+  if (!username) throw new Error('Username is required');
+  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
+  const result = supabaseRequest_(query, {
+    method: 'PATCH',
+    payload: payload,
+    headers: { Prefer: 'return=representation' }
+  });
+  if (Array.isArray(result) && result.length > 0) {
+    return result[0];
+  }
+  return null;
+}
+
+function insertSupabaseUser_(payload) {
+  return supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT, {
+    method: 'POST',
+    payload: payload,
+    headers: { Prefer: 'return=representation' }
+  });
+}
+
+function deleteSupabaseUserByUsername_(username) {
+  if (!username) throw new Error('Username is required');
+  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
+  supabaseRequest_(query, { method: 'DELETE' });
+}
+
+function clearUserSession_(username, token) {
+  if (!username) return;
+  try {
+    updateSupabaseUserByUsername_(username, {
+      active_session_token: null,
+      session_token_expiry: null
+    });
+  } catch (e) {
+    Logger.log('clearUserSession_ error: ' + e);
+  }
+  if (token) {
+    try {
+      removeSessionFromCache_(token);
+    } catch (cacheError) {
+      Logger.log('clearUserSession_ cache error: ' + cacheError);
+    }
+  }
+}
+
+function clearUserSessionByToken_(token) {
+  if (!token) return;
+  try {
+    const query = SUPABASE_APP_USERS_ENDPOINT + '?active_session_token=eq.' + encodeURIComponent(token);
+    supabaseRequest_(query, {
+      method: 'PATCH',
+      payload: {
+        active_session_token: null,
+        session_token_expiry: null
+      }
+    });
+  } catch (e) {
+    Logger.log('clearUserSessionByToken_ error: ' + e);
+  }
+  try {
+    removeSessionFromCache_(token);
+  } catch (cacheError) {
+    Logger.log('clearUserSessionByToken_ cache error: ' + cacheError);
+  }
+}
+
+function parseSupabaseTimestamp_(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const dt = new Date(value);
+  if (isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function formatSupabaseDateTime_(value) {
+  const dt = parseSupabaseTimestamp_(value);
+  if (!dt) return '';
+  try {
+    return Utilities.formatDate(dt, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
+  } catch (e) {
+    return dt.toISOString();
+  }
+}
 
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
 function stripLeadingApostrophe(v) {
@@ -340,59 +502,20 @@ function logLoginAttempt(username, status) {
 
 function ensureSupervisionAccount_() {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(USERS_SHEET);
-    if (!sheet) return;
+    const existing = getSupabaseUserByUsername_(SUPERVISION_DEFAULT_USERNAME);
+    if (existing) return;
 
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 1) return;
-
-    const lastCol = sheet.getLastColumn();
-    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
-    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
-
-    const findIndex = names => {
-      const list = Array.isArray(names) ? names : [names];
-      for (const name of list) {
-        const idx = normalizedHeaders.indexOf(String(name || '').trim().toLowerCase());
-        if (idx !== -1) return idx;
-      }
-      return -1;
+    const payload = {
+      username: SUPERVISION_DEFAULT_USERNAME,
+      password_hash: SUPERVISION_DEFAULT_PASSWORD,
+      role: SUPERVISION_DEFAULT_ROLE,
+      contractor: '',
+      password_last_updated: new Date().toISOString(),
+      security_code: Math.random().toString(36).slice(-6).toUpperCase(),
+      customer_name: ''
     };
 
-    const usernameIdx = findIndex(['username', 'user name']);
-    if (usernameIdx === -1) return;
-
-    const dataRowCount = Math.max(0, lastRow - 1);
-    if (dataRowCount > 0) {
-      const usernames = sheet
-        .getRange(2, usernameIdx + 1, dataRowCount, 1)
-        .getValues()
-        .map(r => String(r[0] || '').trim().toLowerCase());
-      if (usernames.includes(SUPERVISION_DEFAULT_USERNAME.toLowerCase())) {
-        return;
-      }
-    }
-
-    const passwordIdx = findIndex('password');
-    const roleIdx = findIndex('role');
-    const contractorIdx = findIndex('contractor');
-    const passwordUpdatedIdx = findIndex(['password last updated', 'passwordlastupdated', 'password updated']);
-    const securityCodeIdx = findIndex(['security code', 'securitycode']);
-    const customerNameIdx = findIndex(['customer name', 'customer']);
-
-    const newRow = new Array(lastCol).fill('');
-    newRow[usernameIdx] = SUPERVISION_DEFAULT_USERNAME;
-    if (passwordIdx !== -1) newRow[passwordIdx] = SUPERVISION_DEFAULT_PASSWORD;
-    if (roleIdx !== -1) newRow[roleIdx] = SUPERVISION_DEFAULT_ROLE;
-    if (contractorIdx !== -1) newRow[contractorIdx] = '';
-    if (passwordUpdatedIdx !== -1) newRow[passwordUpdatedIdx] = new Date();
-    if (securityCodeIdx !== -1) {
-      newRow[securityCodeIdx] = Math.random().toString(36).slice(-6).toUpperCase();
-    }
-    if (customerNameIdx !== -1) newRow[customerNameIdx] = '';
-
-    sheet.appendRow(newRow);
+    insertSupabaseUser_(payload);
   } catch (err) {
     Logger.log('ensureSupervisionAccount_ error: ' + err);
   }
@@ -400,7 +523,6 @@ function ensureSupervisionAccount_() {
 
 function checkLogin(credentials) {
   const scriptProperties = PropertiesService.getScriptProperties();
-  const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
   const username = String(credentials.username == null ? '' : credentials.username).trim();
   
   try {
@@ -410,38 +532,9 @@ function checkLogin(credentials) {
       throw new Error(`Tài khoản của bạn đã bị tạm khóa. Vui lòng thử lại sau ${timeLeft} phút.`);
     }
 
-    if (userSheet.getLastRow() < 2) throw new Error('Không có dữ liệu người dùng.');
+    const userRecord = getSupabaseUserByUsername_(username);
 
-    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
-    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
-    const totalColumns = headerRow.length;
-
-    const usernameIdx = normalizedHeaders.indexOf('username');
-    const passwordIdx = normalizedHeaders.indexOf('password');
-    const roleIdx = normalizedHeaders.indexOf('role');
-    const contractorIdx = normalizedHeaders.indexOf('contractor');
-    const customerNameIdx = normalizedHeaders.indexOf('customer name');
-    const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
-    const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
-
-    if (usernameIdx === -1 || passwordIdx === -1) {
-      throw new Error('Cấu trúc sheet Users không hợp lệ. Thiếu cột Username hoặc Password.');
-    }
-
-    const usersRange = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, totalColumns);
-    const users = usersRange.getValues();
-    let userRowIndex = -1;
-    let userRecord = null;
-
-    for (let i = 0; i < users.length; i++) {
-      if (String(users[i][usernameIdx] == null ? '' : users[i][usernameIdx]).trim() === username) {
-        userRowIndex = i;
-        userRecord = users[i];
-        break;
-      }
-    }
-
-    if (!userRecord || String(userRecord[passwordIdx] == null ? '' : userRecord[passwordIdx]) !== String(credentials.password == null ? '' : credentials.password)) {
+    if (!userRecord || String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(credentials.password == null ? '' : credentials.password)) {
       logLoginAttempt(username, 'Failure');
       let failedAttempts = parseInt(scriptProperties.getProperty(`failed_attempts_${username}`) || '0') + 1;
       if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
@@ -459,62 +552,35 @@ function checkLogin(credentials) {
       throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
     }
 
-    let activeToken = '';
-    let tokenExpiry = '';
-    if (activeTokenIdx !== -1) {
-      activeToken = String(userRecord[activeTokenIdx] == null ? '' : userRecord[activeTokenIdx]).trim();
-    }
-    if (tokenExpiryIdx !== -1) {
-      tokenExpiry = userRecord[tokenExpiryIdx];
-    }
-
-
-
     const nowMs = Date.now();
+    const activeToken = String(userRecord.active_session_token == null ? '' : userRecord.active_session_token).trim();
+    const tokenExpiry = parseSupabaseTimestamp_(userRecord.session_token_expiry);
+
     if (activeToken) {
-      let expiryDate = null;
-      if (tokenExpiry instanceof Date) {
-        expiryDate = tokenExpiry;
-      } else if (tokenExpiry) {
-        const parsedExpiry = new Date(tokenExpiry);
-        if (!isNaN(parsedExpiry.getTime())) {
-          expiryDate = parsedExpiry;
-        }
-      }
-      if (expiryDate && nowMs < expiryDate.getTime()) {
+      if (tokenExpiry && nowMs < tokenExpiry.getTime()) {
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
-      removeSessionFromCache_(activeToken);      
-      clearSessionTokenAtRow_(userSheet, userRowIndex + 2, activeTokenIdx, tokenExpiryIdx);
-      activeToken = '';
-      tokenExpiry = '';
+      clearUserSession_(username, activeToken);
     }
 
-    if (activeTokenIdx === -1 || tokenExpiryIdx === -1) {
-      throw new Error('Thiếu cột ActiveSessionToken hoặc SessionTokenExpiry trong sheet Users.');
-    }
+    const customerName = String(userRecord.customer_name == null ? '' : userRecord.customer_name).trim();
 
-    const rawCustomerName = (customerNameIdx !== -1)
-      ? userRecord[customerNameIdx]
-      : '';
-    const customerName = String(rawCustomerName == null ? '' : rawCustomerName).trim();
-
-    const rawUserRole = (roleIdx !== -1) ? userRecord[roleIdx] : '';
-    const userRole = String(rawUserRole == null ? '' : rawUserRole).trim();
-    const normalizedRole = userRole.toLowerCase();
-    const userContractor = (contractorIdx !== -1) ? userRecord[contractorIdx] : '';
-    const canonicalUsername = String(userRecord[usernameIdx] == null ? '' : userRecord[usernameIdx]).trim();
-
-    logLoginAttempt(username, 'Success');
     scriptProperties.deleteProperty(`failed_attempts_${username}`);
-    scriptProperties.deleteProperty(`lockout_until_${username}`);
     scriptProperties.deleteProperty(`lockout_level_${username}`);
+    scriptProperties.deleteProperty(`lockout_until_${username}`);    
 
     const newSessionToken = Utilities.getUuid();
-    const newExpiry = new Date(new Date().getTime() + SESSION_TIMEOUT_SECONDS * 1000);
-    
-    userSheet.getRange(userRowIndex + 2, activeTokenIdx + 1).setValue(newSessionToken);
-    userSheet.getRange(userRowIndex + 2, tokenExpiryIdx + 1).setValue(newExpiry);
+    const tokenExpiryDate = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
+
+    updateSupabaseUserByUsername_(username, {
+      active_session_token: newSessionToken,
+      session_token_expiry: tokenExpiryDate.toISOString()
+    });
+
+    const userRole = userRecord.role;
+    const canonicalUsername = String(userRecord.username == null ? '' : userRecord.username).trim();
+    const normalizedRole = String(userRole == null ? '' : userRole).trim().toLowerCase();
+    const userContractor = String(userRecord.contractor == null ? '' : userRecord.contractor);    
 
     const userSession = {
       isLoggedIn: true,
@@ -526,6 +592,7 @@ function checkLogin(credentials) {
       token: newSessionToken
     };
 
+    logLoginAttempt(username, 'Success');
     cacheSession_(userSession);
 
     return userSession;
@@ -553,50 +620,21 @@ function logout(sessionToken) {
   }
 
   try {
-    const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    if (userSheet.getLastRow() > 1) {
-      const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
-      const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
-      const usernameIdx = normalizedHeaders.indexOf('username');
-      const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
-      const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
-
-      const rowCount = userSheet.getLastRow() - 1;
-      let targetRow = -1;
-
-      if (activeTokenIdx !== -1 && token) {
-        const tokenValues = userSheet
-          .getRange(2, activeTokenIdx + 1, rowCount, 1)
-          .getValues()
-          .map(r => String(r[0] == null ? '' : r[0]).trim());
-        const idx = tokenValues.indexOf(token);
-        if (idx !== -1) {
-          targetRow = idx + 2;
-        }
-      }
-
-      if (targetRow === -1 && session && usernameIdx !== -1) {
-        const usernameValues = userSheet
-          .getRange(2, usernameIdx + 1, rowCount, 1)
-          .getValues()
-          .map(r => String(r[0] == null ? '' : r[0]).trim());
-        const targetUsername = String(session.username == null ? '' : session.username).trim();
-        const userRowIndex = usernameValues.indexOf(targetUsername);
-        if (userRowIndex !== -1) {
-         targetRow = userRowIndex + 2;          
-        }
-      }
-
-      if (targetRow !== -1) {
-        clearSessionTokenAtRow_(userSheet, targetRow, activeTokenIdx, tokenExpiryIdx);
-      }      
+    if (session && session.username) {
+      clearUserSession_(session.username, token);
+    } else if (token) {
+      clearUserSessionByToken_(token);
     }
   } catch (e) {
     Logger.log('logout error: ' + e);
   }
 
   if (token) {
-    removeSessionFromCache_(token);    
+    try {
+      removeSessionFromCache_(token);
+    } catch (cacheError) {
+      Logger.log('logout cache remove error: ' + cacheError);
+    }
   }
   safeRemoveUserCacheKey('user_session');
   return { success: true };
@@ -607,16 +645,16 @@ function changePassword(passwords, sessionToken) {
   const { currentPassword, newPassword } = passwords;
 
   try {
-    const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const usersRange = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, 2);
-    const users = usersRange.getValues();
-    const userRowIndex = users.findIndex(u => u[0] === session.username);
+    const userRecord = getSupabaseUserByUsername_(session.username);
+    if (!userRecord) throw new Error('Không tìm thấy người dùng.');
+    if (String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(currentPassword == null ? '' : currentPassword)) {
+      throw new Error('Mật khẩu hiện tại không đúng.');
+    }
 
-    if (userRowIndex === -1) throw new Error('Không tìm thấy người dùng.');
-    if (users[userRowIndex][1] !== currentPassword) throw new Error('Mật khẩu hiện tại không đúng.');
-
-    userSheet.getRange(userRowIndex + 2, 2).setValue(newPassword);
-    userSheet.getRange(userRowIndex + 2, 5).setValue(new Date());
+    updateSupabaseUserByUsername_(session.username, {
+      password_hash: newPassword,
+      password_last_updated: new Date().toISOString()
+    });
 
     return 'Đổi mật khẩu thành công!';
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi đổi mật khẩu: ' + e.message); }
@@ -625,16 +663,18 @@ function changePassword(passwords, sessionToken) {
 function resetPassword(data) {
   const { username, securityCode, newPassword } = data;
   try {
-    const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const usersRange = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, 6);
-    const users = usersRange.getValues();
-    const userRowIndex = users.findIndex(u => u[0] === username);
+    const userRecord = getSupabaseUserByUsername_(username);
+    if (!userRecord) throw new Error('Tên đăng nhập không tồn tại.');
+    const storedCode = String(userRecord.security_code == null ? '' : userRecord.security_code).trim();
+    if (storedCode.toUpperCase() !== String(securityCode == null ? '' : securityCode).trim().toUpperCase()) {
+      throw new Error('Mã bảo mật không chính xác.');
+    }
 
-    if (userRowIndex === -1) throw new Error('Tên đăng nhập không tồn tại.');
-    if (users[userRowIndex][5] !== securityCode) throw new Error('Mã bảo mật không chính xác.');
-
-    userSheet.getRange(userRowIndex + 2, 2).setValue(newPassword);
-    userSheet.getRange(userRowIndex + 2, 5).setValue(new Date());
+    updateSupabaseUserByUsername_(username, {
+      password_hash: newPassword,
+      password_last_updated: new Date().toISOString()
+    });
+    clearUserSession_(username, String(userRecord.active_session_token || ''));
 
     return 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.';
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi đặt lại mật khẩu: ' + e.message); }
@@ -649,36 +689,20 @@ function getUsers(sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
+    const data = supabaseRequest_(
+      SUPABASE_APP_USERS_ENDPOINT + '?select=username,password_hash,role,contractor,password_last_updated,security_code,customer_name&order=username.asc'
+    );
+    if (!Array.isArray(data)) return [];
 
-    const lastColumn = sheet.getLastColumn();
-    const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
-    const customerNameIdx = normalizedHeaders.indexOf('customer name');
-    const securityCodeIdx = normalizedHeaders.indexOf('security code');
-
-    const data = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
-
-    return data.map(row => {
-      let formattedDate = '';
-      if (row[4] instanceof Date) {
-        formattedDate = Utilities.formatDate(row[4], Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
-      } else if (row[4]) {
-        formattedDate = String(row[4]);
-      }
-
-      return {
-        Username: row[0],
-        Password: row[1],
-        Role: row[2],
-        Contractor: row[3],
-        PasswordLastUpdated: formattedDate,
-        SecurityCode: securityCodeIdx !== -1 ? row[securityCodeIdx] : row[5],
-        CustomerName: customerNameIdx !== -1 ? row[customerNameIdx] : ''
-      }
-    });
+    return data.map(row => ({
+      Username: row.username || '',
+      Password: row.password_hash || '',
+      Role: row.role || '',
+      Contractor: row.contractor || '',
+      PasswordLastUpdated: formatSupabaseDateTime_(row.password_last_updated),
+      SecurityCode: row.security_code || '',
+      CustomerName: row.customer_name || ''
+    }));
   } catch (e) { Logger.log(e); throw new Error('Không thể lấy danh sách người dùng.'); }
 }
 
@@ -687,24 +711,15 @@ function updateUser(userData, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const users = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
-    const userRowIndex = users.indexOf(userData.Username);
-
-    if (userRowIndex === -1) throw new Error('Không tìm thấy người dùng.');
-
-    sheet.getRange(userRowIndex + 2, 3).setValue(userData.Role);
-    sheet.getRange(userRowIndex + 2, 4).setValue(userData.Contractor);
-
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
-    const customerNameIdx = normalizedHeaders.indexOf('customer name');
-    if (customerNameIdx !== -1) {
-      sheet.getRange(userRowIndex + 2, customerNameIdx + 1).setValue(userData.CustomerName || '');
-    }
+    const updated = updateSupabaseUserByUsername_(userData.Username, {
+      role: userData.Role,
+      contractor: userData.Contractor,
+      customer_name: userData.CustomerName || ''
+    });
+    if (!updated) throw new Error('Không tìm thấy người dùng.');
 
     return 'Cập nhật người dùng thành công!';
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi cập nhật người dùng.'); }
+  } catch (e) { Logger.log(e); throw new Error('Lỗi khi cập nhật người dùng: ' + e.message); }
 }
 
 function adminResetPassword(username, sessionToken) {
@@ -712,18 +727,18 @@ function adminResetPassword(username, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const users = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
-    const userRowIndex = users.indexOf(username);
-
-    if (userRowIndex === -1) throw new Error('Không tìm thấy người dùng.');
+    const userRecord = getSupabaseUserByUsername_(username);
+    if (!userRecord) throw new Error('Không tìm thấy người dùng.');
 
     const newPassword = Math.random().toString(36).slice(-8);
-    sheet.getRange(userRowIndex + 2, 2).setValue(newPassword);
-    sheet.getRange(userRowIndex + 2, 5).setValue(new Date());
+    updateSupabaseUserByUsername_(username, {
+      password_hash: newPassword,
+      password_last_updated: new Date().toISOString()
+    });
+    clearUserSession_(username, String(userRecord.active_session_token || ''));
 
     return `Mật khẩu mới cho ${username} là: ${newPassword}`;
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi đặt lại mật khẩu.'); }
+  } catch (e) { Logger.log(e); throw new Error('Lỗi khi đặt lại mật khẩu: ' + e.message); }
 }
 
 function addNewUser(newUserData, sessionToken) {
@@ -731,35 +746,27 @@ function addNewUser(newUserData, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const users = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    const userExists = users.some(u => u === newUserData.Username);
-
-    if (userExists) throw new Error('Tên đăng nhập đã tồn tại.');
+    const existing = getSupabaseUserByUsername_(newUserData.Username);
+    if (existing) throw new Error('Tên đăng nhập đã tồn tại.');
 
     const newPassword = Math.random().toString(36).slice(-8);
     const newSecurityCode = Math.random().toString(36).slice(-6).toUpperCase();
 
-    sheet.appendRow([
-      newUserData.Username,
-      newPassword,
-      newUserData.Role,
-      newUserData.Contractor,
-      new Date(),
-      newSecurityCode,
-      '',
-      ''
-    ]);
+    insertSupabaseUser_({
+      username: newUserData.Username,
+      password_hash: newPassword,
+      role: newUserData.Role,
+      contractor: newUserData.Contractor,
+      customer_name: newUserData.CustomerName || '',
+      password_last_updated: new Date().toISOString(),
+      security_code: newSecurityCode,
+      active_session_token: null,
+      session_token_expiry: null
+    });
 
-    const newRowIndex = sheet.getLastRow();
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const normalizedHeaders = headers.map(h => String(h || '').trim().toLowerCase());
-    const customerNameIdx = normalizedHeaders.indexOf('customer name');
-    if (customerNameIdx !== -1) {
-      sheet.getRange(newRowIndex, customerNameIdx + 1).setValue(newUserData.CustomerName || '');
-    }
-
-    return `Đã tạo người dùng ${newUserData.Username} thành công.\nMật khẩu: ${newPassword}\nMã bảo mật: ${newSecurityCode}`;
+    return `Đã tạo người dùng ${newUserData.Username} thành công.
+Mật khẩu: ${newPassword}
+Mã bảo mật: ${newSecurityCode}`;
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi tạo người dùng mới: ' + e.message); }
 }
 
@@ -769,20 +776,19 @@ function deleteUser(username, sessionToken) {
   if (session.username === username) throw new Error('Bạn không thể tự xóa tài khoản của mình.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const users = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    const userRowIndex = users.indexOf(username);
+    const userRecord = getSupabaseUserByUsername_(username);
+    if (!userRecord) throw new Error('Không tìm thấy người dùng.');
 
-    if (userRowIndex === -1) throw new Error('Không tìm thấy người dùng.');
-
-    sheet.deleteRow(userRowIndex + 2);
+    deleteSupabaseUserByUsername_(username);
+    clearUserSession_(username, String(userRecord.active_session_token || ''));
     return `Đã xóa người dùng ${username} thành công!`;
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi xóa người dùng.'); }
+  } catch (e) { Logger.log(e); throw new Error('Lỗi khi xóa người dùng: ' + e.message); }
 }
 
 // =================================================================
 // KIỂM TRA THỜI GIAN ĐĂNG KÝ
 // =================================================================
+
 function checkRegistrationTime() {
   const now = new Date();
   const nowVn = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -2483,66 +2489,31 @@ function removeSessionFromCache_(token) {
   safeRemoveUserCacheKey(key);
 }
 
-function clearSessionTokenAtRow_(sheet, rowNumber, activeTokenIdx, tokenExpiryIdx) {
-  try {
-    if (!sheet || !rowNumber) return;
-    if (activeTokenIdx !== -1) {
-      sheet.getRange(rowNumber, activeTokenIdx + 1).clearContent();
-    }
-    if (tokenExpiryIdx !== -1) {
-      sheet.getRange(rowNumber, tokenExpiryIdx + 1).clearContent();
-    }
-  } catch (e) {
-    Logger.log('clearSessionTokenAtRow_ error: ' + e);
-  }
-}
-
 function refreshSessionExpiry_(username, token) {
   if (!username || !token) return;
   try {
-    const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const lastRow = userSheet.getLastRow();
-    if (lastRow < 2) return;
+    const query = SUPABASE_APP_USERS_ENDPOINT + '?select=active_session_token,session_token_expiry&username=eq.' + encodeURIComponent(username) + '&limit=1';
+    const data = supabaseRequest_(query);
+    if (!Array.isArray(data) || data.length === 0) return;
+    const user = data[0];
+    if (String(user.active_session_token == null ? '' : user.active_session_token).trim() !== token) return;
 
-    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
-    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
-
-    const usernameIdx = normalizedHeaders.indexOf('username');
-    const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
-    const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');
-
-    if (usernameIdx === -1 || activeTokenIdx === -1 || tokenExpiryIdx === -1) return;
-
-    const rowCount = lastRow - 1;
-    const targetUsername = String(username == null ? '' : username).trim();
-    const usernames = userSheet
-      .getRange(2, usernameIdx + 1, rowCount, 1)
-      .getValues()
-      .map(r => String(r[0] == null ? '' : r[0]).trim());
-
-    const userIndex = usernames.indexOf(targetUsername);
-    if (userIndex === -1) return;
-
-    const tokenCell = userSheet.getRange(userIndex + 2, activeTokenIdx + 1);
-    const storedToken = String(tokenCell.getValue() == null ? '' : tokenCell.getValue()).trim();
-    if (storedToken !== token) return;
-
-    const expiryRange = userSheet.getRange(userIndex + 2, tokenExpiryIdx + 1);
-    const currentExpiryValue = expiryRange.getValue();
     const nowMs = Date.now();
-    const halfWindowMs = (SESSION_TIMEOUT_SECONDS * 1000) / 2;
+    const currentExpiry = parseSupabaseTimestamp_(user.session_token_expiry);
     const desiredExpiry = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
+    const halfWindowMs = (SESSION_TIMEOUT_SECONDS * 1000) / 2;    
 
-    let currentExpiryMs = NaN;
-    if (currentExpiryValue instanceof Date) {
-      currentExpiryMs = currentExpiryValue.getTime();
-    } else if (currentExpiryValue) {
-      const parsed = new Date(currentExpiryValue);
-      if (!isNaN(parsed.getTime())) currentExpiryMs = parsed.getTime();
+    let shouldUpdate = false;
+    if (!currentExpiry) {
+      shouldUpdate = true;
+    } else if (currentExpiry.getTime() - nowMs < halfWindowMs) {
+      shouldUpdate = true;
     }
 
-    if (isNaN(currentExpiryMs) || currentExpiryMs - nowMs < halfWindowMs) {
-      expiryRange.setValue(desiredExpiry);
+    if (shouldUpdate) {
+      updateSupabaseUserByUsername_(username, {
+        session_token_expiry: desiredExpiry.toISOString()
+      });
     }
   } catch (e) {
     Logger.log('refreshSessionExpiry_ error: ' + e);
@@ -2553,64 +2524,26 @@ function refreshSessionExpiry_(username, token) {
 function lookupSessionFromSheet(sessionToken) {
   if (!sessionToken) return null;
   try {
-    const userSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(USERS_SHEET);
-    const lastRow = userSheet.getLastRow();
-    if (lastRow < 2) return null;
+    const query = SUPABASE_APP_USERS_ENDPOINT + '?select=username,role,contractor,customer_name,active_session_token,session_token_expiry&active_session_token=eq.' + encodeURIComponent(sessionToken) + '&limit=1';
+    const data = supabaseRequest_(query);
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const user = data[0];
 
-
-    const headerRow = userSheet.getRange(1, 1, 1, userSheet.getLastColumn()).getValues()[0] || [];
-    const normalizedHeaders = headerRow.map(h => String(h || '').trim().toLowerCase());
-
-    const usernameIdx = normalizedHeaders.indexOf('username');
-    const roleIdx = normalizedHeaders.indexOf('role');
-    const contractorIdx = normalizedHeaders.indexOf('contractor');
-    const activeTokenIdx = normalizedHeaders.indexOf('activesessiontoken');
-    const tokenExpiryIdx = normalizedHeaders.indexOf('sessiontokenexpiry');    
-    const customerNameIdx = normalizedHeaders.indexOf('customer name');
-
-    if (usernameIdx === -1 || roleIdx === -1 || contractorIdx === -1 ||
-        activeTokenIdx === -1 || tokenExpiryIdx === -1) {
-      Logger.log('lookupSessionFromSheet missing required columns.');
+    const expiryDate = parseSupabaseTimestamp_(user.session_token_expiry);
+    const nowMs = Date.now();
+    if (!expiryDate || nowMs >= expiryDate.getTime()) {
+      clearUserSession_(user.username, sessionToken);
       return null;
     }
 
-    const rowCount = lastRow - 1;
-    const data = userSheet.getRange(2, 1, rowCount, headerRow.length).getValues();
-    const nowMs = Date.now();
-
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      const tk = String(row[activeTokenIdx] == null ? '' : row[activeTokenIdx]).trim();
-      if (tk !== sessionToken) continue;
-
-      const expiryRaw = row[tokenExpiryIdx];
-      let expiryDate = null;
-      if (expiryRaw instanceof Date) {
-        expiryDate = expiryRaw;
-      } else if (expiryRaw) {
-        const parsedExpiry = new Date(expiryRaw);
-        if (!isNaN(parsedExpiry.getTime())) {
-          expiryDate = parsedExpiry;
-        }
-      }
-
-      if (!expiryDate || nowMs >= expiryDate.getTime()) {
-        clearSessionTokenAtRow_(userSheet, i + 2, activeTokenIdx, tokenExpiryIdx);
-        return null;
-      }
-
-      const rawCustomer = customerNameIdx !== -1 ? row[customerNameIdx] : '';
-      const customerName = String(rawCustomer == null ? '' : rawCustomer).trim();
-
-      return {
-        isLoggedIn: true,
-        username: String(row[usernameIdx] == null ? '' : row[usernameIdx]).trim(),
-        role: String(row[roleIdx] == null ? '' : row[roleIdx]).trim(),
-        contractor: String(row[contractorIdx] == null ? '' : row[contractorIdx]).trim(),
-        customerName: customerName,
-        token: tk
-      };      
-    }
+    return {
+      isLoggedIn: true,
+      username: String(user.username == null ? '' : user.username).trim(),
+      role: String(user.role == null ? '' : user.role).trim(),
+      contractor: String(user.contractor == null ? '' : user.contractor).trim(),
+      customerName: String(user.customer_name == null ? '' : user.customer_name).trim(),
+      token: sessionToken
+    };
   } catch (e) {
     Logger.log('lookupSessionFromSheet error: ' + e);
   }
@@ -2620,6 +2553,7 @@ function lookupSessionFromSheet(sessionToken) {
 // ==========================
 // THAY THẾ validateSession()
 // ==========================
+
 function validateSession(sessionToken) {
   const token = String(sessionToken == null ? '' : sessionToken).trim();
   if (!token) {
@@ -2804,20 +2738,23 @@ function deleteContracts(ids, sessionToken) {
   return `Đã xoá ${rowsToDelete.length} hợp đồng.`;
 }
 
-//Lấy danh sách Contractor từ sheet Users (dropdown “Transportion Company” ở trang Hợp đồng)
+//Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
 function getContractorOptions() {
-  const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh  = ss.getSheetByName(USERS_SHEET);
-  const n   = sh.getLastRow();
-  if (n < 2) return [];
-  // Cột Contractor là cột D (index 4) theo cấu trúc bạn đang dùng
-  const vals = sh.getRange(2, 4, n - 1, 1).getValues().flat();
-  const set  = new Set();
-  vals.forEach(v => {
-    const s = String(v || '').trim();
-    if (s) set.add(s);
-  });
-  return Array.from(set).sort();
+  try {
+    const data = supabaseRequest_(
+      SUPABASE_APP_USERS_ENDPOINT + '?select=contractor&contractor=not.is.null'
+    );
+    if (!Array.isArray(data)) return [];
+    const set = new Set();
+    data.forEach(row => {
+      const value = String(row.contractor == null ? '' : row.contractor).trim();
+      if (value) set.add(value);
+    });
+    return Array.from(set).sort();
+  } catch (e) {
+    Logger.log('getContractorOptions error: ' + e);
+    return [];
+  }
 }
 
 
