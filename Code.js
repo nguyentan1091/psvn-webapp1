@@ -10,11 +10,7 @@ const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Co
 const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
 const XPPL_DB_SHEET = 'XPPL-Database';
 const XPPL_DB_HEADERS = [
-  'ID','No.','W.ID','Weighing Type','Ticket ID','Truck No','Date In','Time In','Date Out','Time Out',
-  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','Customer Name','CargoLot No',
-  'Cargo Company','Cargo Name','PackUnit','PackQtt','Driver Name','ID/Passport','Contract No','Invoice No',
-  'Co No','Order No','Plant','OVS_DMT','Trailer No','Truck Country','Truck Type','WS. Code','Note',
-  'CreateUser','Transportation Company','Changed Date','Changed Time','Username'
+  'ID','No.','W.ID','WeighingType','TicketID','TruckNo','DateIn','TimeIn','DateOut','TimeOut','WeightIn','WeightOut','NetWeight','ProductName','CoalSource','ProductionCode','CustomerName','DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo','ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','TrailerNo','TruckCountry','TruckType','WeightStationCode','Note','CreateUser','TransportationCompany','ChangedDate','ChangedTime','Username'
 ];
 // === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
 // ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
@@ -23,41 +19,42 @@ const XPPL_DB_COLUMN_TYPES = {
   'ID': 'text',
   'No.': 'text',
   'W.ID': 'text',
-  'Weighing Type': 'text',
-  'Ticket ID': 'text',
-  'Truck No': 'text',
-  'Date In': 'date',
-  'Time In': 'time',
-  'Date Out': 'date',
-  'Time Out': 'time',
-  'Weight In': 'text',
-  'Weight Out': 'text',
-  'Net Weight': 'text',
-  'Product Name': 'text',
+  'WeighingType': 'text',
+  'TicketID': 'text',
+  'TruckNo': 'text',
+  'DateIn': 'date',
+  'TimeIn': 'time',
+  'DateOut': 'date',
+  'TimeOut': 'time',
+  'WeightIn': 'text',
+  'WeightOut': 'text',
+  'NetWeight': 'text',
+  'ProductName': 'text',
   'CoalSource': 'text',
-  'Customer Name': 'text',
-  'CargoLot No': 'text',
-  'Cargo Company': 'text',
-  'Cargo Name': 'text',  
+  'ProductionCode': 'text',
+  'CustomerName': 'text',
+  'DriverName': 'text',
+  'Id/Passport': 'text',
+  'CargoLotNo': 'text',
+  'CargoName': 'text',
+  'CargoCompany': 'text',
   'PackUnit': 'text',
   'PackQtt': 'text',
-  'Driver Name': 'text',
-  'ID/Passport': 'text',
-  'Contract No': 'text',
-  'Invoice No': 'text',
-  'Co No': 'text',
-  'Order No': 'text',
-  'Plant': 'text',  
+  'OrderNo': 'text',
+  'ContractNo': 'text',
+  'InvoiceNo': 'text',
+  'CoNo': 'text',
   'OVS_DMT': 'text',
-  'Trailer No': 'text',
-  'Truck Country': 'text',
-  'Truck Type': 'text',
-  'WS. Code': 'text',
+  'Plant': 'text',
+  'TrailerNo': 'text',
+  'TruckCountry': 'text',
+  'TruckType': 'text',
+  'WeightStationCode': 'text',
   'Note': 'text',
   'CreateUser': 'text',
-  'Transportation Company': 'text',
-  'Changed Date': 'date',
-  'Changed Time': 'time',
+  'TransportationCompany': 'text',
+  'ChangedDate': 'date',
+  'ChangedTime': 'time',
   'Username': 'text'
 };
 
@@ -410,11 +407,11 @@ function formatRowForClient_(rowArray, headers) {
   for (var i=0;i<headers.length;i++){
     var key = headers[i];
     var val = rowArray[i];
-    if (key === 'Register Date' || key === 'Date In' || key === 'Date Out' || key === 'Changed Date') {
+    if (key === 'Register Date' || key === 'DateIn' || key === 'DateOut' || key === 'ChangedDate') {
       out[key] = formatDateForClient(val);
       continue;
     }
-    if (key === 'Time' || key === 'Time In' || key === 'Time Out' || key === 'Changed Time') {
+    if (key === 'Time' || key === 'TimeIn' || key === 'TimeOut' || key === 'ChangedTime') {
       out[key] = formatTimeForClient(val);
       continue;
     }
@@ -3247,7 +3244,7 @@ function saveXpplWeighingData(rows, sessionToken) {
   }
 
   const toSave = rows.map(r => {
-    const key = String(r['Customer Name']||'').trim() + '|' + String(r['Contract No']||'').trim();
+    const key = String(r['CustomerName']||'').trim() + '|' + String(r['ContractNo']||'').trim();
     if (validSet.size && !validSet.has(key)) {
       throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
     }
@@ -3284,10 +3281,10 @@ function getXpplWeighingData(filter, sessionToken) {
   }
 
   const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
-  const idxDate = XPPL_DB_HEADERS.indexOf('Date Out');
-  const idxContract = XPPL_DB_HEADERS.indexOf('Contract No');
-  const idxCustomer = XPPL_DB_HEADERS.indexOf('Customer Name');
-  const idxNet = XPPL_DB_HEADERS.indexOf('Net Weight');
+  const idxDate = XPPL_DB_HEADERS.indexOf('DateOut');
+  const idxContract = XPPL_DB_HEADERS.indexOf('ContractNo');
+  const idxCustomer = XPPL_DB_HEADERS.indexOf('CustomerName');
+  const idxNet = XPPL_DB_HEADERS.indexOf('NetWeight');
 
   const filterContract = s(filter && filter.contractNo);
   const filterCustomer = s(filter && filter.customerName);
@@ -3342,12 +3339,12 @@ function matchTransportionCompanies(filter, sessionToken) {
   if (lr < 2) return 'Không có dữ liệu.';
 
   const headers = XPPL_DB_HEADERS;
-  const idxTruck = headers.indexOf('Truck No');
-  const idxComp = headers.indexOf('Transportation Company');
-  const idxDate = headers.indexOf('Changed Date');
-  const idxTime = headers.indexOf('Changed Time');
+  const idxTruck = headers.indexOf('TruckNo');
+  const idxComp = headers.indexOf('TransportationCompany');
+  const idxDate = headers.indexOf('ChangedDate');
+  const idxTime = headers.indexOf('ChangedTime');
   const idxUser = headers.indexOf('Username');
-  const idxDateOut = headers.indexOf('Date Out');
+  const idxDateOut = headers.indexOf('DateOut');
 
   const f = filter || {};
   const from = _toDateKey(f.dateFrom);
@@ -3399,10 +3396,10 @@ function matchTransportionCompanies(filter, sessionToken) {
 
 
 function formatWeighResultCell_(header, value) {
-  if (header === 'Register Date' || header === 'Date In' || header === 'Date Out' || header === 'Changed Date') {
+  if (header === 'Register Date' || header === 'DateIn' || header === 'DateOut' || header === 'ChangedDate') {
     return formatDateForClient(value);
   }
-  if (header === 'Time' || header === 'Time In' || header === 'Time Out' || header === 'Changed Time') {
+  if (header === 'Time' || header === 'TimeIn' || header === 'TimeOut' || header === 'ChangedTime') {
     return formatTimeForClient(value);
   }
   const v = stripLeadingApostrophe(value);
@@ -3492,11 +3489,11 @@ function getWeighResultData(params) {
    return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
-  const idxDateOut = headers.indexOf('Date Out');
-  const idxContract = headers.indexOf('Contract No');
-  const idxCompany = headers.indexOf('Transportation Company');
-  const idxCustomer = headers.indexOf('Customer Name');
-  const idxNetWeight = headers.indexOf('Net Weight');
+  const idxDateOut = headers.indexOf('DateOut');
+  const idxContract = headers.indexOf('ContractNo');
+  const idxCompany = headers.indexOf('TransportationCompany');
+  const idxCustomer = headers.indexOf('CustomerName');
+  const idxNetWeight = headers.indexOf('NetWeight');
   if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
    return buildEmpty(isUser ? assignedCustomerNames : null);
   }
@@ -3707,7 +3704,7 @@ function getWeighResultData(params) {
 
 function updateWeighResultCompany(payload, sessionToken) {
   const user = requireAdmin_(sessionToken);
-  const { ID, 'Transportation Company': company } = payload || {};
+  const { ID, TransportationCompany: company } = payload || {};
   if (!ID) throw new Error('Thiếu ID.');
 
   const ss = SpreadsheetApp.openById(XPPL_DB_ID);
@@ -3719,9 +3716,9 @@ function updateWeighResultCompany(payload, sessionToken) {
   const rowIdx = ids.indexOf(ID);
   if (rowIdx === -1) throw new Error('Không tìm thấy ID.');
 
-  const idxComp = XPPL_DB_HEADERS.indexOf('Transportation Company') + 1;
-  const idxDate = XPPL_DB_HEADERS.indexOf('Changed Date') + 1;
-  const idxTime = XPPL_DB_HEADERS.indexOf('Changed Time') + 1;
+  const idxComp = XPPL_DB_HEADERS.indexOf('TransportationCompany') + 1;
+  const idxDate = XPPL_DB_HEADERS.indexOf('ChangedDate') + 1;
+  const idxTime = XPPL_DB_HEADERS.indexOf('ChangedTime') + 1;
   const idxUser = XPPL_DB_HEADERS.indexOf('Username') + 1;
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const now = new Date();
