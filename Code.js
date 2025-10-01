@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
@@ -104,9 +104,24 @@ const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
 
 // ================= SUPABASE CONFIGURATION =================
-const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
+const SUPABASE_URL = 'https://medlgvtmhujuqdvceaoz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lZGxndnRtaHVqdXFkdmNlYW96Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODg5NzY5NSwiZXhwIjoyMDc0NDczNjk1fQ.h-hVavhpp_NbJ4tiaFTPJBQsdS0SNfpndQeGp-eyFAo';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
+const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
+const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
+const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
+const SUPABASE_USER_MISS_CACHE_TTL_SECONDS = 45;
+const SUPABASE_USER_SELECT_FIELDS = [
+  'username',
+  'password_hash',
+  'role',
+  'contractor',
+  'customer_name',
+  'active_session_token',
+  'session_token_expiry',
+  'security_code',
+  'password_last_updated'
+];
 
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
@@ -170,54 +185,116 @@ function supabaseRequest_(path, options) {
   throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
 }
 
-function getSupabaseUserByUsername_(username) {
-  if (!username) return null;
-  const query = '?select=*&username=eq.' + encodeURIComponent(username) + '&limit=1';
+function buildSupabaseUserCacheKey_(username) {
+  const normalized = String(username == null ? '' : username).trim().toLowerCase();
+  return normalized ? SUPABASE_USER_CACHE_PREFIX + normalized : '';
+}
+
+function buildSupabaseUserMissCacheKey_(username) {
+  const normalized = String(username == null ? '' : username).trim().toLowerCase();
+  return normalized ? SUPABASE_USER_MISS_CACHE_PREFIX + normalized : '';
+}
+
+function cacheSupabaseUserRecord_(username, record) {
+  const key = buildSupabaseUserCacheKey_(username);
+  if (!key || !record || typeof record !== 'object') return;
+  if (!Object.prototype.hasOwnProperty.call(record, 'password_hash')) return;
+  safeScriptCachePutJSON_(key, record, SUPABASE_USER_CACHE_TTL_SECONDS);
+  removeSupabaseUserMissCache_(username);
+}
+
+function removeSupabaseUserCache_(username) {
+  const key = buildSupabaseUserCacheKey_(username);
+  if (!key) return;
+  safeScriptCacheRemove_(key);
+  removeSupabaseUserMissCache_(username);
+}
+
+function getSupabaseUserByUsername_(username, options) {
+  const normalized = String(username == null ? '' : username).trim();
+  if (!normalized) return null;
+
+  const opts = options || {};
+  const cacheKey = buildSupabaseUserCacheKey_(normalized);
+  const missKey = buildSupabaseUserMissCacheKey_(normalized);
+  if (!opts.forceRefresh && missKey) {
+    const missHit = safeScriptCacheGetJSON_(missKey);
+    if (missHit) return null;
+  }
+  if (!opts.forceRefresh && cacheKey) {
+    const cached = safeScriptCacheGetJSON_(cacheKey);
+    if (cached) return cached;
+  }
+
+  const selectClause = encodeURIComponent(SUPABASE_USER_SELECT_FIELDS.join(','));
+  const query = '?select=' + selectClause + '&username=eq.' + encodeURIComponent(normalized) + '&limit=1';
   const data = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT + query);
   if (Array.isArray(data) && data.length > 0) {
-    return data[0];
+    const record = data[0];
+    cacheSupabaseUserRecord_(normalized, record);
+    return record;
+  }
+  if (cacheKey) {
+    safeScriptCacheRemove_(cacheKey);
+  }
+  if (missKey) {
+    safeScriptCachePutJSON_(missKey, 1, SUPABASE_USER_MISS_CACHE_TTL_SECONDS);
   }
   return null;
 }
 
-function updateSupabaseUserByUsername_(username, payload) {
-  if (!username) throw new Error('Username is required');
-  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
-  const result = supabaseRequest_(query, {
+function updateSupabaseUserByUsername_(username, payload, options) {
+  const normalized = String(username == null ? '' : username).trim();
+  if (!normalized) throw new Error('Username is required');
+  const opts = options || {};
+  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(normalized);
+  removeSupabaseUserCache_(normalized);
+  const requestOptions = {
     method: 'PATCH',
     payload: payload,
-    headers: { Prefer: 'return=representation' }
-  });
+    headers: Object.assign(
+      { Prefer: opts.returnMinimal ? 'return=minimal' : 'return=representation' },
+      opts.headers || {}
+    )
+  };
+  const result = supabaseRequest_(query, requestOptions);
+  if (opts.returnMinimal) {
+    if (opts.cacheRecord && typeof opts.cacheRecord === 'object') {
+      cacheSupabaseUserRecord_(normalized, opts.cacheRecord);
+      return opts.cacheRecord;
+    }
+    return null;
+  }
   if (Array.isArray(result) && result.length > 0) {
-    return result[0];
+    const record = result[0];
+    cacheSupabaseUserRecord_(normalized, record);
+    return record;
   }
   return null;
 }
 
 function insertSupabaseUser_(payload) {
-  return supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT, {
+  const result = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT, {
     method: 'POST',
     payload: payload,
     headers: { Prefer: 'return=representation' }
   });
+  if (Array.isArray(result) && result.length > 0 && result[0].username) {
+    cacheSupabaseUserRecord_(result[0].username, result[0]);
+  }
+  return result;  
 }
 
 function deleteSupabaseUserByUsername_(username) {
-  if (!username) throw new Error('Username is required');
-  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
+  const normalized = String(username == null ? '' : username).trim();
+  if (!normalized) throw new Error('Username is required');
+  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(normalized);
+  removeSupabaseUserCache_(normalized);
   supabaseRequest_(query, { method: 'DELETE' });
 }
 
-function clearUserSession_(username, token) {
-  if (!username) return;
-  try {
-    updateSupabaseUserByUsername_(username, {
-      active_session_token: null,
-      session_token_expiry: null
-    });
-  } catch (e) {
-    Logger.log('clearUserSession_ error: ' + e);
-  }
+function clearUserSession_(username, token, options) {
+  const opts = options || {};
   if (token) {
     try {
       removeSessionFromCache_(token);
@@ -225,19 +302,37 @@ function clearUserSession_(username, token) {
       Logger.log('clearUserSession_ cache error: ' + cacheError);
     }
   }
+  if (!username || opts.skipSupabaseUpdate) return;
+  try {
+    updateSupabaseUserByUsername_(username, {
+      active_session_token: null,
+      session_token_expiry: null
+    }, { returnMinimal: true });
+  } catch (e) {
+    Logger.log('clearUserSession_ error: ' + e);
+  }  
 }
 
 function clearUserSessionByToken_(token) {
   if (!token) return;
   try {
     const query = SUPABASE_APP_USERS_ENDPOINT + '?active_session_token=eq.' + encodeURIComponent(token);
-    supabaseRequest_(query, {
+    const result = supabaseRequest_(query, {
       method: 'PATCH',
       payload: {
         active_session_token: null,
         session_token_expiry: null
-      }
+      },
+      headers: { Prefer: 'return=representation' }
     });
+    if (Array.isArray(result)) {
+      result.forEach(function (row) {
+        if (row && row.username) {
+          removeSupabaseUserCache_(row.username);
+          cacheSupabaseUserRecord_(row.username, row);
+        }
+      });
+    }    
   } catch (e) {
     Logger.log('clearUserSessionByToken_ error: ' + e);
   }
@@ -561,7 +656,7 @@ function checkLogin(credentials) {
       if (tokenExpiry && nowMs < tokenExpiry.getTime()) {
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
-      clearUserSession_(username, activeToken);
+      clearUserSession_(username, activeToken, { skipSupabaseUpdate: true });
     }
 
     const customerName = String(userRecord.customer_name == null ? '' : userRecord.customer_name).trim();
@@ -573,10 +668,21 @@ function checkLogin(credentials) {
     const newSessionToken = Utilities.getUuid();
     const tokenExpiryDate = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
 
-    updateSupabaseUserByUsername_(username, {
+    const updatePayload = {
       active_session_token: newSessionToken,
       session_token_expiry: tokenExpiryDate.toISOString()
-    });
+    };
+
+    const cachedRecord = Object.assign({}, userRecord, updatePayload);
+    try {
+      updateSupabaseUserByUsername_(username, updatePayload, {
+        returnMinimal: true,
+        cacheRecord: cachedRecord
+      });
+    } catch (updateError) {
+      clearUserSession_(username, activeToken);
+      throw updateError;
+    }
 
     const userRole = userRecord.role;
     const canonicalUsername = String(userRecord.username == null ? '' : userRecord.username).trim();
@@ -652,10 +758,14 @@ function changePassword(passwords, sessionToken) {
       throw new Error('Mật khẩu hiện tại không đúng.');
     }
 
-    updateSupabaseUserByUsername_(session.username, {
+    const updatedRecord = Object.assign({}, userRecord, {
       password_hash: newPassword,
       password_last_updated: new Date().toISOString()
     });
+    updateSupabaseUserByUsername_(session.username, {
+      password_hash: newPassword,
+      password_last_updated: updatedRecord.password_last_updated
+    }, { returnMinimal: true, cacheRecord: updatedRecord });
 
     return 'Đổi mật khẩu thành công!';
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi đổi mật khẩu: ' + e.message); }
@@ -671,10 +781,14 @@ function resetPassword(data) {
       throw new Error('Mã bảo mật không chính xác.');
     }
 
-    updateSupabaseUserByUsername_(username, {
+    const updatedRecord = Object.assign({}, userRecord, {
       password_hash: newPassword,
       password_last_updated: new Date().toISOString()
     });
+    updateSupabaseUserByUsername_(username, {
+      password_hash: newPassword,
+      password_last_updated: updatedRecord.password_last_updated
+    }, { returnMinimal: true, cacheRecord: updatedRecord });    
     clearUserSession_(username, String(userRecord.active_session_token || ''));
 
     return 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.';
@@ -732,10 +846,14 @@ function adminResetPassword(username, sessionToken) {
     if (!userRecord) throw new Error('Không tìm thấy người dùng.');
 
     const newPassword = Math.random().toString(36).slice(-8);
-    updateSupabaseUserByUsername_(username, {
+    const updatedRecord = Object.assign({}, userRecord, {
       password_hash: newPassword,
       password_last_updated: new Date().toISOString()
     });
+    updateSupabaseUserByUsername_(username, {
+      password_hash: newPassword,
+      password_last_updated: updatedRecord.password_last_updated
+    }, { returnMinimal: true, cacheRecord: updatedRecord });    
     clearUserSession_(username, String(userRecord.active_session_token || ''));
 
     return `Mật khẩu mới cho ${username} là: ${newPassword}`;
@@ -2374,6 +2492,21 @@ function safeScriptCachePutJSON_(key, obj, seconds) {
   }
 }
 
+function safeScriptCacheRemove_(key) {
+  if (!key) return;
+  try {
+    CacheService.getScriptCache().remove(key);
+  } catch (e) {
+    Logger.log('Script cache remove error: ' + e);
+  }
+}
+
+function removeSupabaseUserMissCache_(username) {
+  const missKey = buildSupabaseUserMissCacheKey_(username);
+  if (!missKey) return;
+  safeScriptCacheRemove_(missKey);
+}
+
 function getSheetCacheVersion_(sheetName) {
   if (!sheetName) return String(Date.now());
   try {
@@ -2497,6 +2630,7 @@ function refreshSessionExpiry_(username, token) {
     const data = supabaseRequest_(query);
     if (!Array.isArray(data) || data.length === 0) return;
     const user = data[0];
+    cacheSupabaseUserRecord_(username, user);    
     if (String(user.active_session_token == null ? '' : user.active_session_token).trim() !== token) return;
 
     const nowMs = Date.now();
@@ -2514,7 +2648,7 @@ function refreshSessionExpiry_(username, token) {
     if (shouldUpdate) {
       updateSupabaseUserByUsername_(username, {
         session_token_expiry: desiredExpiry.toISOString()
-      });
+      }, { returnMinimal: true });
     }
   } catch (e) {
     Logger.log('refreshSessionExpiry_ error: ' + e);
@@ -2529,6 +2663,9 @@ function lookupSessionFromSheet(sessionToken) {
     const data = supabaseRequest_(query);
     if (!Array.isArray(data) || data.length === 0) return null;
     const user = data[0];
+    if (user && user.username) {
+      cacheSupabaseUserRecord_(user.username, user);
+    }    
 
     const expiryDate = parseSupabaseTimestamp_(user.session_token_expiry);
     const nowMs = Date.now();
