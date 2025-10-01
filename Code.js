@@ -1,3756 +1,6130 @@
+<!-- jQuery -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<!-- Bootstrap 5 JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- DataTables JS -->
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+<!-- DataTables Select JS -->
+<script src="https://cdn.datatables.net/select/1.7.0/js/dataTables.select.min.js"></script>
+<!-- SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<!-- SheetJS for Excel file reading -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<script>
 // =================================================================
-// CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
-const DATA_SHEET = 'VehicleData';
-const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
-const HISTORY_LOGIN_SHEET = 'History-login';
-const CONTRACT_SHEET = 'ContractData';
-const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Company', 'Status'];
-// === XPPL Weighing Station database ===
-const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
-const XPPL_DB_SHEET = 'XPPL-Database';
-const XPPL_DB_HEADERS = [
-  'ID','No.','W.ID','Weighing Type','Ticket ID','Truck No','Date In','Time In','Date Out','Time Out',
-  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','Customer Name','CargoLot No',
-  'Cargo Company','Cargo Name','PackUnit','PackQtt','Driver Name','ID/Passport','Contract No','Invoice No',
-  'Co No','Order No','Plant','OVS_DMT','Trailer No','Truck Country','Truck Type','WS. Code','Note',
-  'CreateUser','Transportation Company','Changed Date','Changed Time','Username'
-];
-// === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
-// ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
-const XPPL_TEMPLATE_ID = '1p8n8ffm81NaxSWB5F7Wn1GhsaBrQ21XttaWmX5yvBl4';
-const XPPL_DB_COLUMN_TYPES = {
-  'ID': 'text',
-  'No.': 'text',
-  'W.ID': 'text',
-  'Weighing Type': 'text',
-  'Ticket ID': 'text',
-  'Truck No': 'text',
-  'Date In': 'date',
-  'Time In': 'time',
-  'Date Out': 'date',
-  'Time Out': 'time',
-  'Weight In': 'text',
-  'Weight Out': 'text',
-  'Net Weight': 'text',
-  'Product Name': 'text',
-  'CoalSource': 'text',
-  'Customer Name': 'text',
-  'CargoLot No': 'text',
-  'Cargo Company': 'text',
-  'Cargo Name': 'text',  
-  'PackUnit': 'text',
-  'PackQtt': 'text',
-  'Driver Name': 'text',
-  'ID/Passport': 'text',
-  'Contract No': 'text',
-  'Invoice No': 'text',
-  'Co No': 'text',
-  'Order No': 'text',
-  'Plant': 'text',  
-  'OVS_DMT': 'text',
-  'Trailer No': 'text',
-  'Truck Country': 'text',
-  'Truck Type': 'text',
-  'WS. Code': 'text',
-  'Note': 'text',
-  'CreateUser': 'text',
-  'Transportation Company': 'text',
-  'Changed Date': 'date',
-  'Changed Time': 'time',
-  'Username': 'text'
-};
+// GLOBAL VARIABLES & INITIALIZATION
+// =================================================================
+let userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+let inactivityTimer;
+let registeredVehicleTable, totalListTable, usersTable;
+let wrResultTable, wrUnknownTable;
+let previewDataTable, totalListPreviewTable;
+let previewTableData = [], totalListPreviewData = [];
+let allowedCompanies = [];
+let currentLang = 'en'; // Ngôn ngữ mặc định
+let $loaderWrapper = null;
+let $appContainer = null;
+let loginTemplateHTML = '';
+let loginFallbackTimer = null;
+let sessionCheckCompleted = false;
 
-/** ================== XPPL EXPORT – constants ================== **/
-const XPPL_TEMP_PREFIX = 'XPPL_TMP_'; // prefix cho file tạm
+const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
+const SESSION_STORAGE_KEY = 'psvn_userSession';
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_DELAY = 700;
+const MAX_RETRY_DELAY = 5000;
 
-// Các alias cho Named Range / Marker
-const XPPL_NR_ALIASES = {
-  SHEET:        ['Data','DATA','Sheet1'],
-  REG_DATE:     ['NR_REG_DATE','REG_DATE'],
-  CUSTOMER:     ['NR_CUSTOMER','CUSTOMER','CUSTOMER_CODE','CustomerCode'],
-  CONTRACT_NO:  ['NR_CONTRACT_NO','CONTRACT_NO','Contract no'],
-  TOTAL_TRUCK:  ['NR_TOTAL_TRUCK','TOTAL_TRUCK'],
-  TABLE_START:  ['NR_TABLE_START','TABLE_START']
-};
+let wrReloadTimer = null;
 
+let serverBusyToastEl = null;
+let serverBusyToastTimer = null;
 
-// Thứ tự cột cần đổ vào bảng (sau cột No)
-const XPPL_TABLE_COLUMNS = [
-  'Truck Plate',           // B
-  'Country',               // C
-  'Wheel',                 // D
-  'Trailer Plate',         // E
-  'Driver Name',           // F
-  'ID/Passport',           // G
-  'Phone number',          // H
-  'Transportion Company',  // I
-  'Subcontractor'          // J
-];
-
-
-const MAX_LOGIN_ATTEMPTS = 10;
-const LOCKOUT_DURATION_1 = 10 * 60 * 1000; // 10 minutes
-const LOCKOUT_DURATION_2 = 60 * 60 * 1000; // 1 hour
-const SESSION_TIMEOUT_SECONDS = 30 * 60; // 30 minutes
-
-// Default supervision account configuration
-const SUPERVISION_DEFAULT_USERNAME = 'LA';
-const SUPERVISION_DEFAULT_PASSWORD = 'CRLF@LA111';
-const SUPERVISION_DEFAULT_ROLE = 'User-Supervision';
-
-const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
-const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
-
-// ================= SUPABASE CONFIGURATION =================
-const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
-const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
-
-function buildSupabaseUrl_(path) {
-  const base = SUPABASE_URL.replace(/\/$/, '');
-  if (!path) return base;
-  return base + (path[0] === '/' ? path : '/' + path);
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', handleStorageEvent);
 }
 
-function supabaseRequest_(path, options) {
-  const opts = options || {};
-  const method = (opts.method || 'GET').toUpperCase();
-  const headers = Object.assign(
-    {
-      apikey: SUPABASE_KEY,
-      Authorization: 'Bearer ' + SUPABASE_KEY
-    },
-    opts.headers || {}
-  );
+function parseStoredSession(raw) {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.isLoggedIn && parsed.token) {
+            return parsed;
+        }
+    } catch (err) {
+        // ignore and fall through to clear
+    }
+    return null;
+}
 
-  if (method !== 'GET' && !headers['Content-Type'] && !headers['content-type']) {
-    headers['Content-Type'] = 'application/json';
+function getStoredSession() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        const parsed = parseStoredSession(raw);
+        if (parsed) {
+            return parsed;
+        }        
+    } catch (err) {
+        clearStoredSession();
+    }
+
+    try {
+        const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+        const parsed = parseStoredSession(raw);
+        if (parsed) {
+            persistUserSession(parsed, { persistLocal: false });
+            return parsed;
+        }
+    } catch (err) {
+        clearStoredSession({ persistLocal: true });
+    }
+
+    return null;
+}
+
+function persistUserSession(session, options = {}) {
+    const persistLocal = options.persistLocal !== false;
+    if (session && session.isLoggedIn && session.token) {
+        const serialized = JSON.stringify(session);      
+        try {
+            sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
+        } catch (err) {
+            // Ignore storage errors (e.g., private mode)
+        }
+        if (persistLocal) {
+            try {
+                localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+            } catch (err) {
+                // Ignore storage errors
+            }
+        }        
+    } else {
+        clearStoredSession({ persistLocal });
+    }
+}
+
+function clearStoredSession(options = {}) {
+    const persistLocal = options.persistLocal !== false;
+    try {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (err) { /* ignore */ }
+    if (persistLocal) {
+        try {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+        } catch (err) { /* ignore */ }
+    }
+}
+
+function setSessionFlag(options = {}) {
+    const persistLocal = options.persistLocal !== false;
+    try {
+        sessionStorage.setItem(SESSION_FLAG_KEY, '1');
+    } catch (err) { /* ignore */ }
+    if (persistLocal) {
+        try {
+            localStorage.setItem(SESSION_FLAG_KEY, '1');
+        } catch (err) { /* ignore */ }
+    }
+}
+
+function clearSessionFlag(options = {}) {
+    const persistLocal = options.persistLocal !== false;
+    try {
+        sessionStorage.removeItem(SESSION_FLAG_KEY);
+    } catch (err) { /* ignore */ }
+    if (persistLocal) {
+        try {
+            localStorage.removeItem(SESSION_FLAG_KEY);
+        } catch (err) { /* ignore */ }
+    }
+}
+
+function hasStoredSessionFlag() {
+    try {
+        if (sessionStorage.getItem(SESSION_FLAG_KEY)) {
+            return true;
+        }
+    } catch (err) { /* ignore */ }
+    try {
+        return !!localStorage.getItem(SESSION_FLAG_KEY);
+    } catch (err) {
+        return false;
+    }
+}
+
+function handleStorageEvent(event) {
+    if (!event) return;
+
+    if (event.key === SESSION_STORAGE_KEY) {
+        const newValue = event.newValue;
+        if (!newValue) {
+            clearStoredSession({ persistLocal: false });
+            clearSessionFlag({ persistLocal: false });
+            if (userSession && userSession.isLoggedIn) {
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                if (typeof loadLoginPage === 'function') {
+                    showLoader();
+                    loadLoginPage();
+                } else {
+                    window.location.reload();
+                }
+            }
+            return;
+        }
+
+        const parsed = parseStoredSession(newValue);
+        if (!parsed) return;
+
+        persistUserSession(parsed, { persistLocal: false });
+        setSessionFlag({ persistLocal: false });
+        const wasLoggedIn = userSession && userSession.isLoggedIn;
+        userSession = parsed;
+        if (!wasLoggedIn && typeof initializeApp === 'function') {
+            initializeApp(parsed.token);
+        }
+        return;
+    }
+
+    if (event.key === SESSION_FLAG_KEY && !event.newValue) {
+        clearSessionFlag({ persistLocal: false });
+    }    
+}
+
+function ensureToastContainer() {
+    let container = document.getElementById('app-toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'app-toast-container';
+        container.setAttribute('role', 'status');
+        container.setAttribute('aria-live', 'polite');
+        const parent = document.body || document.documentElement;
+        if (!parent) return null;
+        parent.appendChild(container);
+    }
+    return container;
+}
+
+function closeServerBusyToast(immediate = false) {
+    if (!serverBusyToastEl) return;
+    const toast = serverBusyToastEl;
+    if (serverBusyToastTimer) {
+        clearTimeout(serverBusyToastTimer);
+        serverBusyToastTimer = null;
+    }
+
+    const remove = () => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+        if (serverBusyToastEl === toast) {
+            serverBusyToastEl = null;
+        }
+    };
+
+    toast.classList.remove('show');
+    toast.classList.add('closing');
+
+    if (immediate) {
+        remove();
+        return;
+    }
+
+    const handleTransitionEnd = function (evt) {
+        if (evt.target !== toast) return;
+        toast.removeEventListener('transitionend', handleTransitionEnd);
+        remove();
+    };
+
+    toast.addEventListener('transitionend', handleTransitionEnd);
+    setTimeout(remove, 240);
+}
+
+function showServerBusyToast(options = {}) {
+    const t = translations[currentLang] || translations.vi || {};
+    const container = ensureToastContainer();
+    if (!container) return;
+
+    const title = options.title || t.server_busy_title || 'Máy chủ bận';
+    let message = options.message || t.server_busy_message || 'Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.';
+
+    if (typeof options.retryIn === 'number' && options.retryIn > 0) {
+        const seconds = Math.max(1, Math.round(options.retryIn / 1000));
+        const template = t.server_busy_retrying || 'Hệ thống sẽ thử lại sau {seconds} giây...';
+        const retryText = template.replace('{seconds}', seconds);
+        message = `${message} ${retryText}`.trim();
+    }
+
+    if (!serverBusyToastEl || !serverBusyToastEl.isConnected) {
+        serverBusyToastEl = document.createElement('div');
+        serverBusyToastEl.className = 'app-toast info server-busy-toast';
+        serverBusyToastEl.innerHTML = `
+      <div class="toast-icon"><i class="fas fa-circle-notch fa-spin"></i></div>
+      <div class="toast-content">
+        <div class="toast-title"></div>
+        <div class="toast-message"></div>
+      </div>
+      <button type="button" class="toast-close" aria-label="${esc(t.close_button || 'Đóng')}">&times;</button>
+    `;
+        container.appendChild(serverBusyToastEl);
+
+        requestAnimationFrame(() => {
+            if (serverBusyToastEl) {
+                serverBusyToastEl.classList.add('show');
+            }
+        });
+
+        const closeBtn = serverBusyToastEl.querySelector('.toast-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => closeServerBusyToast(true));
+        }
+
+        serverBusyToastEl.addEventListener('mouseenter', () => {
+            if (serverBusyToastTimer) {
+                clearTimeout(serverBusyToastTimer);
+                serverBusyToastTimer = null;
+            }
+        });
+
+        serverBusyToastEl.addEventListener('mouseleave', () => {
+            if (!serverBusyToastEl || serverBusyToastEl.dataset.sticky === '1') return;
+            if (!serverBusyToastTimer) {
+                serverBusyToastTimer = setTimeout(() => closeServerBusyToast(), 2000);
+            }
+        });
+    } else {
+        serverBusyToastEl.classList.remove('closing');
+        requestAnimationFrame(() => {
+            if (serverBusyToastEl) {
+                serverBusyToastEl.classList.add('show');
+            }
+        });
+    }
+
+    const titleNode = serverBusyToastEl.querySelector('.toast-title');
+    if (titleNode) titleNode.textContent = title;
+
+    const messageNode = serverBusyToastEl.querySelector('.toast-message');
+    if (messageNode) messageNode.textContent = message;
+
+    const iconNode = serverBusyToastEl.querySelector('.toast-icon i');
+    if (iconNode) {
+        iconNode.className = options.sticky ? 'fas fa-server' : 'fas fa-circle-notch fa-spin';
+    }
+
+    if (serverBusyToastTimer) {
+        clearTimeout(serverBusyToastTimer);
+        serverBusyToastTimer = null;
+    }
+
+    if (options.sticky) {
+        serverBusyToastEl.dataset.sticky = '1';
+    } else {
+        serverBusyToastEl.dataset.sticky = '0';
+        const duration = typeof options.duration === 'number' ? options.duration : 5000;
+        if (duration > 0) {
+            serverBusyToastTimer = setTimeout(() => closeServerBusyToast(), duration);
+        }
+    }
+}
+
+function getRawErrorMessage(error) {
+    if (error == null) return '';
+    if (typeof error === 'string') return error;
+    if (typeof error.message === 'string') return error.message;
+    if (typeof error.details === 'string') return error.details;
+    try { return String(error); } catch (_) { return ''; }
+}
+
+function getCleanErrorMessage(error) {
+    const raw = getRawErrorMessage(error);
+    return raw ? raw.replace(/^Error:\s*/i, '').trim() : '';
+}
+
+function isTransientError(error) {
+    const raw = getRawErrorMessage(error);
+    if (!raw) return false;
+    return /(http\s*503|service unavailable|networkerror|connection failure|server error)/i.test(raw);
+}
+
+function callServerWithRetry(methodName, args = [], options = {}) {
+    if (!methodName || typeof google === 'undefined' || !google.script || !google.script.run) {
+        return;
+    }
+
+    const {
+        onSuccess,
+        onFailure,
+        attempts = DEFAULT_RETRY_ATTEMPTS,
+        initialDelay = DEFAULT_RETRY_DELAY,
+        backoff = 2,
+        maxDelay = MAX_RETRY_DELAY,
+        onRetry
+    } = options || {};
+
+    const callArgs = Array.isArray(args) ? args.slice() : [args];
+    const totalAttempts = Math.max(1, attempts);
+    let retryCount = 0;
+
+    const execute = () => {
+        let runner = google.script.run;
+
+        runner = runner.withSuccessHandler(result => {
+            closeServerBusyToast();
+            if (typeof onSuccess === 'function') {
+                onSuccess(result);
+            }
+        });
+
+        runner = runner.withFailureHandler(err => {
+            const shouldRetry = isTransientError(err) && retryCount < totalAttempts - 1;
+            if (shouldRetry) {
+                const wait = Math.min(maxDelay, Math.round(initialDelay * Math.pow(backoff, retryCount)));
+                retryCount += 1;
+                const displayDuration = Math.min(10000, Math.max(3500, wait + 1500));
+                showServerBusyToast({ retryIn: wait, duration: displayDuration });                
+                if (typeof onRetry === 'function') {
+                    try { onRetry(retryCount, wait, err); } catch (retryErr) { console.error(retryErr); }
+                } else {
+                    const info = getCleanErrorMessage(err) || getRawErrorMessage(err) || 'Transient error';
+                    console.warn(`Retrying ${methodName} due to transient error (attempt ${retryCount + 1}/${totalAttempts}) in ${wait}ms: ${info}`);
+                }
+                setTimeout(execute, wait);
+            } else {
+                if (!isTransientError(err)) {
+                    closeServerBusyToast();
+                }              
+                if (typeof onFailure === 'function') {
+                    onFailure(err);
+                } else {
+                    showError(err);
+                }
+            }
+        });
+
+        if (typeof runner[methodName] === 'function') {
+            runner[methodName].apply(runner, callArgs);
+        } else {
+            const err = new Error(`google.script.run.${methodName} is not available`);
+            if (typeof onFailure === 'function') {
+                onFailure(err);
+            } else {
+                showError(err);
+            }
+        }
+    };
+
+    execute();
+}
+
+function normalizeRole(role) {
+    return typeof role === 'string' ? role.trim().toLowerCase() : '';
+}
+
+function getUserRole() {
+    return normalizeRole(userSession && userSession.role);
+}
+
+function getRoleDisplay() {
+    if (!userSession) return '';
+    return userSession.roleDisplay || userSession.role || '';
+}
+
+function isRole(role) {
+    return getUserRole() === normalizeRole(role);
+}
+
+function hasAnyRole(roles) {
+    const current = getUserRole();
+    const list = Array.isArray(roles) ? roles : [roles];
+    return list.some(r => normalizeRole(r) === current);
+}
+
+const SUPERVISION_ALLOWED_PAGES = new Set(['Page_View', 'Page_WeighResult', 'Page_Account']);
+
+function getLoaderWrapper() {
+    if (!$loaderWrapper || !$loaderWrapper.length) {
+        $loaderWrapper = $('#loader-wrapper');
+    }
+    return $loaderWrapper;
+}
+
+function getAppContainer() {
+    if (!$appContainer || !$appContainer.length) {
+        $appContainer = $('#app-container');
+    }
+    return $appContainer;
+}
+
+function preloadLoginTemplate() {
+    if (loginTemplateHTML) return;
+    const template = document.getElementById('login-template');
+    if (template) {
+        loginTemplateHTML = template.innerHTML;
+    }
+}
+
+function clearLoginFallbackTimer() {
+    if (loginFallbackTimer) {
+        clearTimeout(loginFallbackTimer);
+        loginFallbackTimer = null;
+    }
+}
+
+// =================================================================
+// **MỚI:** HỆ THỐNG DỊCH
+// =================================================================
+const translations = {
+  vi: {
+    // General
+    "hello_user": "Xin chào, {username} ({role})",
+    "logout_button": "Đăng xuất",
+    "server_busy_title": "Máy chủ bận",
+    "server_busy_message": "Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.",
+    "server_busy_retrying": "Hệ thống sẽ thử lại sau {seconds} giây...",
+    "server_busy_final_message": "Máy chủ vẫn đang bận. Vui lòng thử lại thao tác sau ít phút.",
+    "close_button": "Đóng",
+    "save_changes_button": "Lưu thay đổi",
+    "add_button": "Thêm",
+    "edit_button": "Sửa",
+    "delete_button": "Xóa",
+    "reload_button": "Tải lại",
+    "action_column": "Hành động",
+    "file_choose_button": "Chọn tệp",
+    "file_no_file_selected": "Không có tệp nào được chọn",
+    "select_all_checkbox": "Chọn tất cả",    
+    "show_label": "Hiển thị",
+    "entries_label": "dòng",
+    "sidebar_contracts": "Hợp đồng vận chuyển",
+    "sidebar_vehicle": "Đăng Ký Xe",
+    "sidebar_approval": "Phê Duyệt",
+    "sidebar_weighing": "Trạm Cân",
+    "sidebar_weighing_result": "Kết quả bốc hàng",
+    "sidebar_account_parent": "Tài khoản",
+    "sidebar_guide": "Hướng dẫn",
+
+    // Contracts Page
+    "contract_entry_title": "Nhập hợp đồng",
+    "contract_save_button": "Lưu",
+    "contract_card_title": "Hợp đồng",
+    "contract_search_placeholder": "Tìm trong danh sách...",
+    "contract_loading_saving": "Đang lưu...",
+    "contract_edit_title": "Sửa hợp đồng",
+    "contract_loading_updating": "Đang cập nhật...",
+    "contract_loading_deleting": "Đang xoá...",
+    "contract_no_selection_title": "Chưa chọn dòng",
+    "contract_no_selection_message": "Hãy tick các dòng cần xoá.",
+    "contract_confirm_delete_title": "Xoá các mục đã chọn?",
+
+    // Login Page
+    "login_title": "Đăng nhập",
+    "username_label": "Tên đăng nhập",
+    "password_label": "Mật khẩu",
+    "login_button": "Đăng nhập",
+    "forgot_password_link": "Quên mật khẩu?",
+    
+    "continue_button": "Tiếp tục",
+    "confirm_button": "Xác nhận",
+    "forgot_password_input_label": "Vui lòng nhập tên đăng nhập của bạn",
+    "forgot_password_input_placeholder": "Tên đăng nhập",
+    "forgot_password_input_required": "Bạn cần nhập tên đăng nhập!",
+    "reset_password_title": "Đặt lại mật khẩu",
+    "reset_password_security_placeholder": "Mã bảo mật",
+    "reset_password_new_placeholder": "Mật khẩu mới",
+    "reset_password_confirm_placeholder": "Xác nhận mật khẩu mới",
+    "reset_password_missing_fields": "Vui lòng điền đầy đủ thông tin",
+    "reset_password_mismatch": "Mật khẩu mới không khớp",
+    "loading_processing": "Đang xử lý...",
+    "inactivity_title": "Thông báo:",
+    "inactivity_message": "Bạn đã không sử dụng phần mềm quá lâu, vui lòng đăng nhập lại…",
+    "login_again_button": "Đăng nhập lại",
+
+    // Dashboard & Sidebar
+    "sidebar_title": "Quản lý Xe",
+    "sidebar_register": "Đăng ký mới",
+    "sidebar_view": "Xe đã đăng ký",
+																 
+    "sidebar_total_list": "Danh sách xe tổng",
+    "sidebar_account": "Quản lý User",
+
+    // Account Page
+    "change_password_header": "Đổi mật khẩu",
+    "current_password_label": "Mật khẩu hiện tại",
+    "new_password_label": "Mật khẩu mới",
+    "confirm_new_password_label": "Xác nhận mật khẩu mới",
+    "user_management_header": "Quản lý người dùng",
+    "add_user_button": "Thêm người dùng",
+
+    // Register Page
+    "reg_open_message_text": "Hệ thống đăng ký bốc hàng sẽ đóng sau:",
+    "reg_time_left": "Thời gian còn lại",
+    "reg_closed_message_text": "Hệ thống đăng ký bốc hàng đang đóng.",
+    "reg_will_reopen": "Sẽ mở lại sau",
+    "reg_manual_header": "Thêm mới một xe (Nhập liệu thủ công)",
+    "reg_upload_header": "Thêm mới nhiều xe (Upload File)",
+    "reg_upload_note": "Ghi chú: Chỉ chấp nhận các file có định dạng .xlsx, .xls, .csv.",
+    "preview_data_button": "Xem trước dữ liệu",
+    "preview_data_title": "Dữ liệu xem trước",
+    "save_data_button": "Lưu dữ liệu",
+    "register_vehicle_button": "Đăng ký xe",
+    "select_company_option": "Chọn đơn vị",
+    "reg_date_label": "Ngày đăng ký",
+    "register_contract_placeholder": "Nhập hoặc chọn Số hợp đồng",
+    "register_tomorrow_label": "(Ngày mai)",
+    "register_upload_date_note": "File upload chỉ chấp nhận ngày đăng ký là {date}.",
+    "register_missing_data_title": "Thiếu dữ liệu",
+    "register_missing_data_message": "Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.",
+    "loading_saving_data": "Đang lưu dữ liệu...",
+    "register_success_message": "Đăng ký xe thành công!",
+    "loading_processing_file": "Đang xử lý và xác thực file...",
+    "no_file_selected_title": "Chưa chọn file",
+    "no_file_selected_message": "Vui lòng chọn một file.",
+    "upload_errors_intro": "Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.",
+    "upload_errors_more": "... và nhiều lỗi khác.",
+    "invalid_data_title": "Dữ liệu không hợp lệ!",
+    "file_no_data_error": "File không có dữ liệu.",
+    "validation_required": "- Cột '{field}' không được để trống.",
+    "validation_invalid_date": "- Cột '{field}' có định dạng ngày không hợp lệ.",
+    "validation_only_tomorrow": "- Cột '{field}' chỉ chấp nhận ngày mai.",
+    "validation_max_length": "- Cột '{field}' không được vượt quá {max} ký tự.",
+    "validation_numeric_max": "- Cột '{field}' phải là số và không quá {max}.",
+    "validation_numeric_only": "- Cột '{field}' phải là số.",
+    "validation_allowed_values": "- Cột '{field}' chỉ chấp nhận: {values}.",
+    "validation_contractor_mismatch": "- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).",
+    "validation_row_label": "Dòng {row}",
+    "duplicate_data_error": "Dữ liệu trùng lặp trong file.",
+    "validation_duplicate_rows": "Dòng {row1} và {row2}",
+    "validation_duplicate_details": "Trùng lặp dữ liệu (Ngày, Biển số xe, ĐVVC).",
+    "no_valid_data_title": "Không có dữ liệu hợp lệ",
+    "no_valid_data_message": "Không có dữ liệu nào để lưu.",
+    "loading_checking_data": "Đang kiểm tra và lưu dữ liệu...",
+    "combo_open_list_label": "Mở danh sách",
+
+    // View Page
+    "view_header": "Dữ liệu xe đã đăng ký",
+    "search_in_table_placeholder": "Tìm kiếm trong bảng...",
+    "export_excel_button": "Xuất Excel",
+    "edit_rules_notice_line1": "<strong>Quy tắc chỉnh sửa:</strong><br>- Dữ liệu đăng ký từ <strong>8:00 - 16:00</strong> chỉ có thể sửa trong khung giờ này.",
+    "edit_rules_notice_line2": "- Dữ liệu đăng ký từ <strong>20:00 - 22:00</strong> chỉ có thể sửa trong khung giờ này.",
+    "view_filter_label": "Xem ngày",
+    "view_today_label": "(Hôm nay)",
+    "view_tomorrow_label": "(Ngày mai)",
+    "view_filter_contract_label": "Số hợp đồng",
+    "view_filter_contract_all": "Tất cả hợp đồng",
+    "view_filter_contract_loading": "Đang tải...",
+    "view_filter_contract_empty": "Không có hợp đồng trong ngày đã chọn",    
+    "view_stat_total_label": "Tổng số xe đã đăng ký:",
+    "view_stat_pending_label": "Tổng số xe chưa được phê duyệt:",
+    "view_stat_approved_label": "Tổng số xe đã được phê duyệt:",
+    "view_total_badge": "Tổng số xe đã đăng ký:",
+    "no_selection_title": "Chưa chọn mục",
+    "no_selection_message": "Vui lòng chọn ít nhất một mục để xóa.",
+    "delete_selected_confirm_title": "Bạn có chắc muốn xóa {count} mục?",
+    "delete_selected_confirm_text": "Hành động này không thể hoàn tác!",
+    "cancel_button": "Hủy",
+    "confirm_delete_button": "Vâng, xóa đi!",
+    "loading_deleting": "Đang xóa...",
+    "delete_success_title": "Đã xóa!",
+    "loading_preparing_data": "Đang chuẩn bị dữ liệu...",
+    "no_data_title": "Không có dữ liệu",
+    "no_data_export_message": "Không có dữ liệu để xuất file.",
+    "edit_vehicle_title": "Chỉnh sửa thông tin xe",
+    "edit_validation_message": "Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.",
+    "loading_updating": "Đang cập nhật...",    
+
+    // Total List Page
+    "total_list_upload_header": "Thêm mới danh sách xe (Upload File)",
+    "total_list_upload_note": "Ghi chú: Chức năng này sẽ ghi đè toàn bộ danh sách xe hiện có. Chỉ chấp nhận file .xlsx, .xls, .csv.",
+    "save_list_button": "Lưu danh sách",
+    "total_list_header": "Danh sách xe tổng",
+    "show_update_button": "Hiển thị/Cập nhật",
+    "delete_selected_button": "Xóa mục đã chọn",
+    "search_in_list_placeholder": "Tìm kiếm trong danh sách...",
+    "total_vehicles": "Tổng số xe",
+    "active_vehicles": "Xe đang hoạt động",
+    "banned_vehicles": "Xe đang bị cấm",    
+
+    // DataTables Columns
+    "col_id": "ID",
+    "col_register_date": "Ngày đăng ký",
+    "col_contract_no": "Số hợp đồng",
+    "col_truck_plate": "Biển số xe",
+    "col_country": "Quốc gia",
+    "col_wheel": "Số bánh",
+    "col_trailer_plate": "Biển số Mooc",
+    "col_truck_weight": "Trọng lượng xe",
+    "col_payload": "Tải trọng xe",
+    "col_container1": "Container 1",
+    "col_container2": "Container 2",
+    "col_driver_name": "Tên lái xe",
+    "col_id_passport": "Số hộ chiếu",
+    "col_phone_number": "Số điện thoại",
+    "col_destination": "Điểm trả hàng dự kiến",
+    "col_transport_company": "Đơn vị vận chuyển",
+    "col_subcontractor": "Nhà thầu phụ",
+    "col_vehicle_status": "Tình trạng xe",
+    "col_activity_status": "Trạng thái hoạt động",    
+    "col_registration_status": "Trạng thái đăng ký",
+    "col_time": "Thời gian đăng ký",
+    "col_creation_date": "Ngày tạo",
+    "col_creation_time": "Thời gian tạo",
+    "col_username": "Tên đăng nhập",
+    "col_password": "Mật khẩu",
+    "col_role": "Vai trò",
+    "col_contractor": "Nhà thầu",
+    "col_customer_name": "Khách hàng",    
+    "col_security_code": "Mã bảo mật",
+
+    // SweetAlerts & Messages
+    "loading_page": "Đang tải trang...",
+    "error_title": "Có lỗi xảy ra!",
+    "session_expired_title": "Phiên đã hết hạn!",
+    "session_expired_text": "Vui lòng đăng nhập lại để tiếp tục.",
+    "login_failed": "Đăng nhập thất bại.",
+    "logging_out": "Đang đăng xuất...",
+    "forgot_password_title": "Quên mật khẩu",
+    "success_title": "Thành công",
+    "warning_title": "Cảnh báo",
+    "info_title": "Thông tin",
+    "duplicate_vehicle_popup_title": "Xe trùng đơn vị khác",
+    "duplicate_vehicle_popup_message": "Là các xe đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.",
+    "new_vehicle_popup_title": "Thông báo xe mới",
+    "new_vehicle_popup_message": "Là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.",
+    "popup_plate_label": "Xe",
+    "popup_ok_button": "OK",
+
+    // XPPL Weighing Station
+    "xppl_upload_card_title": "Upload dữ liệu trạm cân",
+    "xppl_upload_button": "Tải lên",
+    "xppl_filter_card_title": "Bộ lọc",
+    "xppl_filter_date_label": "Ngày",
+    "xppl_filter_contract_label": "Số hợp đồng",
+    "xppl_filter_customer_label": "Khách hàng",
+    "xppl_filter_all_option": "Tất cả",
+    "xppl_select_date_first": "Chọn ngày trước",
+    "xppl_summary_total_trucks": "Tổng số xe",
+    "xppl_summary_trucks_sub": "Xe đã ghi nhận trong bộ lọc",
+    "xppl_summary_total_weight": "Tổng khối lượng (Kg)",
+    "xppl_summary_weight_sub": "Tổng khối lượng hàng đã cân",
+    "xppl_data_card_title": "Dữ liệu trạm cân",
+    "xppl_search_placeholder": "Tìm kiếm trong bảng...",
+    "xppl_total_rows": "Tổng số dòng",
+    "xppl_upload_confirm_title": "Xác nhận",
+    "xppl_upload_confirm_text": "Bạn có chắc muốn tải lên?",
+    "xppl_upload_confirm_button": "Xác nhận",
+    "xppl_upload_cancel_button": "Hủy bỏ",
+    "xppl_processing_file": "Đang xử lý file...",
+    "xppl_file_no_data": "File không có dữ liệu",
+    "xppl_header_mismatch": "Tiêu đề cột không khớp với mẫu yêu cầu.",
+    "xppl_upload_success_message": "Tải lên thành công",
+    "xppl_loading_data": "Đang tải dữ liệu...",
+    "xppl_no_file_excel_message": "Vui lòng chọn file Excel.",
+    "xppl_no_data_export_message": "Không có dữ liệu để xuất.",
+
+    // Weigh Result Page
+    "wr_filter_card_title": "Bộ lọc",
+    "wr_search_placeholder": "Tìm kiếm...",
+    "wr_date_from_label": "Từ ngày",
+    "wr_date_to_label": "Đến ngày",
+    "wr_adv_toggle_show": "Bộ lọc nâng cao",
+    "wr_adv_toggle_hide": "Ẩn bộ lọc nâng cao",
+    "wr_contract_label": "Số hợp đồng",
+    "wr_customer_label": "Customer Name",
+    "wr_match_title": "Tìm và gắn dữ liệu đơn vị vận chuyển",
+    "wr_match_sub": "Đối chiếu nhanh thông tin phương tiện",
+    "wr_unknown_title": "Xe không xác định đơn vị vận chuyển",
+    "wr_unknown_sub": "Xem và xử lý thủ công",
+    "wr_status_unassigned": "Chưa gắn đơn vị vận chuyển",
+    "wr_status_unknown": "Không xác định đơn vị vận chuyển",
+    "wr_status_assigned": "Đã xác định đơn vị vận chuyển",
+    "wr_summary_total_trucks_label": "Tổng số xe",
+    "wr_summary_total_trucks_sub": "Số lượng xe phù hợp với bộ lọc",
+    "wr_summary_total_weight_label": "Tổng khối lượng (Kg)",
+    "wr_summary_total_weight_sub": "Khối lượng đã ghi nhận theo bộ lọc",
+    "wr_unknown_modal_title": "Xe không xác định đơn vị vận chuyển",
+    "wr_result_card_title": "Kết quả bốc hàng",
+    "wr_matching_loading": "Đang đối chiếu...",
+    "wr_update_company_title": "Cập nhật đơn vị vận chuyển",
+    "wr_no_row_selected_title": "Chưa chọn dòng",
+    "wr_no_row_selected_message": "Hãy tick các dòng cần xoá.",
+    "wr_delete_confirm_title": "Xoá các mục đã chọn?",
+    "wr_deleting_loading": "Đang xoá...",
+    "wr_no_export_columns_title": "Không có cột để xuất",
+    "wr_no_export_columns_message": "Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.",
+    "wr_no_matching_data_message": "Không có bản ghi phù hợp với bộ lọc hiện tại.",
+    "wr_exporting_data": "Đang xuất dữ liệu...",
+  },
+  en: {
+    // General
+    "hello_user": "Hello, {username} ({role})",
+    "logout_button": "Logout",
+    "server_busy_title": "Server is busy",
+    "server_busy_message": "The system is receiving too many requests. Please try again in a moment.",
+    "server_busy_retrying": "The system will retry in {seconds} second(s)...",
+    "server_busy_final_message": "The server is still busy. Please try again in a few moments.",
+    "close_button": "Close",  
+    "save_changes_button": "Save Changes",
+    "add_button": "Add",
+    "edit_button": "Edit",
+    "delete_button": "Delete",
+    "cancel_button": "Cancel",
+    "reload_button": "Reload",
+    "action_column": "Actions",
+    "file_choose_button": "Choose file",
+    "file_no_file_selected": "No file selected",
+    "select_all_checkbox": "Select all",    
+    "show_label": "Show",
+    "entries_label": "entries",
+									
+
+    // Login Page
+    "login_title": "Login",
+    "username_label": "Username",
+    "password_label": "Password",
+    "login_button": "Login",
+    "forgot_password_link": "Forgot password?",
+    "continue_button": "Continue",
+    "confirm_button": "Confirm",
+    "forgot_password_input_label": "Please enter your username",
+    "forgot_password_input_placeholder": "Username",
+    "forgot_password_input_required": "You must enter your username!",
+    "reset_password_title": "Reset password",
+    "reset_password_security_placeholder": "Security code",
+    "reset_password_new_placeholder": "New password",
+    "reset_password_confirm_placeholder": "Confirm new password",
+    "reset_password_missing_fields": "Please fill in all required information",
+    "reset_password_mismatch": "New password does not match",
+    "loading_processing": "Processing...",
+    "inactivity_title": "Notice:",
+    "inactivity_message": "You have been inactive for too long, please log in again.",
+    "login_again_button": "Log in again",    
+
+    // Dashboard & Sidebar
+    "sidebar_title": "Vehicle Management",
+    "sidebar_register": "New Registration",
+    "sidebar_view": "Registered Vehicles",
+    "sidebar_contracts": "Transport Contracts",														  
+    "sidebar_total_list": "Total Vehicle List",
+     "sidebar_account": "User Management",
+    "sidebar_vehicle": "Vehicle Registration",
+    "sidebar_approval": "Approval",
+    "sidebar_weighing": "Weighing Station",
+    "sidebar_weighing_result": "Weighing Results",
+    "sidebar_account_parent": "Account",
+    "sidebar_guide": "Guide",
+
+    // Contracts Page
+    "contract_entry_title": "Enter Contract",
+    "contract_save_button": "Save",
+    "contract_card_title": "Contracts",
+    "contract_search_placeholder": "Search in the list...",
+    "contract_loading_saving": "Saving...",
+    "contract_edit_title": "Edit Contract",
+    "contract_loading_updating": "Updating...",
+    "contract_loading_deleting": "Deleting...",
+    "contract_no_selection_title": "No rows selected",
+    "contract_no_selection_message": "Please tick the rows you want to delete.",
+    "contract_confirm_delete_title": "Delete selected items?",
+
+    // Account Page
+    "change_password_header": "Change Password",
+    "current_password_label": "Current Password",
+    "new_password_label": "New Password",
+    "confirm_new_password_label": "Confirm New Password",
+    "user_management_header": "User Management",
+    "add_user_button": "Add User",
+
+    // Register Page
+    "reg_open_message_text": "The registration system will close in:",
+    "reg_time_left": "Time remaining",
+    "reg_closed_message_text": "The registration system is currently closed.",
+    "reg_will_reopen": "Will reopen in",
+    "reg_manual_header": "Add a New Vehicle (Manual Entry)",
+    "reg_upload_header": "Add Multiple Vehicles (Upload File)",
+    "reg_upload_note": "Note: Only .xlsx, .xls, .csv files are accepted.",
+    "preview_data_button": "Preview Data",
+    "preview_data_title": "Preview Data",
+    "save_data_button": "Save Data",
+    "register_vehicle_button": "Register Vehicle",
+    "select_company_option": "Select company",
+    "reg_date_label": "Registration Date",
+    "register_contract_placeholder": "Enter or select Contract No",
+    "register_tomorrow_label": "(Tomorrow)",
+    "register_upload_date_note": "File upload only accepts registration date {date}.",
+    "register_missing_data_title": "Missing data",
+    "register_missing_data_message": "Please enter Registration Date, Contract No, and Truck Plate.",
+    "loading_saving_data": "Saving data...",
+    "register_success_message": "Vehicle registration successful!",
+    "loading_processing_file": "Processing and validating file...",
+    "no_file_selected_title": "No file selected",
+    "no_file_selected_message": "Please select a file.",
+    "upload_errors_intro": "Errors were found in the uploaded file. Please correct the Excel file and try again. Cells highlighted in red contain errors.",
+    "upload_errors_more": "... and more errors.",
+    "invalid_data_title": "Invalid data!",
+    "file_no_data_error": "The file has no data.",
+    "validation_required": "- Column '{field}' cannot be empty.",
+    "validation_invalid_date": "- Column '{field}' has an invalid date format.",
+    "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
+    "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
+    "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
+    "validation_numeric_only": "- Column '{field}' must be numeric.",
+    "validation_allowed_values": "- Column '{field}' only accepts: {values}.",
+    "validation_contractor_mismatch": "- You can only register vehicles for your contractor ({contractor}).",
+    "validation_row_label": "Row {row}",
+    "duplicate_data_error": "Duplicate data in the file.",
+    "validation_duplicate_rows": "Rows {row1} and {row2}",
+    "validation_duplicate_details": "Duplicate data (Date, Truck Plate, Transport Company).",
+    "no_valid_data_title": "No valid data",
+    "no_valid_data_message": "There is no data to save.",
+    "loading_checking_data": "Checking and saving data...",
+    "combo_open_list_label": "Open list",    
+
+    // View Page
+    "view_header": "Registered Vehicle Data",
+    "view_filter_label": "View date",    
+    "search_in_table_placeholder": "Search in table...",
+    "export_excel_button": "Export Excel",
+    "edit_rules_notice_line1": "<strong>Editing Rules:</strong><br>- Data registered from <strong>8:00 - 16:00</strong> can only be edited within this time frame.",
+    "edit_rules_notice_line2": "- Data registered from <strong>20:00 - 22:00</strong> can only be edited within this time frame.",
+    "view_stat_total_label": "Total registered vehicles:",
+    "view_stat_pending_label": "Total pending approval:",
+    "view_stat_approved_label": "Total approved vehicles:",
+    "view_filter_contract_label": "Contract No",
+    "view_filter_contract_all": "All contracts",
+    "view_filter_contract_loading": "Loading...",
+    "view_filter_contract_empty": "No contracts for the selected date",
+    "no_selection_title": "No selection",
+    "no_selection_message": "Please select at least one item to delete.",
+    "delete_selected_confirm_title": "Are you sure you want to delete {count} item(s)?",
+    "delete_selected_confirm_text": "This action cannot be undone!",
+    "confirm_delete_button": "Yes, delete!",
+    "delete_success_title": "Deleted!",
+    "loading_deleting": "Deleting...",
+    "loading_updating": "Updating...",
+    "edit_vehicle_title": "Edit vehicle information",
+    "edit_validation_message": "Please complete all required fields with valid values.",    
+    "register_contract_placeholder": "Enter or select Contract No",
+    "register_tomorrow_label": "(Tomorrow)",
+    "register_upload_date_note": "File upload only accepts registration date {date}.",
+    "register_missing_data_title": "Missing data",
+    "register_missing_data_message": "Please enter Registration Date, Contract No, and Truck Plate.",
+    "loading_saving_data": "Saving data...",
+    "register_success_message": "Vehicle registration successful!",
+    "loading_processing_file": "Processing and validating file...",
+    "no_file_selected_title": "No file selected",
+    "no_file_selected_message": "Please select a file.",
+    "upload_errors_intro": "Errors were found in the uploaded file. Please correct the Excel file and try again. Cells highlighted in red contain errors.",
+    "upload_errors_more": "... and more errors.",
+    "invalid_data_title": "Invalid data!",
+    "file_no_data_error": "The file has no data.",
+    "validation_required": "- Column '{field}' cannot be empty.",
+    "validation_invalid_date": "- Column '{field}' has an invalid date format.",
+    "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
+    "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
+    "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
+    "validation_numeric_only": "- Column '{field}' must be numeric.",
+    "validation_allowed_values": "- Column '{field}' only accepts: {values}.",
+    "validation_contractor_mismatch": "- You can only register vehicles for your contractor ({contractor}).",
+    "validation_row_label": "Row {row}",
+    "duplicate_data_error": "Duplicate data in the file.",
+    "validation_duplicate_rows": "Rows {row1} and {row2}",
+    "validation_duplicate_details": "Duplicate data (Date, Truck Plate, Transport Company).",
+    "no_valid_data_title": "No valid data",
+    "no_valid_data_message": "There is no data to save.",
+    "loading_checking_data": "Checking and saving data...",
+    "combo_open_list_label": "Open list",
+
+    // Total List Page
+    "total_list_upload_header": "Add New Vehicle List (Upload File)",
+    "total_list_upload_note": "Note: This will overwrite the entire existing vehicle list. Only .xlsx, .xls, .csv files are accepted.",
+    "save_list_button": "Save List",
+    "total_list_header": "Total Vehicle List",
+    "show_update_button": "Show/Update",
+    "delete_selected_button": "Delete Selected",
+    "search_in_list_placeholder": "Search in list...",
+    "total_vehicles": "Total Vehicles",
+    "active_vehicles": "Active Vehicles",
+    "banned_vehicles": "Banned Vehicles",    
+
+    // DataTables Columns (Shared)
+    "col_id": "ID",
+    "col_register_date": "Register Date",
+    "col_contract_no": "Contract No",
+    "col_truck_plate": "Truck Plate",
+    "col_country": "Country",
+    "col_wheel": "Wheels",
+    "col_trailer_plate": "Trailer Plate",
+    "col_truck_weight": "Truck Weight",
+    "col_payload": "Payload",
+    "col_container1": "Container 1",
+    "col_container2": "Container 2",
+    "col_driver_name": "Driver Name",
+    "col_id_passport": "ID/Passport",
+    "col_phone_number": "Phone Number",
+    "col_destination": "Destination EST",
+    "col_transport_company": "Transport Company",
+    "col_subcontractor": "Subcontractor",
+    "col_vehicle_status": "Vehicle Status",
+    "col_activity_status": "Activity Status",    
+    "col_registration_status": "Registration Status",
+    "col_time": "Registration Time",
+    "col_creation_date": "Creation Date",
+    "col_creation_time": "Creation Time",
+    "col_username": "Username",
+    "col_password": "Password",
+    "col_role": "Role",
+    "col_contractor": "Contractor",
+    "col_customer_name": "Customer Name",
+    "col_security_code": "Security Code",
+
+    // SweetAlerts & Messages
+    "loading_page": "Loading page...",
+    "error_title": "Something went wrong!",
+    "session_expired_title": "Session Expired!",
+    "session_expired_text": "Please log in again to continue.",
+    "login_failed": "Login failed.",
+    "logging_out": "Logging out...",
+    "forgot_password_title": "Forgot Password",
+    "success_title": "Success",
+    "warning_title": "Warning",
+    "info_title": "Information",
+    "duplicate_vehicle_popup_title": "Vehicles registered with another company",
+    "duplicate_vehicle_popup_message": "These vehicle plate(s) have already been registered with another transport company. Please contact PSVN for assistance.",
+    "new_vehicle_popup_title": "New vehicle notice",
+    "new_vehicle_popup_message": "These vehicle plate(s) are new. Please submit an additional registration to the total list with PSVN.",
+    "popup_plate_label": "Vehicle",
+    "popup_ok_button": "OK",
+
+    // XPPL Weighing Station
+    "xppl_upload_card_title": "Upload Weighing Station Data",
+    "xppl_upload_button": "Upload",
+    "xppl_filter_card_title": "Filters",
+    "xppl_filter_date_label": "Date",
+    "xppl_filter_contract_label": "Contract No",
+    "xppl_filter_customer_label": "Customer",
+    "xppl_filter_all_option": "All",
+    "xppl_select_date_first": "Select a date first",
+    "xppl_summary_total_trucks": "Total Trucks",
+    "xppl_summary_trucks_sub": "Trucks captured by the filters",
+    "xppl_summary_total_weight": "Total Weight (Kg)",
+    "xppl_summary_weight_sub": "Total cargo weight recorded",
+    "xppl_data_card_title": "Weighing Station Data",
+    "xppl_search_placeholder": "Search within the table...",
+    "xppl_total_rows": "Total rows",
+    "xppl_upload_confirm_title": "Confirm",
+    "xppl_upload_confirm_text": "Are you sure you want to upload?",
+    "xppl_upload_confirm_button": "Confirm",
+    "xppl_upload_cancel_button": "Cancel",
+    "xppl_processing_file": "Processing file...",
+    "xppl_file_no_data": "The file contains no data",
+    "xppl_header_mismatch": "Column headers do not match the required template.",
+    "xppl_upload_success_message": "Upload successful",
+    "xppl_loading_data": "Loading data...",
+    "xppl_no_file_excel_message": "Please choose an Excel file.",
+    "xppl_no_data_export_message": "No data to export.",
+
+    // Weigh Result Page
+    "wr_filter_card_title": "Filters",
+    "wr_search_placeholder": "Search...",
+    "wr_date_from_label": "From date",
+    "wr_date_to_label": "To date",
+    "wr_adv_toggle_show": "Advanced filters",
+    "wr_adv_toggle_hide": "Hide advanced filters",
+    "wr_contract_label": "Contract No",
+    "wr_customer_label": "Customer Name",
+    "wr_match_title": "Find & link transport company data",
+    "wr_match_sub": "Quickly reconcile vehicle information",
+    "wr_unknown_title": "Transport company not identified",
+    "wr_unknown_sub": "Review and handle manually",
+    "wr_status_unassigned": "Transport company not linked",
+    "wr_status_unknown": "Transport company unknown",
+    "wr_status_assigned": "Transport company identified",
+    "wr_summary_total_trucks_label": "Total trucks",
+    "wr_summary_total_trucks_sub": "Vehicles matching the filters",
+    "wr_summary_total_weight_label": "Total weight (Kg)",
+    "wr_summary_total_weight_sub": "Recorded weight within the filters",
+    "wr_unknown_modal_title": "Transport company not identified",
+    "wr_result_card_title": "Weighing results",
+    "wr_matching_loading": "Matching transport companies...",
+    "wr_update_company_title": "Update transport company",
+    "wr_no_row_selected_title": "No rows selected",
+    "wr_no_row_selected_message": "Please select the rows to delete.",
+    "wr_delete_confirm_title": "Delete selected entries?",
+    "wr_deleting_loading": "Deleting...",
+    "wr_no_export_columns_title": "No columns to export",
+    "wr_no_export_columns_message": "Please show at least one column before exporting to Excel.",
+    "wr_no_matching_data_message": "No records match the current filters.",
+    "wr_exporting_data": "Exporting data...",
+  }
+};
+
+function setLanguage(lang) {
+    currentLang = lang;
+    document.querySelectorAll('[data-translate]').forEach(el => {
+        const key = el.getAttribute('data-translate');
+        if (translations[lang][key]) {
+            el.innerHTML = translations[lang][key];
+        }
+    });
+    document.querySelectorAll('[data-translate-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-translate-placeholder');
+        if (translations[lang][key]) {
+            el.setAttribute('placeholder', translations[lang][key]);
+        }
+    });
+
+    // Cập nhật các bảng nếu chúng đang tồn tại
+    if ($.fn.DataTable.isDataTable('#registeredVehicleTable')) {
+        initViewPage();
+    }
+    if ($.fn.DataTable.isDataTable('#totalListTable')) {
+        initTotalListPage();
+    }
+    if ($.fn.DataTable.isDataTable('#usersTable')) {
+        initUsersTable();
+    }
+    
+    if (typeof xpplWeighingTable !== 'undefined' && $.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+        const count = xpplWeighingTable.rows({ search: 'applied' }).count();
+        const label = (translations[lang] && translations[lang].xppl_total_rows) || 'Tổng số dòng';
+        $('#xppl-count').html(`${label}: <span class="badge bg-primary">${count}</span>`);
+    }
+    
+    // Cập nhật thông tin người dùng
+    if(userSession.isLoggedIn) {
+         const roleText = getRoleDisplay();
+         $('#userInfo').text(
+            translations[currentLang].hello_user
+                .replace('{username}', userSession.username)
+                .replace('{role}', roleText)
+         );
+    }
+
+    refreshCustomFileDisplays(lang);
+}
+
+function refreshCustomFileDisplays(lang) {
+  const language = lang || currentLang || 'vi';
+  const dict = translations[language] || translations.vi || {};
+  $('[data-file-display]').each(function(){
+    const $display = $(this);
+    const inputId = $display.data('fileDisplay');
+    if (!inputId) return;
+    const $input = $('#' + inputId);
+    if (!$input.length) return;
+    const updateFn = $input.data('fileUpdateFn') || $display.data('fileUpdateFn');
+    if (typeof updateFn === 'function') {
+      updateFn();
+      return;
+    }
+    const files = ($input[0] && $input[0].files) || [];
+    if (files.length) return;
+    const key = $display.data('fileDefaultKey');
+    const fallback = $display.data('fileFallback') || '';
+    if (key && dict[key]) {
+      $display.text(dict[key]);
+    } else if (fallback) {
+      $display.text(fallback);
+    }
+    $display.toggleClass('file-upload-label--empty', !files.length);
+  });
+}
+
+function setupCustomFileInput(inputSelector, options = {}) {
+  const $input = $(inputSelector);
+  if (!$input.length) return;
+  const inputId = $input.attr('id');
+  const $display = options.display
+    ? $(options.display)
+    : (inputId ? $(`[data-file-display="${inputId}"]`) : $());
+  if (!$display.length) return;
+  const $trigger = options.trigger
+    ? $(options.trigger)
+    : (inputId ? $(`[data-file-target="${inputId}"]`) : $());
+  const defaultKey = options.defaultKey || $display.data('fileDefaultKey');
+  if (defaultKey) $display.data('fileDefaultKey', defaultKey);
+  if (!$display.data('fileFallback')) {
+    $display.data('fileFallback', $display.text().trim());
   }
 
-  const request = {
-    method: method,
-    headers: headers,
-    muteHttpExceptions: true
+  const updateDisplay = () => {
+    const inputEl = $input[0];
+    const files = (inputEl && inputEl.files) || [];
+    if (files.length) {
+      const names = Array.from(files).map(file => file.name).join(', ');
+      $display.text(names).removeClass('file-upload-label--empty');
+    } else {
+      const lang = currentLang || 'vi';
+      const dict = translations[lang] || translations.vi || {};
+      const key = $display.data('fileDefaultKey');
+      const fallback = $display.data('fileFallback') || '';
+      if (key && dict[key]) {
+        $display.text(dict[key]);
+      } else {
+        $display.text(fallback);
+      }
+      $display.addClass('file-upload-label--empty');
+    }
   };
 
-  if (opts.payload != null) {
-    request.payload = typeof opts.payload === 'string' ? opts.payload : JSON.stringify(opts.payload);
-  }
+  $input.data('fileUpdateFn', updateDisplay);
+  $display.data('fileUpdateFn', updateDisplay);
 
-  if (opts.timeout != null) {
-    request.timeout = opts.timeout;
-  }
+  $input.off('change.customFile').on('change.customFile', updateDisplay);
 
-  const url = buildSupabaseUrl_(path);
-  let response;
-  try {
-    response = UrlFetchApp.fetch(url, request);
-  } catch (fetchError) {
-    throw new Error('Supabase request failed: ' + fetchError);
-  }
-
-  const status = response.getResponseCode();
-  const text = response.getContentText();
-  let data = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch (parseError) {
-      data = text;
-    }
-  }
-
-  if (status >= 200 && status < 300) {
-    return data;
-  }
-
-  const message = data && data.message ? data.message : text;
-  throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
-}
-
-function getSupabaseUserByUsername_(username) {
-  if (!username) return null;
-  const query = '?select=*&username=eq.' + encodeURIComponent(username) + '&limit=1';
-  const data = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT + query);
-  if (Array.isArray(data) && data.length > 0) {
-    return data[0];
-  }
-  return null;
-}
-
-function updateSupabaseUserByUsername_(username, payload) {
-  if (!username) throw new Error('Username is required');
-  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
-  const result = supabaseRequest_(query, {
-    method: 'PATCH',
-    payload: payload,
-    headers: { Prefer: 'return=representation' }
-  });
-  if (Array.isArray(result) && result.length > 0) {
-    return result[0];
-  }
-  return null;
-}
-
-function insertSupabaseUser_(payload) {
-  return supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT, {
-    method: 'POST',
-    payload: payload,
-    headers: { Prefer: 'return=representation' }
-  });
-}
-
-function deleteSupabaseUserByUsername_(username) {
-  if (!username) throw new Error('Username is required');
-  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
-  supabaseRequest_(query, { method: 'DELETE' });
-}
-
-function clearUserSession_(username, token) {
-  if (!username) return;
-  try {
-    updateSupabaseUserByUsername_(username, {
-      active_session_token: null,
-      session_token_expiry: null
+  if ($trigger.length) {
+    $trigger.off('click.customFile').on('click.customFile', function(e){
+      e.preventDefault();
+      $input.trigger('click');
     });
-  } catch (e) {
-    Logger.log('clearUserSession_ error: ' + e);
   }
-  if (token) {
-    try {
-      removeSessionFromCache_(token);
-    } catch (cacheError) {
-      Logger.log('clearUserSession_ cache error: ' + cacheError);
+
+  $display.off('click.customFile').on('click.customFile', function(){
+    $input.trigger('click');
+  });
+
+  $display.attr('tabindex', 0);
+  $display.off('keydown.customFile').on('keydown.customFile', function(e){
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      $input.trigger('click');
     }
-  }
+  });
+
+  updateDisplay();    
 }
 
-function clearUserSessionByToken_(token) {
-  if (!token) return;
-  try {
-    const query = SUPABASE_APP_USERS_ENDPOINT + '?active_session_token=eq.' + encodeURIComponent(token);
-    supabaseRequest_(query, {
-      method: 'PATCH',
-      payload: {
-        active_session_token: null,
-        session_token_expiry: null
-      }
+$(document).on('click', '.lang-btn', function(e) {
+    e.preventDefault();
+    const lang = $(this).data('lang');
+    setLanguage(lang);
+});
+
+
+$(document).ready(function() {
+    $loaderWrapper = getLoaderWrapper();
+    $appContainer = getAppContainer();
+    preloadLoginTemplate();
+
+    const storedSession = getStoredSession();
+    let sessionFlagInTab = false;    
+    if (storedSession) {
+        userSession = storedSession;
+        try {
+            sessionFlagInTab = !!sessionStorage.getItem(SESSION_FLAG_KEY);
+        } catch (err) {
+            sessionFlagInTab = false;
+        }
+        if (storedSession.token && !sessionFlagInTab) {
+            setSessionFlag({ persistLocal: false });
+            sessionFlagInTab = true;
+        }
+    }
+
+    const existingToken = storedSession && storedSession.token ? storedSession.token : null;
+    const hasSessionFlag = sessionFlagInTab;
+    sessionCheckCompleted = false;
+
+    showLoader();
+
+    if (!hasSessionFlag && !existingToken) {
+        loginFallbackTimer = setTimeout(() => {
+            if (!sessionCheckCompleted) {
+                renderLoginTemplate();
+            }
+        }, 450);
+    }
+
+    initializeApp(existingToken);
+});
+
+
+function initializeApp(existingToken) {
+    google.script.run
+        .withSuccessHandler(session => {
+            sessionCheckCompleted = true;
+            clearLoginFallbackTimer();
+            const normalizedSession = (session && typeof session === 'object') ? session : {};
+            const isValidSession = !!(normalizedSession.isLoggedIn && normalizedSession.token);
+            if (isValidSession) {
+                userSession = normalizedSession;
+                setSessionFlag();
+                persistUserSession(userSession);
+                loadDashboard();
+                setupInactivityTimer();
+                google.script.run
+                  .withSuccessHandler(list => { allowedCompanies = (list || []).filter(Boolean); })
+                  .withFailureHandler(showError)
+                  .getTransportCompanies();
+            } else {
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                clearStoredSession();
+                clearSessionFlag();
+                loadLoginPage();
+            }
+        })
+        .withFailureHandler(error => {
+            sessionCheckCompleted = true;
+            clearLoginFallbackTimer();
+            userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+            clearStoredSession();
+            clearSessionFlag();
+            if (!renderLoginTemplate()) {
+                const loader = getLoaderWrapper();
+                loader.hide();
+            }
+            showError(error);
+        })
+        .getUserSession(existingToken || null);
+}
+
+// =================================================================
+// PAGE & VIEW MANAGEMENT
+// =================================================================
+
+function showLoader() {
+    const loader = getLoaderWrapper();
+    const app = getAppContainer();
+    if (!loader.length || !app.length) return;
+
+    app.hide();
+    if (!loader.is(':visible')) {
+        loader.css('opacity', '0');
+        loader.show();
+    } else {
+        loader.show();
+    }
+
+    if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => loader.css('opacity', '1'));
+    } else {
+        loader.css('opacity', '1');
+    }
+}
+
+function showApp() {
+    const loader = getLoaderWrapper();
+    const app = getAppContainer();
+    if (!loader.length || !app.length) return;
+
+    loader.css('opacity', '0');
+    setTimeout(() => {
+        loader.hide();
+        app.show();
+        setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
+    }, 180);
+}
+
+function bindLoginEvents() {
+    const loginForm = $('#loginForm');
+    if (loginForm.length) {
+        loginForm.off('submit').on('submit', handleLogin);
+    }
+
+    const forgotLink = $('#forgotPasswordLink');
+    if (forgotLink.length) {
+        forgotLink.off('click').on('click', handleForgotPassword);
+    }
+}
+
+function renderLoginTemplate() {
+    preloadLoginTemplate();
+    const app = getAppContainer();
+    if (!loginTemplateHTML || !app.length) return false;
+
+    loginFallbackTimer = null;
+    document.body.className = 'login-view-active';
+    app.html(loginTemplateHTML);
+    setLanguage(currentLang);    
+    bindLoginEvents();
+    showApp();
+    return true;
+}
+
+function loadLoginPage() {
+  if (renderLoginTemplate()) {
+      return;
+  }
+
+  google.script.run
+    .withSuccessHandler(html => {
+        document.body.className = 'login-view-active';
+        $('#app-container').html(html);
+        setLanguage(currentLang);        
+        bindLoginEvents();
+        showApp();
+    })
+    .withFailureHandler(showError)
+    .include('Login');
+}
+
+function loadDashboard() {
+  showLoader();  
+  google.script.run
+    .withSuccessHandler(html => {
+        // Dòng mã thêm vào:
+        document.body.className = ''; // Xóa "dấu" để trả về layout dashboard mặc định
+        $('#app-container').html(html);
+        // Ẩn các menu theo phân quyền
+        if (userSession) {
+          const hideMenuItem = page => {
+            const item = $(`#sidebar-wrapper .list-group-item[data-page="${page}"]`);
+            item.addClass('d-none disabled').removeClass('active');
+            const parent = item.closest('.collapse');
+            if (parent.length && parent.find('.list-group-item[data-page]:not(.d-none)').length === 0) {
+              parent.addClass('d-none');
+              parent.prev('a').addClass('d-none');
+            }
+          };
+
+          const role = getUserRole();
+          if (role === 'user-supervision') {
+            hideMenuItem('Page_Register');
+            hideMenuItem('Page_TotalList');
+            hideMenuItem('Page_Contract');
+            hideMenuItem('Page_XuLyXPPL');
+            hideMenuItem('XPPL-WeighingStation');
+            hideMenuItem('Page_Guide');
+            $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
+            const viewLink = $('#sidebar-wrapper .list-group-item[data-page="Page_View"]');
+            viewLink.removeClass('d-none disabled').addClass('active');
+            viewLink.closest('.collapse').addClass('show');
+          } else if (role === 'admin-xppl') {
+            hideMenuItem('Page_Register');
+            hideMenuItem('Page_Contract');
+            hideMenuItem('Page_XuLyXPPL');
+            $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
+          } else if (role !== 'admin') {
+            hideMenuItem('Page_XuLyXPPL');
+            const active = $('#sidebar-wrapper .list-group-item[data-page].active');
+            if (active.data('page') === 'Page_XuLyXPPL') {
+              active.removeClass('active');
+              $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
+            }
+          }
+        if (!hasAnyRole(['admin', 'admin-xppl'])) {
+            hideMenuItem('XPPL-WeighingStation');
+          }
+        }
+        setupDashboardListeners();
+        const defaultPageLink = $('#sidebar-wrapper .list-group-item[data-page].active');
+        defaultPageLink.closest('.collapse').addClass('show');
+        const pageTitleKey = defaultPageLink.data('title-key');
+        loadPage(defaultPageLink.data('page'), pageTitleKey, true);
+        showApp();
+    })
+    .withFailureHandler(showError)
+    .include('Dashboard');
+}
+
+function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
+    if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
+
+    $('.page-title').text(translations[currentLang][pageTitleKey] || pageTitleKey);
+    if (!isInitialLoad) showLoading(translations[currentLang].loading_page);
+    const role = getUserRole();
+    if (role === 'user-supervision' && !SUPERVISION_ALLOWED_PAGES.has(pageName)) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Tài khoản giám sát chỉ được phép xem dữ liệu đã được phê duyệt.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
+        // Chặn client nếu không phải admin
+    if (pageName === 'Page_XuLyXPPL' && userSession && role !== 'admin') {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
+    if (userSession && role === 'admin-xppl' && ['Page_Register','Page_Contract'].includes(pageName)) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Chức năng này không khả dụng với tài khoản hiện tại.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
+    if (pageName === 'XPPL-WeighingStation' && userSession && !hasAnyRole(['admin', 'admin-xppl'])) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin hoặc admin-xppl.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
+    google.script.run
+        .withSuccessHandler(html => {
+            $('#main-content').html(html);
+            switch (pageName) {
+                case 'Page_Guide': initGuidePage(); break;              
+                case 'Page_Register': initRegisterPage(); break;
+                case 'Page_View': initViewPage(); break;
+                case 'Page_TotalList': initTotalListPage(); break;
+                case 'Page_Account': initAccountPage(); break;
+                case 'Page_Contract': initContractPage(); break;
+                case 'XPPL-WeighingStation': initXPPLWeighingStationPage(); break;
+                case 'Page_WeighResult': initWeighResultPage(); break;                
+                case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
+}
+            setLanguage(currentLang); // Dịch nội dung trang mới
+            if (!isInitialLoad) Swal.close();
+        })
+        .withFailureHandler(showError)
+        .include(pageName);
+}
+
+function setupDashboardListeners() {
+    $('#sidebar-wrapper .list-group-item[data-page]').on('click', function(e) {
+        e.preventDefault();
+        const link = $(this);
+        if (link.hasClass('disabled')) return;
+        
+        $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
+        link.addClass('active');
+        link.closest('.collapse').addClass('show');
+        
+        const page = link.data('page');
+        const titleKey = link.data('title-key');
+        if (page) {
+            loadPage(page, titleKey);
+        }
     });
-  } catch (e) {
-    Logger.log('clearUserSessionByToken_ error: ' + e);
-  }
-  try {
-    removeSessionFromCache_(token);
-  } catch (cacheError) {
-    Logger.log('clearUserSessionByToken_ cache error: ' + cacheError);
-  }
+
+    $('#logoutBtn').on('click', handleLogout);
+    
+    $("#menu-toggle").click(function(e) {
+      e.preventDefault();
+      $("#wrapper").toggleClass("toggled");
+      setTimeout(() => {
+        if ($.fn.DataTable.isDataTable('#registeredVehicleTable')) {
+            $('#registeredVehicleTable').DataTable().columns.adjust();
+        }
+        if ($.fn.DataTable.isDataTable('#totalListTable')) {
+            $('#totalListTable').DataTable().columns.adjust();
+        }
+      }, 300);
+    });
 }
 
-function parseSupabaseTimestamp_(value) {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  const dt = new Date(value);
-  if (isNaN(dt.getTime())) return null;
-  return dt;
+
+// =================================================================
+// AUTHENTICATION & SESSION MANAGEMENT
+// =================================================================
+function handleLogin(e) {
+    e.preventDefault();
+    const loginBtn = $('#loginBtn');
+    loginBtn.find('.spinner-border').removeClass('d-none');
+    loginBtn.prop('disabled', true);
+
+    const credentials = {
+        username: $('#username').val(),
+        password: $('#password').val()
+    };
+
+    google.script.run
+        .withSuccessHandler(session => {
+            const normalizedSession = (session && typeof session === 'object') ? session : {};
+            const isValid = !!(normalizedSession.isLoggedIn && normalizedSession.token);
+            if (isValid) {
+                userSession = normalizedSession;
+                setSessionFlag();
+                persistUserSession(userSession);
+                loadDashboard();
+                setupInactivityTimer();
+            } else {
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                clearStoredSession();
+                clearSessionFlag();
+                showError({ message: translations[currentLang].login_failed });
+                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+                clearStoredSession();
+            }
+        })
+        .withFailureHandler(error => {
+            showError(error);
+            loginBtn.find('.spinner-border').addClass('d-none');
+            loginBtn.prop('disabled', false);
+        })
+        .checkLogin(credentials);
 }
 
-function formatSupabaseDateTime_(value) {
-  const dt = parseSupabaseTimestamp_(value);
-  if (!dt) return '';
-  try {
-    return Utilities.formatDate(dt, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
-  } catch (e) {
-    return dt.toISOString();
-  }
+function handleLogout() {
+    const token = userSession && userSession.token ? userSession.token : null;  
+    clearTimeout(inactivityTimer);
+    $(document).off('mousemove mousedown keypress scroll touchstart');
+
+    showLoader();
+
+    try { localStorage.removeItem('userSession'); } catch(_) {}
+    clearStoredSession();
+    try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch(_) {}
+    try { sessionStorage.clear(); } catch(_) {}
+    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch(_) {}
+
+    callServerWithRetry('logout', [token], {
+        attempts: 2,
+        initialDelay: 400,
+        onSuccess: () => {
+            window.location.reload();
+        },
+        onFailure: err => {
+            showError(err);
+            setTimeout(() => { window.location.reload(); }, 1500);
+        }
+    });
 }
 
-// =============== DATE/TIME NORMALIZATION HELPERS ===============
-function stripLeadingApostrophe(v) {
-  if (typeof v === 'string' && v.length > 0 && v[0] === "'") return v.slice(1);
-  return v;
+function resetInactivityTimer() {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        const t = translations[currentLang] || translations.vi || {};      
+        Swal.fire({
+            title: t.inactivity_title || t.warning_title || 'Thông báo:',
+            text: t.inactivity_message || 'Bạn đã không sử dụng phần mềm quá lâu, vui lòng đăng nhập lại…',
+            icon: 'warning',
+            confirmButtonText: t.login_again_button || t.confirm_button || 'Đăng nhập lại',
+            allowOutsideClick: false
+        }).then(() => {
+            handleLogout();
+        });
+    }, 30 * 60 * 1000);
 }
 
-function normalizeDate(v) {
-  if (!v) return null;
-  if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
-  v = stripLeadingApostrophe(v);
-  var m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return null;
-  var d = parseInt(m[1],10), M = parseInt(m[2],10)-1, y = parseInt(m[3],10);
-  var dt = new Date(y,M,d);
-  if (isNaN(dt.getTime())) return null;
-  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+function setupInactivityTimer() {
+    $(document).on('mousemove mousedown keypress scroll touchstart', resetInactivityTimer);
+    resetInactivityTimer();
 }
 
-function normalizeTime(v) {
-  if (!v && v !== 0) return null;
-  if (v instanceof Date) {
-    var hh=v.getHours(), mm=v.getMinutes(), ss=v.getSeconds();
-    return (hh*3600+mm*60+ss)/86400;
-  }
-  v = stripLeadingApostrophe(v);
-  var m = String(v).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return null;
-  var hh=parseInt(m[1],10), mm=parseInt(m[2],10), ss=m[3]?parseInt(m[3],10):0;
-  if (hh>23||mm>59||ss>59) return null;
-  return (hh*3600+mm*60+ss)/86400;
+function handleForgotPassword(e) {
+    e.preventDefault();
+    const t = translations[currentLang] || translations.vi || {};    
+    Swal.fire({
+        title: t.forgot_password_title || 'Quên mật khẩu',
+        input: 'text',
+        inputLabel: t.forgot_password_input_label || 'Vui lòng nhập tên đăng nhập của bạn',
+        inputPlaceholder: t.forgot_password_input_placeholder || 'Tên đăng nhập',
+        showCancelButton: true,
+        confirmButtonText: t.continue_button || 'Tiếp tục',
+        cancelButtonText: t.cancel_button || 'Hủy',
+        inputValidator: (value) => {
+            if (!value) {
+                return t.forgot_password_input_required || 'Bạn cần nhập tên đăng nhập!';
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const username = result.value;
+            Swal.fire({
+                title: t.reset_password_title || 'Đặt lại mật khẩu',
+                html: `
+                    <input type="text" id="swal-securitycode" class="swal2-input" placeholder="${t.reset_password_security_placeholder || 'Mã bảo mật'}">
+                    <input type="password" id="swal-newpassword" class="swal2-input" placeholder="${t.reset_password_new_placeholder || 'Mật khẩu mới'}">
+                    <input type="password" id="swal-confirm" class="swal2-input" placeholder="${t.reset_password_confirm_placeholder || 'Xác nhận mật khẩu mới'}">
+                `,
+                confirmButtonText: t.confirm_button || 'Xác nhận',
+                focusConfirm: false,
+                preConfirm: () => {
+                    const securityCode = $('#swal-securitycode').val();
+                    const newPassword = $('#swal-newpassword').val();
+                    const confirm = $('#swal-confirm').val();
+                    if (!securityCode || !newPassword || !confirm) {
+                        Swal.showValidationMessage(t.reset_password_missing_fields || 'Vui lòng điền đầy đủ thông tin');
+                        return false;
+                    } else if (newPassword !== confirm) {
+                        Swal.showValidationMessage(t.reset_password_mismatch || 'Mật khẩu mới không khớp');
+                        return false;
+                    }
+                    return { username: username, securityCode: securityCode, newPassword: newPassword };
+                }
+            }).then((formResult) => {
+                if (formResult.isConfirmed) {
+                    showLoading(t.loading_processing || 'Đang xử lý...');
+                    google.script.run
+                        .withSuccessHandler(message => {
+                            Swal.fire(t.success_title || 'Thành công', message, 'success');
+                        })
+                        .withFailureHandler(showError)
+                        .resetPassword(formResult.value);
+                }
+            });
+        }
+    });
 }
 
-function formatDateForClient(v) {
-  if (!v && v!==0) return '';
-  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
-  return stripLeadingApostrophe(v);
-}
+// =================================================================
+// ACCOUNT PAGE SPECIFIC FUNCTIONS
+// =================================================================
+function initGuidePage() {
+  const container = $('#guide-page');
+  if (!container.length) return;
 
-function formatTimeForClient(v) {
-  if (!v && v!==0) return '';
-  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
-  if (typeof v === 'number') {
-    var total = Math.round(v*86400);
-    var hh = Math.floor(total/3600);
-    var mm = Math.floor((total%3600)/60);
-    var ss = total%60;
-    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
-  }
-  return stripLeadingApostrophe(v);
-}
+  const role = getUserRole();
+  const generalSection = container.find('[data-guide-role="general"]');
+  const xpplSection = container.find('[data-guide-role="xppl"]');
 
-function parseExcelDate_(v) {
-  if (v == null || v === '') return '';
-  var d;
-  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-    d = v;
-  } else if (typeof v === 'number') {
-    d = new Date(Math.round((v - 25569) * 86400 * 1000));
+  if (role === 'admin-xppl') {
+    generalSection.addClass('d-none');
+    xpplSection.removeClass('d-none');
   } else {
-    var s = String(v).replace(/"/g, '');
-    d = new Date(s);
-    if (isNaN(d)) {
-      var m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (m) d = new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
-    }
+    xpplSection.addClass('d-none');
+    generalSection.removeClass('d-none');
   }
-  if (!d || isNaN(d)) return '';
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function parseExcelTime_(v) {
-  if (v == null || v === '') return '';
-  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-    return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
-    var hh=v.getHours(), mm=v.getMinutes(), ss=v.getSeconds();
-    return (hh*3600+mm*60+ss)/86400;    
+function initAccountPage() {
+    $('#changePasswordForm').on('submit', handleChangePassword);
+
+    if (isRole('admin')) {
+        $('#admin-user-management').removeClass('d-none');
+        initUsersTable();
+        $('#addNewUserBtn').on('click', handleAddNewUser);
+    }
+}
+
+function initUsersTable() {
+    const t = translations[currentLang];
+    if ($.fn.DataTable.isDataTable('#usersTable')) {
+        $('#usersTable').DataTable().destroy();
+    }
+    const columns = [
+        { data: null, title: t.action_column, orderable: false, render: (data, type, row) => {
+            return `
+                <button class="btn btn-info btn-sm edit-user-btn" title="${t.edit_button}"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-secondary btn-sm reset-password-btn" title="Reset Password"><i class="fas fa-key"></i></button>
+                <button class="btn btn-danger btn-sm delete-user-btn" title="${t.delete_button}"><i class="fas fa-trash-alt"></i></button>
+            `;
+        }},
+        { data: 'Username', title: t.col_username },
+        { data: 'Password', title: t.col_password },
+        { data: 'Role', title: t.col_role },
+        { data: 'Contractor', title: t.col_contractor },
+        { data: 'CustomerName', title: t.col_customer_name, defaultContent: '' },
+        { data: 'SecurityCode', title: t.col_security_code }
+    ];
+
+    usersTable = $('#usersTable').DataTable({
+        processing: true,
+        columns: columns,
+        order: [[1, 'asc']],
+        paging: false,
+        info: false,
+        data: []
+    });
+
+    fetchUsersData();
+
+    $('#usersTable tbody').off('click').on('click', '.edit-user-btn', function() {
+        const rowData = usersTable.row($(this).closest('tr')).data();
+        handleEditUser(rowData);
+    }).on('click', '.reset-password-btn', function() {
+        const rowData = usersTable.row($(this).closest('tr')).data();
+        handleResetPassword(rowData.Username);
+    }).on('click', '.delete-user-btn', function() {
+        const rowData = usersTable.row($(this).closest('tr')).data();
+        handleDeleteUser(rowData.Username);
+    });
+}
+
+// ... (Các hàm còn lại giữ nguyên logic, chỉ cần đảm bảo các chuỗi văn bản tĩnh đã được thay thế bằng key trong các file .html)
+// ... (Tôi sẽ dán phần còn lại của file để đảm bảo tính toàn vẹn)
+
+function fetchUsersData() {
+    showLoading('Đang tải danh sách người dùng...');
+    google.script.run
+        .withSuccessHandler(data => {
+            usersTable.clear().rows.add(data).draw();
+            setTimeout(() => usersTable.columns.adjust(), 10);
+            Swal.close();
+        })
+        .withFailureHandler(showError)
+        .getUsers(userSession.token);
+}
+
+function handleEditUser(rowData) {
+    const contractors = ['Hoanh Son', 'Nam Tien', 'PTS'];
+    Swal.fire({
+        title: `Chỉnh sửa: ${rowData.Username}`,
+        html: `
+            <div class="swal-form-group">
+                <label for="swal-role">Phân quyền</label>
+                <select id="swal-role" class="swal2-select">
+                    <option value="user" ${normalizeRole(rowData.Role) === 'user' ? 'selected' : ''}>user</option>
+                    <option value="admin" ${normalizeRole(rowData.Role) === 'admin' ? 'selected' : ''}>admin</option>
+                    <option value="admin-xppl" ${normalizeRole(rowData.Role) === 'admin-xppl' ? 'selected' : ''}>admin-xppl</option>
+                    <option value="User-Supervision" ${normalizeRole(rowData.Role) === 'user-supervision' ? 'selected' : ''}>User-Supervision</option>
+                </select>
+            </div>
+            <div class="swal-form-group">
+                <label for="swal-customer-name">Customer Name</label>
+                <input id="swal-customer-name" class="swal2-input" value="${rowData.CustomerName || ''}" placeholder="Nhập tên khách hàng">
+            </div>            
+            <div class="swal-form-group">
+                <label for="swal-contractor">Nhà thầu chính</label>
+                <input id="swal-contractor" class="swal2-input" list="contractors-list" value="${rowData.Contractor || ''}">
+                <datalist id="contractors-list">
+                    ${contractors.map(c => `<option value="${c}">`).join('')}
+                </datalist>
+            </div>
+        `,
+        confirmButtonText: 'Lưu',
+        preConfirm: () => {
+            return {
+                Username: rowData.Username,
+                Role: $('#swal-role').val(),
+                Contractor: $('#swal-contractor').val(),
+                CustomerName: $('#swal-customer-name').val()
+            }
+        }
+    }).then(result => {
+        if (result.isConfirmed) {
+            showLoading('Đang cập nhật...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire('Thành công!', message, 'success');
+                    fetchUsersData();
+                })
+                .withFailureHandler(showError)
+                .updateUser(result.value, userSession.token);
+        }
+    });
+}
+
+function handleResetPassword(username) {
+    Swal.fire({
+        title: 'Xác nhận',
+        text: `Bạn có chắc muốn đặt lại mật khẩu cho ${username}? Mật khẩu mới sẽ được tạo ngẫu nhiên.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Xác nhận',
+        cancelButtonText: 'Hủy'
+    }).then(result => {
+        if (result.isConfirmed) {
+            showLoading('Đang xử lý...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire({
+                        title: 'Thành công!',
+                        html: `<p>Vui lòng sao chép và gửi thông tin này cho người dùng:</p><pre style="text-align:left; background-color:#f0f0f0; padding:10px; border-radius:5px;">${message}</pre>`,
+                        icon: 'success'
+                    });
+                })
+                .withFailureHandler(showError)
+                .adminResetPassword(username, userSession.token);
+        }
+    });
+}
+
+function handleAddNewUser() {
+    const contractors = ['Hoanh Son', 'Nam Tien', 'PTS'];
+    Swal.fire({
+        title: 'Thêm người dùng mới',
+        html: `
+            <div class="swal-form-group">
+                <label for="swal-username">Tên đăng nhập</label>
+                <input id="swal-username" class="swal2-input" placeholder="Tên đăng nhập">
+            </div>
+            <div class="swal-form-group">
+                <label for="swal-role">Phân quyền</label>
+                <select id="swal-role" class="swal2-select">
+                    <option value="user">user</option>
+                    <option value="admin">admin</option>
+                    <option value="admin-xppl">admin-xppl</option>
+                    <option value="User-Supervision">User-Supervision</option>                    
+                </select>
+            </div>
+            <div class="swal-form-group">
+                <label for="swal-customer-name">Customer Name</label>
+                <input id="swal-customer-name" class="swal2-input" placeholder="Nhập tên khách hàng">
+            </div>            
+            <div class="swal-form-group">
+                <label for="swal-contractor">Nhà thầu chính</label>
+                <input id="swal-contractor" class="swal2-input" list="contractors-list" placeholder="Nhập hoặc chọn nhà thầu">
+                <datalist id="contractors-list">
+                    ${contractors.map(c => `<option value="${c}">`).join('')}
+                </datalist>
+            </div>
+        `,
+        confirmButtonText: 'Tạo',
+        preConfirm: () => {
+            const username = $('#swal-username').val();
+            if (!username) {
+                Swal.showValidationMessage('Tên đăng nhập không được để trống');
+            }
+            return {
+                Username: username,
+                Role: $('#swal-role').val(),
+                Contractor: $('#swal-contractor').val(),
+                CustomerName: $('#swal-customer-name').val()
+            }
+        }
+    }).then(result => {
+        if (result.isConfirmed) {
+            showLoading('Đang tạo người dùng...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire({
+                        title: 'Thành công!',
+                        html: `<p>Vui lòng sao chép và gửi thông tin này cho người dùng:</p><pre style="text-align:left; background-color:#f0f0f0; padding:10px; border-radius:5px;">${message}</pre>`,
+                        icon: 'success'
+                    });
+                    fetchUsersData();
+                })
+                .withFailureHandler(showError)
+                .addNewUser(result.value, userSession.token);
+        }
+    });
+}
+
+function handleDeleteUser(username) {
+    Swal.fire({
+        title: 'Xác nhận xóa',
+        text: `Bạn có chắc chắn muốn xóa vĩnh viễn người dùng "${username}"? Hành động này không thể hoàn tác.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Vâng, xóa đi!',
+        cancelButtonText: 'Hủy'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            showLoading('Đang xóa người dùng...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire('Đã xóa!', message, 'success');
+                    fetchUsersData();
+                })
+                .withFailureHandler(showError)
+                .deleteUser(username, userSession.token);
+        }
+    });
+}
+
+function handleChangePassword(e) {
+    e.preventDefault();
+    const currentPassword = $('#currentPassword').val();
+    const newPassword = $('#newPassword').val();
+    const confirmNewPassword = $('#confirmNewPassword').val();
+
+    if (newPassword !== confirmNewPassword) {
+        showError({ message: 'Mật khẩu mới và xác nhận mật khẩu không khớp.' });
+        return;
+    }
+
+    showLoading('Đang xử lý...');
+    google.script.run
+        .withSuccessHandler(message => {
+            Swal.fire('Thành công!', message, 'success');
+            $('#changePasswordForm')[0].reset();
+        })
+        .withFailureHandler(showError)
+        .changePassword({ currentPassword, newPassword }, userSession.token);
+}
+
+function initRegisterPage() {
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+  const todayStr = getFormattedDate(today);
+  const tomorrowStr = getFormattedDate(tomorrow);
+  const t = translations[currentLang];
+
+  setupCustomFileInput('#fileUploader', {
+    trigger: '#fileUploaderTrigger',
+    display: '#fileUploaderDisplay',
+    defaultKey: 'file_no_file_selected'
+  });
+
+  const dateSelect = $('#formRegisterDate');
+
+  google.script.run.withSuccessHandler(status => {
+
+    if (userSession.role === 'admin') {
+      const todayInput = today.toISOString().split('T')[0];
+      dateSelect.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
+      $('#upload-date-note').text('');
+      $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
+      $('#registration-content .card').removeClass('opacity-50 disabled-card');
+      $('#registration-content .card').find('input, select, button').prop('disabled', false);
+    } else {
+      const tomorrowLabel = t.register_tomorrow_label ? ` ${t.register_tomorrow_label}` : '';
+      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>`);
+      if (status.period === 1) {
+        const uploadNote = (t.register_upload_date_note || '').replace('{date}', tomorrowStr);
+        $('#upload-date-note').text(uploadNote);
+      } else {
+        $('#upload-date-note').text('');
+      }
+      startRegistrationTimer();
+    }
+  }).checkRegistrationTime();
+
+  $('#manualEntryForm').on('submit', handleManualAdd);
+  $('#uploadButton').on('click', handleFileUpload);
+  $('#saveUploadBtn').on('click', handleSaveUploadedData);
+
+  // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
+  google.script.run
+    .withSuccessHandler(list => {
+      allowedCompanies = (list || []).filter(Boolean);
+      const $sel = $('#formTransportionCompany');
+
+
+      if (isRole('user')) {//đã làm đến đây lúc 15:28
+        // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
+        const me = String((userSession.contractor || '')).trim();
+        if (me) {
+          $sel.html(`<option value="${me}">${me}</option>`)
+              .val(me)
+              .prop('disabled', true)
+              .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
+        } else {
+          // Không có contractor → vẫn cho chọn (ít gặp)
+          const firstOption = t.select_company_option || 'Chọn đơn vị';
+          const html = [`<option value="">${firstOption}</option>`,
+                        ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
+          $sel.html(html).prop('disabled', false).removeClass('bg-light');
+        }
+      } else {
+        // Admin: danh sách đầy đủ
+          const firstOption = t.select_company_option || 'Chọn đơn vị';
+        const html = [`<option value="">${firstOption}</option>`,
+                      ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
+        $sel.html(html).prop('disabled', false).removeClass('bg-light');
+      }
+    })
+    .withFailureHandler(showError)
+    .getTransportCompanies();   // <-- đang đọc từ ContractData như bạn yêu cầu
+
+  loadActiveContractNosForRegister();
+}
+
+
+
+function startRegistrationTimer() {
+    if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
+																					
+    const updateCountdown = () => {
+        google.script.run
+            .withSuccessHandler(status => {
+                const openNotice = $('#registration-open-notice');
+                const closedNotice = $('#registration-closed-notice');
+                const contentCards = $('#registration-content .card');
+
+                if (status.isOpen) {
+                    openNotice.removeClass('d-none');
+                    closedNotice.addClass('d-none');
+                    contentCards.removeClass('opacity-50 disabled-card');
+                    contentCards.find('input, select, button').prop('disabled', false);
+                    if (isRole('user')) {
+                        $('#formTransportionCompany').prop('disabled', true);
+                    }
+                    openNotice.find('#open-message').text(translations[currentLang].reg_open_message_text);
+                    const timeToClose = status.timeToClose;
+                    const hours = Math.floor(timeToClose / (1000 * 60 * 60));
+                    const minutes = Math.floor((timeToClose % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((timeToClose % (1000 * 60)) / 1000);
+                    openNotice.find('#countdown-timer-open').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+
+                } else {
+                    closedNotice.removeClass('d-none');
+                    openNotice.addClass('d-none');
+                    contentCards.addClass('opacity-50 disabled-card');
+                    contentCards.find('input, select, button').prop('disabled', true);
+                    closedNotice.find('#closed-message').text(translations[currentLang].reg_closed_message_text);
+                    const timeToOpen = status.timeToOpen;
+                    const hours = Math.floor(timeToOpen / (1000 * 60 * 60));
+                    const minutes = Math.floor((timeToOpen % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((timeToOpen % (1000 * 60)) / 1000);
+                    closedNotice.find('#countdown-timer-closed').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+                } 
+            })
+            .withFailureHandler(showError)
+            .checkRegistrationTime();
+    };
+
+    updateCountdown();
+    registrationTimerInterval = setInterval(updateCountdown, 1000);
+}
+
+// === THAY TOÀN BỘ HÀM NÀY ===
+function handleManualAdd(e) {
+  e.preventDefault();
+
+  // Lấy đúng id các input trên Page_Register.html
+  const rawRegisterDate     = $('#formRegisterDate').val();
+  const registerDate        = rawRegisterDate && rawRegisterDate.includes('-')
+                                ? getFormattedDate(new Date(rawRegisterDate))
+                                : rawRegisterDate;               // KHÔNG thêm dấu ' ở client
+  const contractNo          = $('#manual-contractNo').val().trim();
+  const truckPlate          = $('#formTruckPlate').val().trim();
+  const country             = $('#formCountry').val();
+  const wheel               = $('#formWheel').val().trim();
+  const trailerPlate        = $('#formTrailerPlate').val().trim();
+  const truckWeight         = $('#formTruckWeight').val().trim();
+  const payLoad             = $('#formPayLoad').val().trim();
+  const containerNo1        = $('#formContainerNo1').val().trim();
+  const containerNo2        = $('#formContainerNo2').val().trim();
+  const driverName          = $('#formDriverName').val().trim();
+  const driverIdPassport    = $('#formIdPassport').val().trim();          // <-- id đúng là formIdPassport
+  const phoneNumber         = $('#formPhoneNumber').val().trim();
+  const destinationEST      = $('#formDestinationEST').val().trim();
+  const transportionCompany = $('#formTransportionCompany').val();
+  const subcontractor       = $('#formSubcontractor').val().trim();
+  const vehicleStatus       = $('#formVehicleStatus').val();
+  const t = translations[currentLang];  
+
+  if (!registerDate || !contractNo || !truckPlate) {
+    Swal.fire(t.register_missing_data_title || 'Thiếu dữ liệu',
+              t.register_missing_data_message || 'Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.',
+              'warning');
+    return;
   }
-  if (typeof v === 'number') {
-    var frac = v % 1;
-    if (frac < 0) frac = (frac + 1) % 1;
-    return frac;
+
+  // GỬI ĐỦ CÁC CỘT giống header của sheet VehicleData
+  const record = {
+    'Register Date'       : registerDate,          // Gửi dạng "DD/MM/YYYY" bình thường
+    'Contract No'         : contractNo,
+    'Truck Plate'         : truckPlate,
+    'Country'             : country,
+    'Wheel'               : wheel,
+    'Trailer Plate'       : trailerPlate,
+    'Truck weight'        : truckWeight,
+    'Pay load'            : payLoad,
+    'Container No1'       : containerNo1,
+    'Container No2'       : containerNo2,
+    'Driver Name'         : driverName,
+    'ID/Passport'         : driverIdPassport,
+    'Phone number'        : phoneNumber,
+    'Destination EST'     : destinationEST,
+    'Transportion Company': transportionCompany,
+    'Subcontractor'       : subcontractor,
+    'Vehicle Status'      : vehicleStatus
+  };
+
+  showLoading(t.loading_saving_data || 'Đang lưu dữ liệu...');
+  google.script.run
+    .withSuccessHandler(msg => {
+      Swal.close();
+      Swal.fire(t.success_title || 'Thành công',
+                msg || t.register_success_message || 'Đăng ký xe thành công!',
+                'success');
+      $('#manualEntryForm')[0].reset();
+      if (typeof registeredVehicleTable !== 'undefined') {
+        registeredVehicleTable.ajax.reload(null, false);
+      }
+    })
+    .withFailureHandler(showError)
+    .addManualVehicle(record, userSession.token, currentLang);
+}
+
+
+function handleFileUpload() {
+    const file = $('#fileUploader')[0].files[0];
+    const t = translations[currentLang];    
+    if (!file) {
+        Swal.fire(t.no_file_selected_title || 'Chưa chọn file',
+                  t.no_file_selected_message || 'Vui lòng chọn một file.',
+                  'warning');
+        return;
+    }
+    showLoading(t.loading_processing_file || 'Đang xử lý và xác thực file...');
+    setTimeout(() => {
+        try {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const workbook = XLSX.read(e.target.result, { type: 'array' });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+                if (jsonData.length < 2) throw new Error(t.file_no_data_error || 'File không có dữ liệu.');
+                
+                const { data, errors } = validateAndTransformData(jsonData.slice(1));
+                
+                previewTableData = data;
+                
+                const columns = [
+                    { data: 'ID', title: t.col_id || 'ID' },
+                    { data: 'Register Date', title: t.col_register_date || 'Register Date' },
+                    { data: 'Contract No', title: t.col_contract_no || 'Contract No' },
+                    { data: 'Truck Plate', title: t.col_truck_plate || 'Truck Plate' },
+                    { data: 'Country', title: t.col_country || 'Country' },
+                    { data: 'Wheel', title: t.col_wheel || 'Wheel' },
+                    { data: 'Trailer Plate', title: t.col_trailer_plate || 'Trailer Plate' },
+                    { data: 'Truck weight', title: t.col_truck_weight || 'Truck weight' },
+                    { data: 'Pay load', title: t.col_payload || 'Pay load' },
+                    { data: 'Container No1', title: t.col_container1 || 'Container 1' },
+                    { data: 'Container No2', title: t.col_container2 || 'Container 2' },
+                    { data: 'Driver Name', title: t.col_driver_name || 'Driver Name' },
+                    { data: 'ID/Passport', title: t.col_id_passport || 'ID/Passport' },
+                    { data: 'Phone number', title: t.col_phone_number || 'Phone number' },
+                    { data: 'Destination EST', title: t.col_destination || 'Destination EST' },
+                    { data: 'Transportion Company', title: t.col_transport_company || 'Transportion Company' },
+                    { data: 'Subcontractor', title: t.col_subcontractor || 'Subcontractor' },
+                    { data: 'Vehicle Status', title: t.col_vehicle_status || 'Vehicle Status' }
+                ];
+                
+                if ($.fn.DataTable.isDataTable('#previewDataTable')) {
+                    $('#previewDataTable').DataTable().destroy();
+                }
+                
+                previewDataTable = $('#previewDataTable').DataTable({
+                    data: previewTableData,
+                    columns: columns,
+                    paging: false, info: false, searching: false, scrollX: true,
+                    createdRow: function(row, data, dataIndex) {
+                        if (data.errors) {
+                            for (const key in data.errors) {
+                                const colIndex = columns.findIndex(c => c.data === key);
+                                if (colIndex !== -1) {
+                                    $(row).find('td').eq(colIndex).addClass('is-invalid').attr('title', data.errors[key]);
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                $('#previewContainer').removeClass('d-none');
+                setTimeout(() => previewDataTable.columns.adjust(), 10);
+                Swal.close();
+
+                if (errors.length > 0) {
+                    $('#saveUploadBtn').prop('disabled', true);
+                    const maxErrorsToShow = 10;
+                    const slicedErrors = errors.slice(0, maxErrorsToShow);
+                    let errorHtml = `<p>${t.upload_errors_intro || 'Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.'}</p><ul class="text-start">`;
+                    slicedErrors.forEach(err => { errorHtml += `<li>${err}</li>`; });
+                    if(errors.length > maxErrorsToShow) {
+                        errorHtml += `<li>${t.upload_errors_more || '... và nhiều lỗi khác.'}</li>`;
+                    }
+                    errorHtml += '</ul>';
+                    Swal.fire({
+                        icon: 'error',
+                        title: t.invalid_data_title || 'Dữ liệu không hợp lệ!',
+                        html: errorHtml
+                    });
+                } else {
+                    $('#saveUploadBtn').prop('disabled', false);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError({ message: error.message });
+        }
+    }, 100);
+}
+
+function validateAndTransformData(dataRows) {
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+    const todayStr = getFormattedDate(today);
+    const tomorrowStr = getFormattedDate(tomorrow);
+
+    const transformedData = [];
+    const allErrors = [];
+    
+    const allowedStatus = ['RO', 'CO', 'PM', 'CM', 'AC', 'ND'];
+    const allowedCountries = ['Vietnam', 'Laos'];
+
+    const t = translations[currentLang];
+    const formatMessage = (template, replacements = {}) => {
+        let str = template || '';
+        Object.entries(replacements).forEach(([key, value]) => {
+            str = str.replace(new RegExp(`\{${key}\}`, 'g'), value);
+        });
+        return str;
+    };
+
+    const columnNames = {
+        'Register Date': t.col_register_date || 'Register Date',
+        'Contract No': t.col_contract_no || 'Contract No',
+        'Truck Plate': t.col_truck_plate || 'Truck Plate',
+        'Country': t.col_country || 'Country',
+        'Wheel': t.col_wheel || 'Wheel',
+        'Trailer Plate': t.col_trailer_plate || 'Trailer Plate',
+        'Truck weight': t.col_truck_weight || 'Truck weight',
+        'Pay load': t.col_payload || 'Pay load',
+        'Container No1': t.col_container1 || 'Container No1',
+        'Container No2': t.col_container2 || 'Container No2',
+        'Driver Name': t.col_driver_name || 'Driver Name',
+        'ID/Passport': t.col_id_passport || 'ID/Passport',
+        'Phone number': t.col_phone_number || 'Phone number',
+        'Destination EST': t.col_destination || 'Destination EST',
+        'Transportion Company': t.col_transport_company || 'Transportion Company',
+        'Subcontractor': t.col_subcontractor || 'Subcontractor',
+        'Vehicle Status': t.col_vehicle_status || 'Vehicle Status'
+    };
+
+    dataRows.forEach((row, index) => {
+        if (row.length === 0 || row.every(cell => cell === "")) return;
+
+        const rowIndexForError = index + 2;
+        const rowErrors = {};
+
+        const appendError = (field, template, replacements = {}) => {
+            const msg = formatMessage(template, replacements);
+            if (!msg) return;
+            rowErrors[field] = rowErrors[field] ? `${rowErrors[field]} ${msg}` : msg;
+        };
+        
+        const record = {
+            'ID': generateRandomId(15),
+            'Register Date': row[1] || '', 'Contract No': row[2] || '',
+            'Truck Plate': String(row[3] || '').replace(/\s/g, '').toUpperCase(), 'Country': row[4] || '',
+            'Wheel': row[5] || '', 'Trailer Plate': String(row[6] || '').replace(/\s/g, '').toUpperCase(),
+            'Truck weight': row[7] || '', 'Pay load': row[8] || '', 'Container No1': row[9] || '',
+            'Container No2': row[10] || '', 'Driver Name': row[11] || '', 'ID/Passport': row[12] || '',
+            'Phone number': row[13] || '', 'Destination EST': row[14] || '',
+            'Transportion Company': row[15] || '', 'Subcontractor': row[16] || '',
+            'Vehicle Status': String(row[17] || '').toUpperCase()
+        };
+
+        const requiredFields = ['Contract No', 'Truck Plate', 'Country', 'Wheel', 'Truck weight', 'Pay load', 'Driver Name', 'ID/Passport', 'Destination EST', 'Transportion Company', 'Subcontractor', 'Vehicle Status'];
+        requiredFields.forEach(field => {
+            if (!record[field]) {
+                appendError(field, t.validation_required || "- Cột '{field}' không được để trống.", { field: columnNames[field] });
+            }
+        });
+
+        const parsedDate = parseExcelDate(record['Register Date']);
+        if (!parsedDate) {
+            appendError('Register Date', t.validation_invalid_date || "- Cột '{field}' có định dạng ngày không hợp lệ.", { field: columnNames['Register Date'] });
+        } else {
+            const dateStr = getFormattedDate(parsedDate);
+            if (!isRole('admin')) {
+                const currentHour = new Date().getHours();
+                if (currentHour >= 8 && currentHour < 16) {
+                    if (dateStr !== tomorrowStr) {
+                        appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
+                    }
+                }
+            }
+            record['Register Date'] = dateStr;
+        }
+
+        if (record['Truck Plate'].length > 11) {
+            appendError('Truck Plate', t.validation_max_length || "- Cột '{field}' không được vượt quá {max} ký tự.", { field: columnNames['Truck Plate'], max: 11 });
+        }
+        if (record['Country'] && !allowedCountries.includes(record['Country'])) {
+            appendError('Country', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Country'], values: allowedCountries.join(', ') });
+        }
+        if (record['Trailer Plate'].length > 11) {
+            appendError('Trailer Plate', t.validation_max_length || "- Cột '{field}' không được vượt quá {max} ký tự.", { field: columnNames['Trailer Plate'], max: 11 });
+        }
+        
+        const numericFields = {'Wheel': 1000, 'Truck weight': 1000, 'Pay load': 1000, 'Phone number': Infinity};
+        for (const field in numericFields) {
+            if (!record[field]) continue;
+            const value = parseFloat(record[field]);
+            if (isNaN(value)) {
+                appendError(field, t.validation_numeric_only || "- Cột '{field}' phải là số.", { field: columnNames[field] });
+            } else if (numericFields[field] !== Infinity && value > numericFields[field]) {
+                appendError(field, t.validation_numeric_max || "- Cột '{field}' phải là số và không quá {max}.", { field: columnNames[field], max: numericFields[field] });
+            }
+        }
+
+        const textLengthFields = {'Container No1': 70, 'Container No2': 70, 'Driver Name': 70, 'ID/Passport': 70, 'Destination EST': 70, 'Subcontractor': 70};
+        for(const field in textLengthFields) {
+            if (String(record[field]).length > textLengthFields[field]) {
+                appendError(field, t.validation_max_length || "- Cột '{field}' không được vượt quá {max} ký tự.", { field: columnNames[field], max: textLengthFields[field] });
+            }
+        }
+
+        if (record['Vehicle Status'] && !allowedStatus.includes(record['Vehicle Status'])) {
+            appendError('Vehicle Status', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Vehicle Status'], values: allowedStatus.join(', ') });
+        }
+        
+        if (isRole('user')) {
+            if (record['Transportion Company'] && record['Transportion Company'] !== userSession.contractor) {
+                appendError('Transportion Company', t.validation_contractor_mismatch || '- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).', { contractor: userSession.contractor });
+            }
+            record['Transportion Company'] = userSession.contractor;
+        } else {
+            if (record['Transportion Company'] && !allowedCompanies.includes(record['Transportion Company'])) {
+                appendError('Transportion Company', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Transportion Company'], values: allowedCompanies.join(', ') });
+            }
+        }
+        
+        if (Object.keys(rowErrors).length > 0) {
+            const errorMessages = Object.values(rowErrors).map(msg => msg.trim()).join('<br>');
+            const rowLabel = formatMessage(t.validation_row_label || 'Dòng {row}', { row: rowIndexForError });
+            allErrors.push(`<b>${rowLabel}:</b><br>${errorMessages}`);
+            record.errors = rowErrors;
+        }
+        
+        transformedData.push(record);
+    });
+
+    const seen = new Map();
+    transformedData.forEach((record, index) => {
+        if (record.errors) return;
+        const key = `${record['Register Date']}-${record['Truck Plate']}-${record['Transportion Company']}`;
+        if (seen.has(key)) {
+            const firstIndex = seen.get(key);
+            if (!transformedData[firstIndex].errors) transformedData[firstIndex].errors = {};
+            if (!record.errors) record.errors = {};
+            
+            const errorMessage = t.duplicate_data_error || 'Dữ liệu trùng lặp trong file.';
+            transformedData[firstIndex].errors['ID'] = errorMessage;
+            record.errors['ID'] = errorMessage;
+
+            const duplicateLabel = formatMessage(t.validation_duplicate_rows || 'Dòng {row1} và {row2}', { row1: firstIndex + 2, row2: index + 2 });
+            const duplicateDetail = t.validation_duplicate_details || 'Trùng lặp dữ liệu (Ngày, Biển số xe, ĐVVC).';
+            allErrors.push(`<b>${duplicateLabel}:</b> ${duplicateDetail}`);
+        } else {
+            seen.set(key, index);
+        }
+    });
+
+    return { data: transformedData, errors: allErrors };
+}
+
+function handleSaveUploadedData() {
+    const dataToSave = previewTableData.filter(row => !row.errors);
+    const t = translations[currentLang];    
+    if (dataToSave.length === 0) {
+        Swal.fire(t.no_valid_data_title || 'Không có dữ liệu hợp lệ',
+                  t.no_valid_data_message || 'Không có dữ liệu nào để lưu.',
+                  'error');
+        return;
+    }
+
+    showLoading(t.loading_checking_data || 'Đang kiểm tra và lưu dữ liệu...');
+    google.script.run
+        .withSuccessHandler(message => {
+            Swal.fire(t.success_title || 'Thành công', message, 'success');
+            previewTableData = [];
+            if($.fn.DataTable.isDataTable('#previewDataTable')) $('#previewDataTable').DataTable().clear().destroy();
+            $('#previewContainer').addClass('d-none');
+            $('#fileUploader').val('').trigger('change');
+        })
+        .withFailureHandler(showError)
+        .saveData(dataToSave, userSession.token, currentLang);
+}
+
+function initializeDataTable(config) {
+    const {
+        tableId,
+        columns,
+        ajaxFunction,
+        searchControl,
+        lengthControl,
+        deleteButton,
+        selectAllCheckbox,
+        enableSelect = true
+    } = config;
+
+    if ($.fn.DataTable.isDataTable(`#${tableId}`)) {
+        $(`#${tableId}`).DataTable().destroy();
+    }
+
+    const table = $(`#${tableId}`).DataTable({
+        processing: true,
+        serverSide: true,
+        ajax: function(data, callback, settings) {
+            let params = {
+                draw: data.draw,
+                start: data.start,
+                length: data.length,
+                search: data.search,
+                order: data.order,
+                sessionToken: userSession.token,
+                ...config.getExtraParams()
+            };
+            ajaxFunction(params, callback);
+        },
+        columns: columns,
+        paging: true,
+        lengthChange: false,
+        searching: true,
+        info: true,
+        autoWidth: false,
+        deferRender: true,
+        scrollX: true,
+        select: enableSelect ? { style: 'multi', selector: 'td:first-child .row-checkbox' } : false,
+        pageLength: 50,
+        language: {
+            "processing": translations[currentLang].dt_processing || "Đang xử lý...",
+            "lengthMenu": `${translations[currentLang].show_label || "Hiển thị"} _MENU_ ${translations[currentLang].entries_label || "dòng"}`,
+            "zeroRecords": translations[currentLang].dt_zero_records || "Không tìm thấy kết quả",
+            "info": `${translations[currentLang].dt_info_pre || "Hiển thị từ"} _START_ ${translations[currentLang].dt_info_mid || "đến"} _END_ ${translations[currentLang].dt_info_post || "của"} _TOTAL_ ${translations[currentLang].entries_label || "dòng"}`,
+            "infoEmpty": translations[currentLang].dt_info_empty || "Không có dữ liệu",
+            "infoFiltered": `(${translations[currentLang].dt_info_filtered_pre || "được lọc từ"} _MAX_ ${translations[currentLang].dt_info_filtered_post || "dòng"})`,
+            "search": `${translations[currentLang].dt_search || "Tìm kiếm"}:`,
+            "paginate": {
+                "first": translations[currentLang].dt_paginate_first || "Đầu",
+                "last": translations[currentLang].dt_paginate_last || "Cuối",
+                "next": translations[currentLang].dt_paginate_next || "Sau",
+                "previous": translations[currentLang].dt_paginate_previous || "Trước"
+            }
+        },
+        drawCallback: function(settings) {
+            setTimeout(() => $(this.api().table().node()).DataTable().columns.adjust(), 50);
+        }
+    });
+
+    function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    const debouncedSearch = debounce(function(value) {
+        table.search(value).draw();
+    }, 500);
+
+    $(searchControl).off('keyup').on('keyup', function() {
+        debouncedSearch(this.value);
+    });
+
+    $(lengthControl).off('change').on('change', function() { table.page.len($(this).val()).draw(); });
+    
+    if (deleteButton && selectAllCheckbox) {
+        const updateDeleteBtnState = () => {
+            const selectedCount = $(`#${tableId} tbody tr.selected`).length;
+            $(deleteButton).toggleClass('disabled', selectedCount === 0);
+        };
+        
+        $(selectAllCheckbox).off('change').on('change', function() {
+            const isChecked = $(this).prop('checked');
+            $(`#${tableId} tbody .row-checkbox`).prop('checked', isChecked);
+            $(`#${tableId} tbody tr`).toggleClass('selected', isChecked);
+            updateDeleteBtnState();
+        });
+
+        $(`#${tableId} tbody`).off('click change')
+            .on('click', 'tr', function(e) {
+                if (!$(e.target).is('input.row-checkbox, button, i')) {
+                    $(this).toggleClass('selected');
+                    const checkbox = $(this).find('.row-checkbox');
+                    checkbox.prop('checked', $(this).hasClass('selected'));
+                    updateDeleteBtnState();
+                }
+            })
+            .on('change', '.row-checkbox', function() {
+                $(this).closest('tr').toggleClass('selected', this.checked);
+                updateDeleteBtnState();
+            });
+    }
+
+    return table;
+}
+
+function initViewPage() {
+  const dateFilterControl = $('#date-filter-control');
+  const contractFilter = $('#contract-filter');
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+  const todayStr = getFormattedDate(today);
+  const tomorrowStr = getFormattedDate(tomorrow);
+  const t = translations[currentLang];
+  const role = getUserRole();
+  const isAdmin = role === 'admin';
+  const isUser = role === 'user';
+  const showSelectActions = isAdmin || isUser;
+  const useDateInput = hasAnyRole(['admin', 'admin-xppl', 'user-supervision']); 
+
+  const contractAllLabel = t.view_filter_contract_all || 'All contracts';
+  const contractLoadingLabel = t.view_filter_contract_loading || 'Loading...';
+  const contractEmptyLabel = t.view_filter_contract_empty || 'No contracts for the selected date';
+
+  contractFilter.empty().append($('<option>').val('').text(contractAllLabel)).prop('disabled', true);
+
+  if (useDateInput) {
+    dateFilterControl.html('<input type="date" id="date-filter-input" class="form-control form-control-sm">');
+    $('#date-filter-input').val(today.toISOString().split('T')[0]);
+  } else {
+    const todayLabel = t.view_today_label ? ` ${t.view_today_label}` : '';
+    const tomorrowLabel = t.view_tomorrow_label ? ` ${t.view_tomorrow_label}` : '';
+    dateFilterControl.html(
+      `<select id="date-filter-select" class="form-select form-select-sm">
+         <option value="${todayStr}">${todayStr}${todayLabel}</option>
+         <option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>
+       </select>`
+    );
   }
-  var m = String(v).match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-  if (m) {
-    var hh = Math.min(23, Math.max(0, parseInt(m[1],10) || 0));
-    var mm = Math.min(59, Math.max(0, parseInt(m[2],10) || 0));
-    var ss = Math.min(59, Math.max(0, m[3]?parseInt(m[3],10):0));
-    return (hh*3600+mm*60+ss)/86400;
+
+  const dateInput = useDateInput ? $('#date-filter-input') : $('#date-filter-select');
+
+  const getSelectedDateString = () => {
+    if (useDateInput) {
+      const raw = dateInput.val();
+      return raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date());
+    }
+    return dateInput.val();
+  };
+
+  const getSelectedContract = () => String(contractFilter.val() || '').trim();
+
+  function renderContractOptions(list, preferredValue) {
+    const options = Array.isArray(list)
+      ? list.map(item => String(item == null ? '' : item).replace(/^'+/, '').trim()).filter(Boolean)
+      : [];
+
+    contractFilter.empty();
+    contractFilter.append($('<option>').val('').text(contractAllLabel));
+
+    if (!options.length) {
+      contractFilter.append(
+        $('<option>').val('').prop('disabled', true).text(contractEmptyLabel)
+      );
+      contractFilter.prop('disabled', true);
+      contractFilter.val('');
+      return;
+    }
+
+    options.forEach(value => {
+      contractFilter.append($('<option>').val(value).text(value));
+    });
+    contractFilter.prop('disabled', false);
+
+    if (preferredValue && options.includes(preferredValue)) {
+      contractFilter.val(preferredValue);
+    } else {
+      contractFilter.val('');
+    }
+  }
+
+  function refreshContractOptions({ resetSelection = true } = {}) {
+    const previous = resetSelection ? '' : getSelectedContract();
+
+    if (resetSelection) {
+      contractFilter.val('');
+      contractFilter.prop('disabled', true).empty().append(
+        $('<option>').val('').text(contractLoadingLabel)
+      );
+    } else {
+      contractFilter.prop('disabled', true);
+    }
+
+    const dateString = getSelectedDateString();
+    if (!dateString) {
+      renderContractOptions([], '');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(res => {
+        const contracts = res && Array.isArray(res.contracts) ? res.contracts : [];
+        renderContractOptions(contracts, previous);
+      })
+      .withFailureHandler(err => {
+        renderContractOptions([], '');
+        showError(err);
+      })
+      .getRegisteredContractOptions({ dateString }, userSession.token);
+  }
+
+  function handleDateChange() {
+    refreshContractOptions({ resetSelection: true });
+    if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) {
+      registeredVehicleTable.draw();
+    }
+  }
+
+  dateInput.off('change.view').on('change.view', handleDateChange);
+
+  contractFilter.off('change.view').on('change.view', function () {
+    if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) {
+      registeredVehicleTable.draw();
+    }
+  });
+
+  refreshContractOptions({ resetSelection: true });
+
+  const baseColumns = [
+    { data: 'ID', title: t.col_id },
+    { data: 'Register Date', title: t.col_register_date },
+    { data: 'Contract No', title: t.col_contract_no },
+    { data: 'Truck Plate', title: t.col_truck_plate },
+    { data: 'Country', title: t.col_country },
+    { data: 'Wheel', title: t.col_wheel },
+    { data: 'Trailer Plate', title: t.col_trailer_plate },
+    { data: 'Truck weight', title: t.col_truck_weight },
+    { data: 'Pay load', title: t.col_payload },
+    { data: 'Container No1', title: t.col_container1 },
+    { data: 'Container No2', title: t.col_container2 },
+    { data: 'Driver Name', title: t.col_driver_name },
+    { data: 'ID/Passport', title: t.col_id_passport },
+    { data: 'Phone number', title: t.col_phone_number },
+    { data: 'Destination EST', title: t.col_destination },
+    { data: 'Transportion Company', title: t.col_transport_company },
+    { data: 'Subcontractor', title: t.col_subcontractor },
+    { data: 'Vehicle Status', title: t.col_vehicle_status },
+    { data: 'Registration Status', title: t.col_registration_status },
+    { data: 'Time', title: t.col_time }
+  ];
+
+  const columns = showSelectActions
+    ? [
+        { data: null, title: '<input type="checkbox" id="selectAllCheckbox">', orderable: false, render: () => '<input type="checkbox" class="row-checkbox">' },
+        { data: null, title: t.action_column, orderable: false, render: () => `<button class="btn btn-warning btn-sm edit-btn" title="${t.edit_button}"><i class="fas fa-edit"></i></button>` },
+        ...baseColumns
+      ]
+    : baseColumns;
+
+  // --- Khởi tạo DataTable ---
+  registeredVehicleTable = initializeDataTable({
+    tableId: 'registeredVehicleTable',
+    columns: columns,
+    ajaxFunction: (params, callback) => {
+      google.script.run
+        .withSuccessHandler(json => callback(json))
+        .withFailureHandler(showError)
+        .getRegisteredDataServerSide(params);
+    },
+    getExtraParams: () => ({
+      dateString: getSelectedDateString(),
+      contractNo: getSelectedContract()
+    }),
+    searchControl: '#table-search-input',
+    lengthControl: '#page-length-select',
+    deleteButton: showSelectActions ? '#deleteSelectedBtn' : null,
+    selectAllCheckbox: showSelectActions ? '#selectAllCheckbox' : null,
+    enableSelect: showSelectActions
+  });
+
+// ===== Summary cards for registered vehicles =====
+let useServerSummary = false;
+
+const updateSummaryValues = (total, pending, approved) => {
+  $('#stat-total').text(typeof total === 'number' ? total : 0);
+  $('#stat-pending').text(typeof pending === 'number' ? pending : 0);
+  $('#stat-approved').text(typeof approved === 'number' ? approved : 0);
+};
+
+const countStatuses = rows => {
+  let pending = 0;
+  let approved = 0;
+  rows.forEach(row => {
+    const status = String(row['Registration Status'] || '').toLowerCase();
+    if (status === 'approved') {
+      approved += 1;
+    } else if (status === 'pending approval') {
+      pending += 1;
+    }
+  });
+  return { pending, approved };
+};
+
+
+$('#registeredVehicleTable')
+  .off('xhr.dt.summary xhr.dt')
+  .on('xhr.dt.summary', function (_e, _settings, json) {
+    try {
+      if (json && json.summary) {
+        useServerSummary = true;
+        updateSummaryValues(
+          typeof json.summary.total === 'number' ? json.summary.total : 0,
+          typeof json.summary.pending === 'number' ? json.summary.pending : 0,
+          typeof json.summary.approved === 'number' ? json.summary.approved : 0
+        );
+
+      } else {
+        useServerSummary = false;
+        const rows = (json && json.data && json.data.length) ? json.data : [];
+        const { pending, approved } = countStatuses(rows);
+        const totalValue = (json && typeof json.recordsFiltered === 'number')
+          ? json.recordsFiltered
+          : rows.length;
+        updateSummaryValues(totalValue, pending, approved);
+      }
+    } catch (err) {
+      if (console && console.warn) console.warn('xhr.dt summary error:', err);
+    }
+  });
+
+$('#registeredVehicleTable')
+  .off('draw.dt.summaryLocal')
+  .on('draw.dt.summaryLocal', function () {
+    try {
+      if (useServerSummary) return;
+
+      const dt = $.fn.DataTable.isDataTable('#registeredVehicleTable')
+        ? $('#registeredVehicleTable').DataTable()
+        : null;
+      if (!dt) {
+        updateSummaryValues(0, 0, 0);
+        return;
+      }
+
+      const rows = dt.rows({ search: 'applied' }).data().toArray();
+      if (!rows || !rows.length) {
+        updateSummaryValues(0, 0, 0);
+        return;
+      }
+
+      const { pending, approved } = countStatuses(rows);
+      updateSummaryValues(rows.length, pending, approved);
+    } catch (err2) {
+      if (console && console.warn) console.warn('draw.dt summaryLocal error:', err2);
+    }
+  });
+
+  // ----- Phần còn lại giữ nguyên -----
+  if (isUser) {
+    const notice = $('#edit-rules-notice');
+    notice.removeClass('d-none');
+    notice.html(`${t.edit_rules_notice_line1}<br>${t.edit_rules_notice_line2}`);
+  }
+
+  $('#refreshBtn').on('click', () => {
+    refreshContractOptions({ resetSelection: false });
+    registeredVehicleTable.ajax.reload(null, false);
+  });
+  if (showSelectActions) {
+    $('#deleteSelectedBtn').removeClass('d-none disabled').off('click').on('click', handleDeleteSelected);
+  } else {
+     $('#deleteSelectedBtn').addClass('d-none').off('click');
+  }
+  $('#exportBtn').off('click').on('click', handleExportExcel);
+
+
+  // === Visibility & permissions for Registered Vehicles table (Admin vs User) ===
+   if (typeof registeredVehicleTable !== 'undefined' && showSelectActions) {
+    const SELECT_COL = 0;
+    const ACTION_COL = 1;
+
+    const isWithinUserEditWindow = () => {
+      const h = new Date().getHours();
+      return (h >= 8 && h < 16) || (h >= 20 && h < 22);
+    };
+
+    const applyRegisteredColumnsVisibility = () => {
+      if (!registeredVehicleTable) return;
+     if (isAdmin) {
+        try {
+          registeredVehicleTable.column(SELECT_COL).visible(true);
+          registeredVehicleTable.column(ACTION_COL).visible(true);
+        } catch (_e) {}    
+      } else {
+        const allow = isWithinUserEditWindow();
+        try {
+          registeredVehicleTable.column(SELECT_COL).visible(allow);
+          registeredVehicleTable.column(ACTION_COL).visible(allow);
+        } catch (_e) {}
+        if (!allow) {
+          $('#deleteSelectedBtn').addClass('disabled');
+        } else {
+          $('#deleteSelectedBtn').removeClass('disabled');          
+        }
+      }
+    };
+
+    applyRegisteredColumnsVisibility();
+    registeredVehicleTable.on('draw.dt', applyRegisteredColumnsVisibility);
+    if (!window.__rvVisInterval) {
+      window.__rvVisInterval = setInterval(applyRegisteredColumnsVisibility, 60000);
+    }
+
+    $('#registeredVehicleTable tbody').off('click', '.edit-btn').on('click', '.edit-btn', function (e) {
+      e.stopPropagation();
+      const rowData = registeredVehicleTable.row($(this).closest('tr')).data();
+      if (rowData) handleEdit(rowData);
+    });
+  }
+}
+
+const $btn = $('#exportBtn').prop('disabled', true);
+
+function handleExportExcel() {
+  // Lấy ngày theo đúng logic cũ
+  var selectedDateStr;
+  if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
+    const raw = $('#date-filter-input').val();
+    selectedDateStr = raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date());
+  } else {
+    selectedDateStr = $('#date-filter-select').val();
+  }
+
+  const table = registeredVehicleTable;
+  const t = translations[currentLang];
+  const selectedContract = ($('#contract-filter').val() || '').toString().trim();
+  const contractLabel = selectedContract || (t.view_filter_contract_all || 'All contracts');
+  let safeContractLabel = contractLabel.replace(/[\\/:*?"<>|]/g, '_').trim();
+  if (!safeContractLabel) {
+    safeContractLabel = 'All contracts';
+  }
+  const fileDatePart = selectedDateStr.replace(/\//g, '-');
+
+  // Lấy cột ĐANG HIỂN THỊ theo thứ tự (bỏ cột select + action vì data = null)
+  var colIdxs = table.columns({ visible: true, order: 'index' }).indexes().toArray();
+  var aoCols  = table.settings()[0].aoColumns;
+  var cols = colIdxs.map(function(idx) {
+      var def = aoCols[idx];
+      return { key: def.data, title: $(table.column(idx).header()).text().trim() };
+    }).filter(function(c){ return typeof c.key === 'string' && c.key.length > 0; });
+
+  // Hàm build AOA & ghi file
+  function exportRows(rows) {
+    var aoa = [ cols.map(function(c){ return c.title; }) ];
+    rows.forEach(function(obj){
+      aoa.push(cols.map(function(c){ return (obj[c.key] == null ? '' : obj[c.key]); }));
+    });
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    
+    (function applyWorksheetStyling() {
+      if (!ws['!ref']) return;
+      var range = XLSX.utils.decode_range(ws['!ref']);
+      var headerRow = range.s.r;
+      var borderSide = { style: 'thin', color: { rgb: '000000' } };
+      for (var R = range.s.r; R <= range.e.r; ++R) {
+        for (var C = range.s.c; C <= range.e.c; ++C) {
+          var cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          var cell = ws[cellRef];
+          if (!cell) continue;
+          cell.s = cell.s || {};
+          cell.s.border = {
+            top: borderSide,
+            right: borderSide,
+            bottom: borderSide,
+            left: borderSide
+          };
+          if (R === headerRow) {
+            cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+          }
+        }
+      }
+      var colCount = aoa[0] ? aoa[0].length : 0;
+      if (!colCount) return;
+      var colWidths = [];
+      for (var cIdx = 0; cIdx < colCount; ++cIdx) {
+        var maxLen = 0;
+        for (var rIdx = 0; rIdx < aoa.length; ++rIdx) {
+          var cellValue = aoa[rIdx][cIdx];
+          var text = cellValue == null ? '' : String(cellValue);
+          var parts = text.split(/\r?\n/);
+          for (var p = 0; p < parts.length; ++p) {
+            var len = parts[p].length;
+            if (len > maxLen) maxLen = len;
+          }
+        }
+        var width = Math.min(Math.max(maxLen + 2, 10), 60);
+        colWidths.push({ wch: width });
+      }
+      ws['!cols'] = colWidths;
+    })();
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "VehicleData");
+    var fileName = `${safeContractLabel}-Registration Trucklist-${fileDatePart}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }
+
+  // Nếu có chọn dòng → xuất dòng đã chọn
+  var selectedRows = table.rows({ selected: true }).data().toArray();
+  if (selectedRows && selectedRows.length) {
+    exportRows(selectedRows);
+    return;
+  }
+
+  // Mặc định: gọi server để lấy TOÀN BỘ dữ liệu theo ngày (và theo search nếu có)
+  var searchVal = table.search() || '';
+  var $btn = $('#exportBtn').prop('disabled', true);
+  showLoading(t.loading_preparing_data || 'Preparing data...');
+
+  google.script.run
+    .withSuccessHandler(function(data){
+      Swal.close(); $btn.prop('disabled', false);
+      if (Array.isArray(data) && data.length) {
+        exportRows(data); // <-- data đã là toàn bộ (không phân trang)
+      } else {
+        Swal.fire(t.no_data_title || 'No data',
+                  t.no_data_export_message || 'There is no data to export.',
+                  'info');
+      }
+    })
+    .withFailureHandler(function(err){ Swal.close(); $btn.prop('disabled', false); showError(err); })
+    .getAllDataForExport(selectedDateStr, userSession.token, searchVal, selectedContract);
+}
+
+
+
+
+function handleDeleteSelected() {
+    const selectedIds = registeredVehicleTable.rows('.selected').data().toArray().map(row => row.ID);
+    const t = translations[currentLang];    
+
+    if (selectedIds.length === 0) {
+        Swal.fire(t.no_selection_title || 'No selection',
+                  t.no_selection_message || 'Please select at least one item to delete.',
+                  'warning');
+    }
+
+    Swal.fire({
+        title: (t.delete_selected_confirm_title || 'Are you sure you want to delete {count} item(s)?').replace('{count}', selectedIds.length),
+        text: t.delete_selected_confirm_text || 'This action cannot be undone!',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonText: t.cancel_button || 'Cancel',
+        confirmButtonText: t.confirm_delete_button || 'Yes, delete!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            showLoading(t.loading_deleting || 'Deleting...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire(t.delete_success_title || 'Deleted!', message, 'success');
+                    registeredVehicleTable.draw(false);
+                })
+                .withFailureHandler(showError)
+                .deleteMultipleData(selectedIds, userSession.token);
+        }
+    });
+}
+
+function handleEdit(rowData) {
+    const createOptions = (items, selectedValue) => items.map(item => `<option value="${item}" ${item === selectedValue ? 'selected' : ''}>${item}</option>`).join('');
+    const t = translations[currentLang];    
+
+    const formHtml = `
+        <form id="editForm" class="edit-form-grid">
+            <div class="form-group"><label>${t.col_id || 'ID'}</label><input type="text" class="form-control" value="${rowData.ID}" readonly></div>
+            <div class="form-group"><label>${t.col_register_date || 'Register Date'}</label><input type="text" class="form-control" value="${rowData['Register Date']}" readonly></div>
+            <div class="form-group"><label>${t.col_contract_no || 'Contract No'}</label><input type="text" id="editContractNo" class="form-control" value="${rowData['Contract No'] || ''}" required></div>
+            <div class="form-group"><label>${t.col_truck_plate || 'Truck Plate'}</label><input type="text" id="editTruckPlate" class="form-control" value="${rowData['Truck Plate'] || ''}" maxlength="11" required></div>
+            <div class="form-group"><label>${t.col_country || 'Country'}</label>
+                <select id="editCountry" class="form-select">${createOptions(['Vietnam', 'Laos'], rowData['Country'])}</select>
+            </div>
+            <div class="form-group"><label>${t.col_wheel || 'Wheel'}</label><input type="number" id="editWheel" class="form-control" value="${rowData['Wheel'] || ''}" max="1000" required></div>
+            <div class="form-group"><label>${t.col_trailer_plate || 'Trailer Plate'}</label><input type="text" id="editTrailerPlate" class="form-control" value="${rowData['Trailer Plate'] || ''}" maxlength="11"></div>
+            <div class="form-group"><label>${t.col_truck_weight || 'Truck weight'}</label><input type="number" id="editTruckWeight" class="form-control" value="${rowData['Truck weight'] || ''}" max="1000" step="0.01" required></div>
+            <div class="form-group"><label>${t.col_payload || 'Pay load'}</label><input type="number" id="editPayLoad" class="form-control" value="${rowData['Pay load'] || ''}" max="1000" step="0.01" required></div>
+            <div class="form-group"><label>${t.col_container1 || 'Container 1'}</label><input type="text" id="editContainerNo1" class="form-control" value="${rowData['Container No1'] || ''}" maxlength="70"></div>
+            <div class="form-group"><label>${t.col_container2 || 'Container 2'}</label><input type="text" id="editContainerNo2" class="form-control" value="${rowData['Container No2'] || ''}" maxlength="70"></div>
+            <div class="form-group"><label>${t.col_driver_name || 'Driver Name'}</label><input type="text" id="editDriverName" class="form-control" value="${rowData['Driver Name'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_id_passport || 'ID/Passport'}</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_phone_number || 'Phone number'}</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" ></div>
+            <div class="form-group"><label>${t.col_destination || 'Destination EST'}</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_transport_company || 'Transportion Company'}</label>
+                <select class="form-select" id="editTransportionCompany" ${isRole('user') ? 'disabled' : ''}>
+                    ${createOptions(allowedCompanies, rowData['Transportion Company'])}
+                </select>
+            </div>
+            <div class="form-group"><label>${t.col_subcontractor || 'Subcontractor'}</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>${t.col_vehicle_status || 'Vehicle Status'}</label>
+                <select class="form-select" id="editVehicleStatus" required>
+                    ${createOptions(['RO', 'CO', 'PM', 'CM', 'AC', 'ND'], rowData['Vehicle Status'])}
+                </select>
+            </div>
+        </form>`;
+
+    Swal.fire({
+        title: t.edit_vehicle_title || 'Edit vehicle information',
+        html: formHtml,
+        width: '90%',
+        showCancelButton: true,
+        confirmButtonText: t.save_changes_button || 'Save changes',
+        cancelButtonText: t.cancel_button || 'Cancel',
+        preConfirm: () => {
+            const form = $('#editForm')[0];
+            if (!form.checkValidity()) {
+                Swal.showValidationMessage(t.edit_validation_message || 'Please complete all required fields with valid values.');
+                return false;
+            }
+            const updatedRecord = { ...rowData };
+            updatedRecord['Contract No'] = $('#editContractNo').val();
+            updatedRecord['Truck Plate'] = $('#editTruckPlate').val().replace(/\s/g, '').toUpperCase();
+            updatedRecord['Country'] = $('#editCountry').val();
+            updatedRecord['Wheel'] = $('#editWheel').val();
+            updatedRecord['Trailer Plate'] = $('#editTrailerPlate').val().replace(/\s/g, '').toUpperCase();
+            updatedRecord['Truck weight'] = $('#editTruckWeight').val();
+            updatedRecord['Pay load'] = $('#editPayLoad').val();
+            updatedRecord['Container No1'] = $('#editContainerNo1').val();
+            updatedRecord['Container No2'] = $('#editContainerNo2').val();
+            updatedRecord['Driver Name'] = $('#editDriverName').val();
+            updatedRecord['ID/Passport'] = $('#editIdPassport').val();
+            updatedRecord['Phone number'] = $('#editPhoneNumber').val();
+            updatedRecord['Destination EST'] = $('#editDestinationEST').val();
+            updatedRecord['Transportion Company'] = $('#editTransportionCompany').val();
+            updatedRecord['Subcontractor'] = $('#editSubcontractor').val();
+            updatedRecord['Vehicle Status'] = $('#editVehicleStatus').val();
+            return updatedRecord;
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            showLoading(t.loading_updating || 'Updating...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire(t.success_title || 'Success', message, 'success');
+                    registeredVehicleTable.draw(false);
+                })
+                .withFailureHandler(showError)
+                .updateData(result.value, userSession.token);
+        }
+    });
+}
+
+function initTotalListPage() {
+    const t = translations[currentLang];
+    const isAdmin = isRole('admin');
+
+    setupCustomFileInput('#total-list-fileUploader', {
+        trigger: '#totalListFileTrigger',
+        display: '#totalListFileDisplay',
+        defaultKey: 'file_no_file_selected'
+    });    
+
+    // 1) Destroy sạch mọi instance/bộ nhớ cũ
+    if ($.fn.DataTable.isDataTable('#totalListTable')) {
+        const old = $('#totalListTable').DataTable();
+        old.clear().draw();
+        old.destroy();
+        $('#totalListTable').empty(); // quan trọng: xoá thead/tbody đã sinh
+    }
+
+    // 2) Xây header/cột theo role (user không có select + action)
+    const columns = [];
+    if (isAdmin) {
+        columns.push({
+            data: null,
+            title: '<input type="checkbox" id="tl-select-all">',
+            className: 'select-checkbox',
+            orderable: false,
+            defaultContent: ''
+        });
+        columns.push({
+            data: null,
+            title: t.action_column,
+            className: 'dt-action',
+            orderable: false,
+            render: () => `<button class="btn btn-warning btn-sm"><i class="fas fa-edit"></i></button>`
+        });
+    }
+
+    // Các cột dữ liệu thực (giữ nguyên thứ tự của bạn)
+    columns.push(
+        { data: 'ID', title: t.col_id },
+        { data: 'Truck Plate', title: t.col_truck_plate },
+        { data: 'Country', title: t.col_country },
+        { data: 'Wheel', title: t.col_wheel },
+        { data: 'Trailer Plate', title: t.col_trailer_plate },
+        { data: 'Truck weight', title: t.col_truck_weight },
+        { data: 'Pay load', title: t.col_payload },
+        { data: 'Container No1', title: t.col_container1 },
+        { data: 'Container No2', title: t.col_container2 },
+        { data: 'Driver Name', title: t.col_driver_name },
+        { data: 'ID/Passport', title: t.col_id_passport },
+        { data: 'Phone number', title: t.col_phone_number },
+        { data: 'Transportion Company', title: t.col_transport_company },
+        { data: 'Subcontractor', title: t.col_subcontractor },
+        { data: 'Vehicle Status', title: t.col_vehicle_status },
+        { data: 'Activity Status', title: t.col_activity_status },        
+        { data: 'Register Date', title: t.col_register_date },
+        { data: 'Time', title: t.col_time }
+    );
+
+    // 3) Sinh lại thead cho DataTables (tránh kế thừa header cũ)
+    const $table = $(`
+      <table id="totalListTable" class="table table-bordered table-striped w-100">
+        <thead><tr>${columns.map(c => `<th>${c.title || ''}</th>`).join('')}</tr></thead>
+        <tbody></tbody>
+      </table>
+    `);
+    $('#total-list-table-wrapper').length
+        ? $('#total-list-table-wrapper').html($table)
+        : $('#total-list-container, .card-body').find('#totalListTable').replaceWith($table);
+
+    // 4) Khởi tạo DataTable
+    totalListTable = $('#totalListTable').DataTable({
+        dom: 'frtip',
+        processing: true,
+        serverSide: true,
+        searching: true,
+        ordering: true,
+        deferRender: true,
+        paging: true,
+        pageLength: parseInt($('#total-list-page-length-select').val() || '50', 10),
+        columns: columns,
+        // Không dùng scrollX để tránh lệch header/body
+        // scrollX: false,
+        language: {
+            search: '',
+            searchPlaceholder: t.search_in_list_placeholder || ''
+        },
+        drawCallback: function () {
+            // Căn cột lại mỗi lần draw
+            this.api().columns.adjust();
+
+            // User: cưỡng bức ẩn nếu vì lý do nào đó 2 cột vẫn lọt vào
+            if (!isAdmin) {
+                try {
+                    this.api().columns('.select-checkbox').visible(false);
+                    this.api().columns('.dt-action').visible(false);
+                } catch (_) {}
+            }
+        },
+        ajax: function (data, callback) {
+            // Truyền role/contractor để server lọc đúng
+            const params = {
+                draw: data.draw,
+                start: data.start,
+                length: data.length,
+                search: data.search,
+                order: data.order,
+                sessionToken: userSession?.token
+            };
+            showLoading(t.loading_page);
+            google.script.run
+                .withSuccessHandler(res => {
+                    Swal.close();
+                    fetchTotalListSummary();
+
+                    const rows = Array.isArray(res?.data) ? res.data : (Array.isArray(res?.rows) ? res.rows : []);
+                    const total = (typeof res?.recordsTotal === 'number') ? res.recordsTotal : (typeof res?.total === 'number' ? res.total : 0);
+                    const filtered = (typeof res?.recordsFiltered === 'number') ? res.recordsFiltered : (typeof res?.filtered === 'number' ? res.filtered : total);
+
+                    callback({
+                        data: rows,
+                        recordsTotal: total,
+                        recordsFiltered: filtered
+                    });
+                })
+                .withFailureHandler(err => {
+                    Swal.close();
+                    showError(err);
+                    callback({ data: [], recordsTotal: 0, recordsFiltered: 0 });
+                })
+                .getTotalListDataServerSide(params);
+        }
+    });
+
+    
+    // === Select All checkbox (admin) ===
+    if (isAdmin) {
+        $('#totalListTable thead').off('click', '#tl-select-all').on('click', '#tl-select-all', function(){
+            const allApplied = totalListTable.rows({ search: 'applied' });
+            if (this.checked) {
+                allApplied.select();
+            } else {
+                totalListTable.rows().deselect();
+            }
+        });
+        $('#totalListTable').on('select.dt deselect.dt draw.dt', function(){
+            const all = totalListTable.rows({ search: 'applied' }).count();
+            const sel = totalListTable.rows({ selected: true, search: 'applied' }).count();
+            const el = document.getElementById('tl-select-all');
+            if (el) el.checked = (all > 0 && sel === all);
+        });
+    }
+
+    // --- Admin selection, edit, delete bindings ---
+    if (isAdmin) {
+        const updateDeleteBtnState = () => {
+            const selectedCount = totalListTable.rows('.selected').data().length;
+            $('#total-list-deleteBtn').toggleClass('disabled', selectedCount === 0);
+        };
+        // Enable DataTables select extension for admin
+        totalListTable.settings()[0].oInit.select = { style: 'multi', selector: 'td.select-checkbox' };
+
+        // Row select/deselect via checkbox cell
+        $('#totalListTable tbody').off('click', 'td.select-checkbox').on('click', 'td.select-checkbox', function(e) {
+            e.stopPropagation();
+            const tr = $(this).closest('tr');
+            tr.toggleClass('selected');
+            updateDeleteBtnState();
+        });
+
+        // Select all checkbox in header
+        $('#totalListTable thead').off('click', '#tl-select-all').on('click', '#tl-select-all', function(){
+            const isChecked = $(this).prop('checked');
+            $('#totalListTable tbody tr').toggleClass('selected', isChecked);
+            updateDeleteBtnState();
+        });
+
+        // Bind delete button
+        $('#total-list-deleteBtn').off('click').on('click', handleDeleteTotalList);
+
+        // Bind edit button in action column
+        $('#totalListTable tbody').off('click', 'td.dt-action button').on('click', 'td.dt-action button', function(e) {
+            e.stopPropagation();
+            const rowData = totalListTable.row($(this).closest('tr')).data();
+            handleEditTotalListVehicle(rowData);
+        });
+        $('#total-list-uploadButton').off('click').on('click', handleTotalListFileUpload);
+        $('#total-list-saveUploadBtn').off('click').on('click', handleSaveTotalListUploadedData);
+        // Reset states on table draw
+        totalListTable.on('draw', function(){
+            $('#tl-select-all').prop('checked', false);
+            updateDeleteBtnState();
+        });
+    }
+    // 5) UI theo role
+    if (!isAdmin) {
+        $('#total-list-deleteBtn').addClass('d-none');
+        $('#total-list-upload-card').addClass('d-none');
+    } else {
+        $('#total-list-deleteBtn').removeClass('d-none');
+        $('#total-list-upload-card').removeClass('d-none');
+    }
+
+    // Tìm kiếm
+    const doTotalListSearch = () => {
+        totalListTable.search($('#total-list-search-input').val()).draw();
+    };
+    $('#total-list-search-btn').off('click').on('click', doTotalListSearch);
+    $('#total-list-search-input').off('keypress').on('keypress', function (e) {
+        if (e.which === 13) {
+            doTotalListSearch();
+        }
+    });
+    
+    // Page length
+    $('#total-list-page-length-select').off('change').on('change', function () {
+        const len = parseInt(this.value || '50', 10);
+        totalListTable.page.len(len).draw();
+    });
+
+    // Nút Hiển thị/Cập nhật
+    $('#total-list-showDataBtn').off('click').on('click', () => {
+        totalListTable.ajax.reload(null, false);
+    });
+
+    // Banner nhà thầu của user
+    const contractor = userSession?.contractor || '';
+    if (!isAdmin && contractor) {
+        if (!$('#contractor-badge').length) {
+            $('<div class="alert alert-secondary py-2 px-3 mb-2" id="contractor-badge"><i class="fas fa-warehouse me-2"></i>' + contractor + '</div>')
+                .insertAfter($('.card-header:contains("Danh sách xe tổng")').closest('.card-header'));
+        } else {
+            $('#contractor-badge').text(contractor);
+        }
+    } else {
+        $('#contractor-badge').remove();
+    }
+    
+}
+
+
+function fetchTotalListSummary() {
+    google.script.run
+        .withSuccessHandler(summary => {
+            $('#total-count-summary').text(summary.total);
+            $('#active-count').text(summary.active);
+            $('#banned-count').text(summary.banned);
+        })
+        .withFailureHandler(showError)
+        .getTotalListSummary(userSession.token);
+}
+
+// ====== JS: Xem trước & tô màu lỗi/trùng danh sách tổng ======
+function handleTotalListFileUpload() {
+  const file = $('#total-list-fileUploader')[0].files[0];
+  if (!file) {
+    Swal.fire('Chưa chọn file', 'Vui lòng chọn một file.', 'warning');
+    return;
+  }
+
+  showLoading('Đang xử lý và xác thực file...');
+  setTimeout(() => {
+    try {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+
+          // Lấy danh sách biển số đang có trong Danh sách tổng để đánh dấu trùng
+          google.script.run
+            .withSuccessHandler(existingList => {
+              const existingPlates = new Set(Array.isArray(existingList) ? existingList : []);
+
+              // Bạn đã có hàm validateAndTransformTotalListData(rows, existingPlates)
+              const result = validateAndTransformTotalListData(jsonData.slice(1), existingPlates);
+
+              // Chuẩn hoá record để luôn có đủ key DataTable cần
+              totalListPreviewData = (result.data || []).map(r => ({
+                ID: r.ID || (typeof generateRandomId === 'function' ? generateRandomId(15) : String(Date.now())),
+                'Truck Plate': r['Truck Plate'] || '',
+                Country: r['Country'] || '',
+                Wheel: r['Wheel'] || '',
+                'Trailer Plate': r['Trailer Plate'] || '',
+                'Truck weight': r['Truck weight'] || '',
+                'Pay load': r['Pay load'] || '',
+                'Container No1': r['Container No1'] || '',
+                'Container No2': r['Container No2'] || '',
+                'Driver Name': r['Driver Name'] || '',
+                'ID/Passport': r['ID/Passport'] || '',
+                'Phone number': r['Phone number'] || '',
+                'Transportion Company': r['Transportion Company'] || '',
+                'Subcontractor': r['Subcontractor'] || '',
+                'Vehicle Status': (r['Vehicle Status'] || '').toString().toUpperCase(),
+                'Activity Status': r['Activity Status'] || '',                
+                'Register Date': r['Register Date'] || '',
+                'Time': r['Time'] || '',
+                _duplicate: typeof r._duplicate === 'boolean'
+                  ? r._duplicate
+                  : existingPlates.has(String(r['Truck Plate'] || '').replace(/\s/g, '').toUpperCase()),
+                errors: r.errors || null
+              }));
+
+              // Huỷ DataTable cũ nếu có
+              if ($.fn.DataTable.isDataTable('#total-list-previewDataTable')) {
+                $('#total-list-previewDataTable').DataTable().clear().destroy();
+              }
+              $('#total-list-previewDataTable').addClass('table-sm dt-compact'); // thu nhỏ giống bảng dưới
+
+              const columns = [
+                { data: 'ID', title: 'ID', defaultContent: '' },
+                { data: 'Truck Plate', title: 'Biển số xe', defaultContent: '' },
+                { data: 'Country', title: 'Quốc gia', defaultContent: '' },
+                { data: 'Wheel', title: 'Số bánh', defaultContent: '' },
+                { data: 'Trailer Plate', title: 'Biển số Mooc', defaultContent: '' },
+                { data: 'Truck weight', title: 'Trọng lượng xe', defaultContent: '' },
+                { data: 'Pay load', title: 'Tải trọng xe', defaultContent: '' },
+                { data: 'Container No1', title: 'Container 1', defaultContent: '' },
+                { data: 'Container No2', title: 'Container 2', defaultContent: '' },
+                { data: 'Driver Name', title: 'Tên lái xe', defaultContent: '' },
+                { data: 'ID/Passport', title: 'Số hộ chiếu', defaultContent: '' },
+                { data: 'Phone number', title: 'Số điện thoại', defaultContent: '' },
+                { data: 'Transportion Company', title: 'Đơn vị vận chuyển', defaultContent: '' },
+                { data: 'Subcontractor', title: 'Nhà thầu phụ', defaultContent: '' },
+                { data: 'Vehicle Status', title: 'Tình trạng xe', defaultContent: '' },
+                { data: 'Activity Status', title: 'Trạng thái hoạt động', defaultContent: '' },                
+                { data: 'Register Date', title: 'Ngày tạo', defaultContent: '' },
+                { data: 'Time', title: 'Thời gian tạo', defaultContent: '' }
+              ];
+
+              totalListPreviewTable = $('#total-list-previewDataTable').DataTable({
+                data: totalListPreviewData,
+                columns,
+                paging: false,
+                info: false,
+                searching: false,
+                scrollX: true,
+                createdRow: function (row, rowData) {
+                  let rowHasError = false;
+
+                  // Tô đỏ từng ô có lỗi (và đánh dấu cả dòng)
+                  if (rowData && rowData.errors) {
+                    Object.keys(rowData.errors).forEach((key) => {
+                      const colIdx = columns.findIndex(c => c.data === key);
+                      if (colIdx !== -1) {
+                        $(row).find('td').eq(colIdx)
+                          .addClass('is-invalid')
+                          .attr('title', rowData.errors[key]);
+                        rowHasError = true;
+                      }
+                    });
+                  }
+                  if (rowHasError) $(row).addClass('tl-row-error');     // đỏ cả dòng
+                  if (rowData && rowData._duplicate) $(row).addClass('tl-row-dup'); // vàng cả dòng trùng
+                }
+              });
+
+              $('#total-list-previewContainer').removeClass('d-none');
+              setTimeout(() => totalListPreviewTable.columns.adjust(), 10);
+
+              // Cảnh báo trùng ngay sau khi xem trước
+              const duplicatePlates = totalListPreviewData
+                .filter(r => r && r._duplicate)
+                .map(r => r['Truck Plate'])
+                .filter(Boolean);
+              const hasErrors = totalListPreviewData.some(r => r && r.errors && Object.keys(r.errors).length);
+              const hasDup = duplicatePlates.length > 0;
+
+              if (hasDup) {
+                const max = 20;
+                const show = duplicatePlates.slice(0, max).join(', ');
+                Swal.fire({
+                  icon: 'warning',
+                  title: 'Phát hiện dữ liệu trùng',
+                  html: `Có <b>${duplicatePlates.length}</b> biển số đã tồn tại trong Danh sách tổng.<br>
+                         <div class="text-start mt-2" style="max-height:120px; overflow:auto">
+                           <small>${show}${duplicatePlates.length > max ? ', ...' : ''}</small>
+                         </div>
+                         <div class="mt-1"><small>Vui lòng loại bỏ/cập nhật trong file trước khi lưu.</small></div>`
+                });
+              } else {
+                Swal.close(); // đóng spinner nếu không có cảnh báo thêm
+              }
+
+              // Khoá nút lưu nếu còn trùng hoặc còn lỗi
+              $('#total-list-saveUploadBtn').prop('disabled', hasErrors || hasDup);
+            })
+            .withFailureHandler(err => { Swal.close(); showError(err); })
+            .getExistingTruckPlates(userSession.token);
+
+        } catch (err) {
+          Swal.close();
+          showError(err);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      Swal.close();
+      showError({ message: error.message });
+    }
+  }, 100);
+}
+
+
+
+
+function generateCustomId() {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let randomStr = '';
+  for (let i = 0; i < 6; i++) {
+    randomStr += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `${yy}${mm}-${randomStr}`;
+}
+
+function validateAndTransformTotalListData(dataRows, existingPlates) {
+  const transformedData = [];
+  const allErrors = [];
+  const duplicateList = [];
+
+  dataRows.forEach((row, index) => {
+    if (row.length === 0 || row.every(cell => cell === "")) return;
+    const plate = String(row[1] || '').replace(/\s/g, '').toUpperCase();
+
+    const activityRaw = String(row[15] || '').trim();
+    const activityUpper = activityRaw.toUpperCase();
+    const record = {
+      'ID': generateCustomId(),
+      'Truck Plate': plate,
+      'Country': row[2] || '',
+      'Wheel': row[3] || '',
+      'Trailer Plate': String(row[4] || '').replace(/\s/g, '').toUpperCase(),
+      'Truck weight': row[5] || '',
+      'Pay load': row[6] || '',
+      'Container No1': row[7] || '',
+      'Container No2': row[8] || '',
+      'Driver Name': row[9] || '',
+      'ID/Passport': row[10] || '',
+      'Phone number': row[11] || '',
+      'Transportion Company': row[12] || '',
+      'Subcontractor': row[13] || '',
+      'Vehicle Status': String(row[14] || '').toUpperCase(),
+      'Activity Status': activityRaw,      
+      _duplicate: existingPlates.has(plate)  // đánh dấu nếu trùng
+    };
+
+    const errors = {};
+    if (!activityRaw) {
+      errors['Activity Status'] = "- Cột 'Activity Status' không được để trống.";
+    } else if (!['ACTIVE', 'BANNED'].includes(activityUpper)) {
+      errors['Activity Status'] = "- Cột 'Activity Status' chỉ chấp nhận: Active, Banned.";
+    }
+
+    if (Object.keys(errors).length) {
+      record.errors = errors;
+    }
+    if (record._duplicate) {
+      duplicateList.push(plate);
+    }
+
+    transformedData.push(record);
+  });
+
+  return { data: transformedData, duplicates: duplicateList };
+}
+
+
+// ====== JS: LƯU NỐI TIẾP DANH SÁCH TỔNG (KHÔNG GHI ĐÈ) ======
+function handleSaveTotalListUploadedData() {
+  // Không cho lưu nếu còn lỗi hoặc còn trùng
+  const duplicatePlates = totalListPreviewData
+    .filter(r => r && r._duplicate)
+    .map(r => r['Truck Plate'])
+    .filter(Boolean);
+
+  const hasErrors = totalListPreviewData.some(
+    r => r && r.errors && Object.keys(r.errors).length
+  );
+
+  if (hasErrors || duplicatePlates.length > 0) {
+    const max = 20;
+    const show = duplicatePlates.slice(0, max).join(', ');
+    Swal.fire({
+      icon: 'error',
+      title: 'Không thể lưu',
+      html:
+        (hasErrors ? 'Còn dòng <b>sai định dạng</b>.<br>' : '') +
+        (duplicatePlates.length
+          ? `Có <b>${duplicatePlates.length}</b> biển số trùng:<br>
+             <div class="text-start mt-2" style="max-height:120px; overflow:auto">
+               <small>${show}${duplicatePlates.length > max ? ', ...' : ''}</small>
+             </div>`
+          : '')
+    });
+    return;
+  }
+
+  // Chỉ lấy các dòng hợp lệ (không trùng)
+  const validRows = totalListPreviewData.filter(r => r && !r._duplicate);
+
+  // Tự điền "Ngày tạo" & "Thời gian tạo" dạng TEXT (dd/MM/yyyy & HH:mm:ss)
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const regDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+  const regTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+  const payload = validRows.map(r => ({
+    ...r,
+    'Register Date': r['Register Date'] || regDate,
+    'Time': r['Time'] || regTime
+  }));
+
+  showLoading('Đang cập nhật danh sách...');
+  google.script.run
+    .withSuccessHandler(msg => {
+      Swal.fire({
+        icon: 'success',
+        title: 'Lưu thành công',
+        text: msg || 'Đã thêm mới vào Danh sách xe tổng.',
+        timer: 1800,
+        showConfirmButton: false
+      });
+
+      // Làm tươi bảng dưới nếu đang mở
+      if ($.fn.DataTable.isDataTable('#totalListTable')) {
+        $('#totalListTable').DataTable().ajax.reload(null, false);
+      }
+      fetchTotalListSummary();      
+
+      // Dọn preview
+      totalListPreviewData = [];
+      if ($.fn.DataTable.isDataTable('#total-list-previewDataTable')) {
+        $('#total-list-previewDataTable').DataTable().clear().destroy();
+      }
+      $('#total-list-previewContainer').addClass('d-none');
+      $('#total-list-saveUploadBtn').prop('disabled', true);
+      $('#total-list-fileUploader').val('').trigger('change');
+    })
+    .withFailureHandler(err => { Swal.close(); showError(err); })
+    .saveTotalListAppend(payload, userSession.token);   // <== APPEND, không ghi đè
+}
+
+
+
+
+
+function handleDeleteTotalList() {
+    const selectedIds = totalListTable.rows('.selected').data().toArray().map(row => row.ID);
+    
+    if (selectedIds.length === 0) {
+        Swal.fire('Chưa chọn xe', 'Vui lòng chọn ít nhất một xe để xóa.', 'warning');
+        return;
+    }
+
+    Swal.fire({
+        title: `Bạn có chắc muốn xóa ${selectedIds.length} xe?`,
+        text: "Hành động này sẽ xóa vĩnh viễn xe khỏi danh sách tổng!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonText: 'Hủy',
+        confirmButtonText: 'Vâng, xóa đi!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            showLoading('Đang xóa xe...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire('Đã xóa!', message, 'success');
+                    totalListTable.draw(false);
+                    fetchTotalListSummary();
+                })
+                .withFailureHandler(showError)
+                .deleteTotalListVehicles(selectedIds, userSession.token);
+        }
+    });
+}
+
+function handleEditTotalListVehicle(rowData) {
+    const createOptions = (items, selectedValue) => items.map(item => `<option value="${item}" ${item === selectedValue ? 'selected' : ''}>${item}</option>`).join('');
+
+    const formHtml = `
+        <form id="editTotalListForm" class="edit-form-grid">
+            <div class="form-group"><label>ID</label><input type="text" class="form-control" value="${rowData.ID}" readonly></div>
+            <div class="form-group"><label>Biển số xe</label><input type="text" id="editTruckPlate" class="form-control" value="${rowData['Truck Plate'] || ''}" maxlength="11" required></div>
+            <div class="form-group"><label>Quốc gia</label>
+                <select id="editCountry" class="form-select">${createOptions(['Vietnam', 'Laos'], rowData['Country'])}</select>
+            </div>
+            <div class="form-group"><label>Số bánh</label><input type="number" id="editWheel" class="form-control" value="${rowData['Wheel'] || ''}" max="1000" required></div>
+            <div class="form-group"><label>Biển số Mooc</label><input type="text" id="editTrailerPlate" class="form-control" value="${rowData['Trailer Plate'] || ''}" maxlength="11"></div>
+            <div class="form-group"><label>Trọng lượng xe</label><input type="number" id="editTruckWeight" class="form-control" value="${rowData['Truck weight'] || ''}" max="1000" step="0.01" required></div>
+            <div class="form-group"><label>Tải trọng xe</label><input type="number" id="editPayLoad" class="form-control" value="${rowData['Pay load'] || ''}" max="1000" step="0.01" required></div>
+            <div class="form-group"><label>Container 1</label><input type="text" id="editContainerNo1" class="form-control" value="${rowData['Container No1'] || ''}" maxlength="70"></div>
+            <div class="form-group"><label>Container 2</label><input type="text" id="editContainerNo2" class="form-control" value="${rowData['Container No2'] || ''}" maxlength="70"></div>
+            <div class="form-group"><label>Tên lái xe</label><input type="text" id="editDriverName" class="form-control" value="${rowData['Driver Name'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>Số hộ chiếu</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}"></div>
+            <div class="form-group"><label>Đơn vị vận chuyển</label>
+                <select class="form-select" id="editTransportionCompany">
+                    ${createOptions(allowedCompanies, rowData['Transportion Company'])}
+                </select>
+            </div>
+            <div class="form-group"><label>Nhà thầu phụ</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
+            <div class="form-group"><label>Tình trạng xe</label>
+                <select class="form-select" id="editVehicleStatus" required>
+                    ${createOptions(['RO', 'CO', 'PM', 'CM', 'AC', 'ND'], rowData['Vehicle Status'])}
+                </select>
+            </div>
+            <div class="form-group"><label>Trạng thái hoạt động</label>
+                <select class="form-select" id="editActivityStatus" required>
+                    ${createOptions(['Active', 'Banned'], rowData['Activity Status'])}
+                </select>
+            </div>         
+        </form>`;
+
+    Swal.fire({
+        title: 'Chỉnh sửa thông tin xe (Danh sách tổng)',
+        html: formHtml,
+        width: '90%',
+        showCancelButton: true,
+        confirmButtonText: 'Lưu thay đổi',
+        cancelButtonText: 'Hủy bỏ',
+        preConfirm: () => {
+            const form = $('#editTotalListForm')[0];
+            if (!form.checkValidity()) {
+                Swal.showValidationMessage('Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.');
+                return false;
+            }
+            const updatedRecord = { ...rowData };
+            updatedRecord['Truck Plate'] = $('#editTruckPlate').val().replace(/\s/g, '').toUpperCase();
+            updatedRecord['Country'] = $('#editCountry').val();
+            updatedRecord['Wheel'] = $('#editWheel').val();
+            updatedRecord['Trailer Plate'] = $('#editTrailerPlate').val().replace(/\s/g, '').toUpperCase();
+            updatedRecord['Truck weight'] = $('#editTruckWeight').val();
+            updatedRecord['Pay load'] = $('#editPayLoad').val();
+            updatedRecord['Container No1'] = $('#editContainerNo1').val();
+            updatedRecord['Container No2'] = $('#editContainerNo2').val();
+            updatedRecord['Driver Name'] = $('#editDriverName').val();
+            updatedRecord['ID/Passport'] = $('#editIdPassport').val();
+            updatedRecord['Phone number'] = $('#editPhoneNumber').val();
+            updatedRecord['Transportion Company'] = $('#editTransportionCompany').val();
+            updatedRecord['Subcontractor'] = $('#editSubcontractor').val();
+            updatedRecord['Vehicle Status'] = $('#editVehicleStatus').val();
+            updatedRecord['Activity Status'] = $('#editActivityStatus').val();            
+            const now = new Date();
+            updatedRecord['Register Date'] = getFormattedDate(now);
+            updatedRecord['Time'] = now.toTimeString().split(' ')[0];      
+            return updatedRecord;
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            showLoading('Đang cập nhật...');
+            google.script.run
+                .withSuccessHandler(message => {
+                    Swal.fire('Thành công!', message, 'success');
+                    totalListTable.draw(false);
+                    fetchTotalListSummary();                    
+                })
+                .withFailureHandler(showError)
+                .updateTotalListVehicle(result.value, userSession.token);
+        }
+    });
+}
+
+// =================================================================
+// UTILITY FUNCTIONS
+// =================================================================
+function parseExcelDate(excelDate) {
+    if (typeof excelDate === 'number') {
+        return new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+    }
+    if (typeof excelDate === 'string') {
+        const parts = excelDate.match(/(\d+)/g);
+        if (parts && parts.length === 3) {
+            let day, month, year;
+            if (parts[2].length === 4) {
+                year = parseInt(parts[2], 10);
+                month = parseInt(parts[1], 10);
+                day = parseInt(parts[0], 10);
+            } else {
+                 year = parseInt(parts[0], 10);
+                 month = parseInt(parts[1], 10);
+                 day = parseInt(parts[2], 10);
+            }
+            if (day > 0 && month > 0 && year > 1900) {
+                return new Date(Date.UTC(year, month - 1, day));
+            }
+        }
+    }
+    const date = new Date(excelDate);
+    if (!isNaN(date)) return date;
+    
+    return null;
+}
+
+function getFormattedDate(date) {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+}
+
+
+function showLoading(title) {
+    Swal.fire({
+        title: title,
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+    });
+}
+
+function formatMinutesForDisplay(minutes) {
+  const value = parseInt(minutes, 10);
+  if (isNaN(value) || value <= 0) return 'a few minutes';
+  return `${value} minute${value === 1 ? '' : 's'}`;
+}
+
+function localizeErrorMessage(message, lang) {
+  const rawMessage = (message || '').trim();
+  if (!rawMessage) return rawMessage;
+
+  const patterns = [
+    {
+      regex: /Tài khoản của bạn đã bị tạm khóa\. Vui lòng thử lại sau (\d+)\s*phút\./i,
+      en: match => `Your account has been temporarily locked. Please try again in ${formatMinutesForDisplay(match[1])}.`
+    },
+    {
+      regex: /Tên đăng nhập hoặc mật khẩu không đúng\./i,
+      en: () => 'The username or password is incorrect.'
+    },
+    {
+      regex: /Tài khoản này đã được đăng nhập trên một thiết bị khác\./i,
+      en: () => 'This account is already logged in on another device.'
+    }
+  ];
+
+  if (lang === 'en') {
+    for (const entry of patterns) {
+      const match = rawMessage.match(entry.regex);
+      if (match) {
+        if (typeof entry.en === 'function') {
+          const translated = entry.en(match);
+          if (translated) return translated;
+        } else if (entry.en) {
+          return entry.en;
+        }
+      }
+    }
+  }
+
+  return rawMessage;
+}
+
+function showError(error) {
+  const t = translations[currentLang] || translations.vi || {};
+  let raw = getRawErrorMessage(error);
+  if (!raw) raw = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
+
+  const serverBusyRegex = /(http\s*503|service unavailable|networkerror|connection failure)/i;
+  const isServerBusy = serverBusyRegex.test(raw);
+
+  if (!isServerBusy) {
+    closeServerBusyToast();
+  }
+
+  if (raw.includes('Bạn chưa đăng nhập')) {
+    clearStoredSession();
+    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch (_) {}
+    try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch (_) {}
+    Swal.fire({
+      icon: 'error',
+      title: t.session_expired_title || 'Phiên làm việc đã hết hạn',
+      text: t.session_expired_text || 'Vui lòng đăng nhập lại.',
+      timer: 3000,
+      timerProgressBar: true,
+      didClose: () => { window.location.reload(); }
+    });
+    return;
+  }
+
+  if (isServerBusy) {
+    const message = t.server_busy_final_message || t.server_busy_message || 'Hệ thống đang xử lý quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.';
+    showServerBusyToast({ sticky: true, message, title: t.server_busy_title || 'Máy chủ bận' });
+    return;
+  }
+
+  const cleanMsg = getCleanErrorMessage(error) || raw;
+  const safeMsg = cleanMsg || raw || 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
+  const displayMsg = localizeErrorMessage(safeMsg, currentLang);  
+
+  // --- Nhận diện "Xe mới" ---
+  const mNew =
+    safeMsg.match(/Xe\s+(.+?)\s+là xe mới/i) ||
+    safeMsg.match(/Vehicle plate\(s\)\s+(.+?)\s+are new/i);
+  if (mNew && mNew[1]) {
+    const platesNew = mNew[1].split(/[,\n\r\t ]+/).map(s => s.trim()).filter(Boolean);
+    if (platesNew.length) { showNewVehiclePopup(platesNew); return; }
+  }
+
+  // --- Nhận diện "Xe trùng đơn vị khác" ---
+  const dupPatternVi = /đã được đăng ký với (công ty|đơn vị)(?:\s+vận chuyển)? khác/i;
+  const dupPatternEn = /have already been registered with another transport company/i;
+  if (dupPatternVi.test(safeMsg) || dupPatternEn.test(safeMsg) || /->\s*\"/.test(safeMsg)) {
+    // Cố gắng bóc biển số từ dạng "PLATE -> "Company""
+    const found = [];
+    const pairRegex = /([A-Z0-9\-\.]+)\s*->/gi;
+    let p;
+    while ((p = pairRegex.exec(safeMsg)) !== null) found.push(p[1]);
+
+    if (!found.length) {
+      let extracted = null;
+      const mDupVi = safeMsg.match(/Xe\s+(.+?)\s+đã được đăng ký/i);
+      if (mDupVi && mDupVi[1]) extracted = mDupVi[1];
+      else {
+        const mDupEn = safeMsg.match(/Vehicle plate\(s\)\s+(.+?)\s+have already been registered/i);
+        if (mDupEn && mDupEn[1]) extracted = mDupEn[1];
+      }
+      if (extracted) {
+        extracted.split(/[,\n\r\t ]+/).forEach(s => { s = s.trim(); if (s) found.push(s); });
+      }
+    }
+    if (found.length) { showDuplicatedVehiclesPopup(found); return; }
+  }
+
+  // Mặc định: báo lỗi chuẩn
+  Swal.fire({
+    icon: 'warning',
+    iconHtml: '⚠️',
+    title: t.error_title || 'Lỗi',
+    text: displayMsg,
+    customClass: { icon: 'swal2-warning-emoji' }
+  });
+}
+
+
+
+// Popup "Xe trùng đơn vị khác" – icon cảnh báo, tối đa 20 biển số, mỗi biển số 1 dòng, có "..."
+function showDuplicatedVehiclesPopup(platesInput) {
+  let plates = Array.isArray(platesInput) ? platesInput : String(platesInput || '');
+
+  if (!Array.isArray(plates)) {
+    // Tách các cặp "PLATE -> "Company"" nếu có
+    const found = [];
+    const pairRegex = /([A-Z0-9\-\.]+)\s*->/gi;
+    let m;
+    while ((m = pairRegex.exec(plates)) !== null) found.push(m[1]);
+    plates = found.length ? found : plates.split(/[,\n\r\t ]+/).map(s => s.trim()).filter(Boolean);
+  }
+
+  Swal.fire({
+    title: (translations[currentLang] && translations[currentLang].duplicate_vehicle_popup_title) || 'Xe trùng đơn vị khác',
+    icon: 'warning',
+    html: `
+      ${buildListHtml(plates)}
+      <div style="margin-top:8px; font-weight:600;">
+        ${(translations[currentLang] && translations[currentLang].duplicate_vehicle_popup_message) || 'Là các xe đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.'}
+      </div>
+    `,
+    width: 520,
+    confirmButtonText: (translations[currentLang] && translations[currentLang].popup_ok_button) || 'OK',
+    allowOutsideClick: true,
+    didOpen: () => {
+      const c = Swal.getHtmlContainer();
+      if (c) { c.style.maxHeight = '60vh'; c.style.overflowY = 'auto'; }
+    }
+  }).then(() => {
+    // bôi vàng
+    highlightRowsInTable(plates, 'hl-dup-vehicle');
+  });
+}
+
+
+
+// Popup "Thông báo xe mới" – hiển thị tối đa 20 biển số, mỗi biển số 1 dòng, có "..." nếu còn nữa
+function showNewVehiclePopup(newPlates) {
+  const plates = Array.isArray(newPlates)
+    ? newPlates
+    : String(newPlates || '').split(/[,\n\r\t ]+/).map(s => s.trim()).filter(Boolean);
+
+  Swal.fire({
+    title: (translations[currentLang] && translations[currentLang].new_vehicle_popup_title) || 'Thông báo xe mới',
+    icon: 'info',
+    html: `
+      ${buildListHtml(plates)}
+      <div style="margin-top:8px; font-weight:600;">
+        ${(translations[currentLang] && translations[currentLang].new_vehicle_popup_message) || 'Là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.'}
+      </div>
+    `,
+    width: 520,
+    confirmButtonText: (translations[currentLang] && translations[currentLang].popup_ok_button) || 'OK',
+    allowOutsideClick: true,
+    didOpen: () => {
+      const c = Swal.getHtmlContainer();
+      if (c) { c.style.maxHeight = '60vh'; c.style.overflowY = 'auto'; }
+    }
+  }).then(() => {
+    // bôi đỏ
+    highlightRowsInTable(plates, 'hl-new-vehicle');
+  });
+}
+
+
+
+function generateRandomId(length) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+
+
+
+// === Total List Export to Excel ===
+// === Total List Export to Excel (lấy thứ tự cột từ DataTable) ===
+function exportTotalListExcel() {
+    if (!userSession || !userSession.token) {
+        Swal.fire('Phiên đã hết hạn', 'Vui lòng đăng nhập lại.', 'warning');
+        return;
+    }
+
+    const table = totalListTable;
+    // Lấy các cột đang HIỂN THỊ theo thứ tự hiện tại (bỏ cột select + action vì data = null)
+    const colIdxs = table.columns({ visible: true, order: 'index' }).indexes().toArray();
+    const aoCols = table.settings()[0].aoColumns;
+    const cols = colIdxs
+        .map(idx => {
+            const def = aoCols[idx];
+            return {
+                key: def.data, // tên field trong object
+                title: $(table.column(idx).header()).text().trim()
+            };
+        })
+        .filter(c => typeof c.key === 'string' && c.key.length > 0); // loại bỏ cột kỹ thuật (null/undefined)
+
+    const params = {
+        draw: 1,
+        start: 0,
+        length: 100000, // đủ lớn
+        search: { value: table ? table.search() : '' },
+        order: [], // để server không reorder cột/field
+        sessionToken: userSession.token
+    };
+
+    showLoading('Đang chuẩn bị dữ liệu...');
+    google.script.run
+        .withSuccessHandler(res => {
+            Swal.close();
+
+            const rows = Array.isArray(res?.data) ? res.data
+                        : (Array.isArray(res?.rows) ? res.rows : []);
+            if (!rows.length) {
+                Swal.fire('Không có dữ liệu', 'Không có dữ liệu để xuất file.', 'info');
+                return;
+            }
+
+            // Header theo đúng title đang hiển thị
+            const exportData = [cols.map(c => c.title)];
+            // Map dữ liệu theo đúng thứ tự cột
+            rows.forEach(r => {
+                exportData.push(cols.map(c => (r[c.key] ?? '')));
+            });
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(exportData);
+            (function applyWorksheetStyling() {
+                if (!ws['!ref']) return;
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                const borderSide = { style: 'thin', color: { rgb: '000000' } };
+                const headerRow = range.s.r;
+                for (let R = range.s.r; R <= range.e.r; ++R) {
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+                        const cell = ws[ref];
+                        if (!cell) continue;
+                        cell.s = cell.s || {};
+                        cell.s.border = {
+                            top: borderSide,
+                            right: borderSide,
+                            bottom: borderSide,
+                            left: borderSide
+                        };
+                        if (R === headerRow) {
+                            cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+                        }
+                    }
+                }
+                const colCount = exportData[0] ? exportData[0].length : 0;
+                if (!colCount) return;
+                const colWidths = [];
+                for (let cIdx = 0; cIdx < colCount; ++cIdx) {
+                    let maxLen = 0;
+                    for (let rIdx = 0; rIdx < exportData.length; ++rIdx) {
+                        const cellValue = exportData[rIdx][cIdx];
+                        const text = cellValue == null ? '' : String(cellValue);
+                        const parts = text.split(/\r?\n/);
+                        for (let p = 0; p < parts.length; ++p) {
+                            const len = parts[p].length;
+                            if (len > maxLen) maxLen = len;
+                        }
+                    }
+                    const width = Math.min(Math.max(maxLen + 2, 10), 60);
+                    colWidths.push({ wch: width });
+                }
+                ws['!cols'] = colWidths;
+            })();            
+            XLSX.utils.book_append_sheet(wb, ws, 'TotalList');
+
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            XLSX.writeFile(wb, `TotalList_${yyyy}-${mm}-${dd}.xlsx`);
+        })
+        .withFailureHandler(err => { Swal.close(); showError(err); })
+        .getTotalListDataServerSide(params);
+}
+
+// Chuẩn hóa biển số để so sánh
+function normalizePlate(s) {
+  return String(s || '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9\-\.]/g, ''); // giữ lại ký tự thường thấy
+}
+
+// Lấy instance DataTable cần bôi màu (ưu tiên bảng preview khi upload)
+function getActiveRegistrationTable() {
+  if ($.fn.DataTable.isDataTable('#previewDataTable')) return $('#previewDataTable').DataTable();
+  if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) return registeredVehicleTable;
+  return null;
+}
+
+// Bôi màu các hàng theo danh sách biển số
+function highlightRowsInTable(plates, className) {
+  const table = getActiveRegistrationTable();
+  if (!table || !Array.isArray(plates) || !plates.length) return;
+
+  const setPlates = new Set(plates.map(normalizePlate));
+
+  table.rows().every(function () {
+    const node = $(this.node());
+    const row = this.data();
+    // Thử lấy theo object key, nếu không có thì fallback đọc text theo cột "Truck Plate"
+    let plate = '';
+    if (row && typeof row === 'object') {
+      if (row['Truck Plate']) plate = row['Truck Plate'];
+      else if (Array.isArray(row)) {
+        // đoán cột biển số nếu DataTable trả mảng: thử tìm cell có pattern
+        const text = node.find('td').map((i, td) => $(td).text().trim()).get();
+        const maybe = text.find(t => /[A-Z0-9]{2,}[-\.][A-Z0-9]+/.test(t) || /[A-Z]{1,3}\d{3,}/i.test(t)) || '';
+        plate = maybe;
+      }
+    }
+    if (setPlates.has(normalizePlate(plate))) {
+      node.addClass(className);
+    }
+  });
+}
+
+// Giới hạn hiển thị danh sách (tối đa 20, thêm "...")
+function buildListHtml(items) {
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const visible = items.slice(0, 20);
+  const label =
+    (translations && translations[currentLang] && translations[currentLang].popup_plate_label) ||
+    (currentLang === 'en' ? 'Vehicle' : 'Xe');
+  const listHtml = visible.map(p => `<div>${label} ${esc(p)}</div>`).join('');
+  const more = items.length > 20 ? `<div class="text-muted">...</div>` : '';
+  return listHtml + more;
+}
+
+
+// === HIGHLIGHT HÀNG TRONG DATATABLE (Xe mới / Xe trùng đơn vị khác) ===
+window.__HL_NEW_SET = new Set();
+window.__HL_DUP_SET = new Set();
+
+function normalizePlate(s) {
+  return String(s || '').toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9\-\.]/g, '');
+}
+
+// Lấy danh sách DataTable đang dùng (preview khi upload và/hoặc bảng "Xe đã đăng ký")
+function getActiveRegistrationTables() {
+  const tables = [];
+  if ($.fn.DataTable.isDataTable('#previewDataTable')) tables.push($('#previewDataTable').DataTable());
+  if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) tables.push(registeredVehicleTable);
+  return tables;
+}
+
+// Tìm chỉ số cột "Truck Plate" nếu không có object key
+function findTruckPlateIndex(table) {
+  // Ưu tiên dataSrc = 'Truck Plate'
+  const settings = table.settings()[0];
+  const idxByData = settings.aoColumns.findIndex(c => c && c.mData === 'Truck Plate');
+  if (idxByData >= 0) return idxByData;
+
+  // Fallback theo header text (tùy ngôn ngữ)
+  const headers = $(table.columns().header()).map((i, th) => $(th).text().trim()).get();
+  const candidates = ['Truck Plate', 'Biển số xe', 'Biển số', 'Plate'];
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i];
+    if (candidates.some(k => h.toLowerCase().includes(k.toLowerCase()))) return i;
+  }
+  return -1;
+}
+
+// Lấy biển số từ 1 row (object hoặc đọc từ cell)
+function extractPlateFromRow(rowData, table, rowNode) {
+  if (rowData && typeof rowData === 'object' && !Array.isArray(rowData)) {
+    if (rowData['Truck Plate']) return rowData['Truck Plate'];
+  }
+  const idx = findTruckPlateIndex(table);
+  if (idx >= 0) {
+    return $(rowNode).find('td').eq(idx).text().trim();
   }
   return '';
 }
 
-function sanitizeXpplText_(value) {
-  if (value == null || value === '') return '';
-  if (typeof value === 'number') return String(value);
-  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
-    return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
-  }
-  var str = String(value);
-  if (!str) return '';
-  str = str.replace(/\r?\n/g, ' ').trim();
-  if (str.charAt(0) === '=') {
-    str = str.replace(/^=+/, '');
-  }
-  return str;
-}
+function applyHighlightsToTable(table) {
+  const newSet = window.__HL_NEW_SET;
+  const dupSet = window.__HL_DUP_SET;
 
-function normalizeXpplDbValue_(header, value) {
-  var type = XPPL_DB_COLUMN_TYPES[header] || 'text';
-  if (type === 'date') {
-    var d = parseExcelDate_(value);
-    return d || '';
-  }
-  if (type === 'time') {
-    var t = parseExcelTime_(value);
-    return t === '' ? '' : t;
-  }
-  return sanitizeXpplText_(value);
-}
+  table.rows({ page: 'current' }).every(function() {
+    const $tr = $(this.node());
+    // Bỏ highlight cũ để tránh tích tụ
+    $tr.removeClass('hl-new-vehicle hl-dup-vehicle');
 
-function applyXpplDbFormats_(sheet, startRow, numRows) {
-  if (numRows <= 0) return;
-  for (var i = 0; i < XPPL_DB_HEADERS.length; i++) {
-    var header = XPPL_DB_HEADERS[i];
-    var type = XPPL_DB_COLUMN_TYPES[header] || 'text';
-    var format;
-    if (type === 'date') format = 'dd/MM/yyyy';
-    else if (type === 'time') format = 'HH:mm:ss';
-    else format = '@';
-    sheet.getRange(startRow, i + 1, numRows, 1).setNumberFormat(format);
-  }
-}
+    const plate = normalizePlate(extractPlateFromRow(this.data(), table, this.node()));
+    if (!plate) return;
 
-function ensureDateTimeFormats(sheet, headers) {
-  var dateCol = headers.indexOf('Register Date') + 1;
-  var timeCol = headers.indexOf('Time') + 1;
-  if (dateCol>0) sheet.getRange(2, dateCol, Math.max(1, sheet.getMaxRows()-1), 1).setNumberFormat("dd/MM/yyyy");
-  if (timeCol>0) sheet.getRange(2, timeCol, Math.max(1, sheet.getMaxRows()-1), 1).setNumberFormat("HH:mm:ss");
-}
-
-function formatRowForClient_(rowArray, headers) {
-  var out = {};
-  for (var i=0;i<headers.length;i++){
-    var key = headers[i];
-    var val = rowArray[i];
-    if (key === 'Register Date' || key === 'Date In' || key === 'Date Out' || key === 'Changed Date') {
-      out[key] = formatDateForClient(val);
-      continue;
+    if (dupSet.has(plate)) {
+      $tr.addClass('hl-dup-vehicle');    // ưu tiên hiện màu trùng đơn vị
+    } else if (newSet.has(plate)) {
+      $tr.addClass('hl-new-vehicle');
     }
-    if (key === 'Time' || key === 'Time In' || key === 'Time Out' || key === 'Changed Time') {
-      out[key] = formatTimeForClient(val);
-      continue;
+  });
+}
+
+function applyHighlights() {
+  getActiveRegistrationTables().forEach(applyHighlightsToTable);
+}
+
+// Gắn lại highlight mỗi khi redraw
+function ensureHighlightHooks() {
+  getActiveRegistrationTables().forEach(t => {
+    if (!t.__hlHooked) {
+      t.on('draw.dt', () => applyHighlightsToTable(t));
+      t.__hlHooked = true;
     }
-    out[key] = stripLeadingApostrophe(val);
+  });
+}
+
+// Public API: gọi sau khi biết danh sách xe mới
+function highlightNewVehicles(plates) {
+  (plates || []).forEach(p => window.__HL_NEW_SET.add(normalizePlate(p)));
+  ensureHighlightHooks();
+  applyHighlights();
+}
+
+// Public API: gọi sau khi biết danh sách xe trùng đơn vị khác
+function highlightDuplicatedVehicles(plates) {
+  (plates || []).forEach(p => window.__HL_DUP_SET.add(normalizePlate(p)));
+  ensureHighlightHooks();
+  applyHighlights();
+}
+
+//Hop dong
+// ====================== CONTRACTS PAGE ======================
+let contractTable;
+
+function initContractPage() {
+  const t = translations[currentLang] || {};
+  // Quyền: admin thấy khung nhập + thao tác, user thì ẩn
+  const isAdmin = isRole('admin');
+  if (isAdmin) $('#contract-entry-card').removeClass('d-none');
+  else $('#contract-entry-card').addClass('d-none');
+  $('#ct-delete').toggleClass('d-none', !isAdmin);
+
+  google.script.run
+    .withSuccessHandler(list => {
+      window.__ctCompanyList = list || [];
+      const $sel = $('#ct-company').empty();
+      window.__ctCompanyList.forEach(v => $sel.append(new Option(v, v)));
+    })
+    .withFailureHandler(showError)
+    .getContractorOptions();
+
+  // Form lưu (admin)
+  $('#contractForm').off('submit').on('submit', function(e){
+    e.preventDefault();
+    if (!isAdmin) return;
+    const payload = {
+      'Contract No': $('#ct-contractNo').val().trim(),
+      'Customer Name': $('#ct-customerName').val().trim(),														  
+      'Transportion Company': $('#ct-company').val().trim(),
+      'Status': $('#ct-status').val().trim()
+    };
+    showLoading(t.contract_loading_saving || 'Đang lưu...');
+    google.script.run
+      .withSuccessHandler(msg => {
+        Swal.close();
+        Swal.fire(t.success_title || 'Thành công', msg, 'success');
+        contractTable.ajax.reload(null, false);
+        this.reset();
+      })
+      .withFailureHandler(showError)
+      .upsertContract(payload, userSession.token);
+  });
+// Nạp dropdown "Transportion Company" từ Users (admin mới thấy form)
+    google.script.run
+      .withSuccessHandler(list => {
+        const $sel = $('#ct-company').empty();
+        (list || []).forEach(v => $sel.append(new Option(v, v)));
+      })
+      .withFailureHandler(showError)
+      .getContractorOptions();
+
+// Status đã là dropdown cố định trong HTML (Active / Completed)
+
+  buildContractTable(isAdmin);
+  bindContractToolbar(isAdmin);
+}
+
+function buildContractTable(isAdmin) {
+  const t = translations[currentLang];  
+  if ($.fn.DataTable.isDataTable('#contractTable')) $('#contractTable').DataTable().destroy();
+
+  const columns = [
+    { data: null, title: 'Select', orderable:false, className:'no-export text-center', visible:isAdmin,
+      render: () => `<input type="checkbox" class="row-checkbox form-check-input">` },
+    { data: null, title: t.action_column || 'Hành động', orderable:false,
+      className:'no-export text-center', visible:isAdmin,
+      render: () => `<button class="btn btn-warning btn-sm ct-edit"><i class="fas fa-edit"></i></button>` },
+
+    { data: 'ID', title: 'ID' },
+    { data: 'Contract No', title: 'Contract No' },
+    { data: 'Customer Name', title: 'Customer Name' },           // <-- THÊM
+    { data: 'Transportion Company', title: 'Transportion Company' },
+    { data: 'Status', title: 'Status' },
+  ];
+
+  contractTable = $('#contractTable').DataTable({
+    processing: true,
+    serverSide: true,
+    pageLength: 50,
+    scrollX: true,
+    ajax: function(dtReq, callback) {
+      const params = {
+        draw: dtReq.draw,
+        start: dtReq.start,
+        length: dtReq.length,
+        search: dtReq.search,
+        order: dtReq.order,
+        sessionToken: userSession.token
+      };
+      google.script.run
+        .withSuccessHandler(res => callback(res))
+        .withFailureHandler(err => { showError(err); callback({draw:dtReq.draw,recordsTotal:0,recordsFiltered:0,data:[]}); })
+        .getContractDataServerSide(params);
+    },
+    columns: columns
+  });
+
+  // search box
+  $('#ct-search').off('keyup').on('keyup', function(){ contractTable.search(this.value).draw(); });
+
+  // Click chọn dòng (checkbox) – tránh gắn trùng
+  $('#contractTable tbody').off('change', '.row-checkbox').on('change', '.row-checkbox', function(){
+    $(this).closest('tr').toggleClass('selected', this.checked);
+  });
+
+  // Edit (admin) – tránh gắn trùng + fix .then
+  $('#contractTable tbody').off('click', '.ct-edit').on('click', '.ct-edit', function(){
+    if (!isAdmin) return;
+    const row = contractTable.row($(this).closest('tr')).data();
+    if (!row) return;
+
+    const companyOptions = (window.__ctCompanyList || []).map(v =>
+      `<option value="${esc(v)}" ${v === (row['Transportion Company']||'') ? 'selected':''}>${esc(v)}</option>`
+    ).join('');
+
+    const statusList = ['Active','Completed'];
+    const statusOptions = statusList.map(s =>
+      `<option value="${s}" ${s === (row['Status']||'') ? 'selected':''}>${s}</option>`
+    ).join('');
+
+    Swal.fire({
+      title: t.contract_edit_title || 'Sửa hợp đồng',
+      html: `
+        <div class="text-start">
+          <div class="mb-2"><label class="form-label">ID</label>
+            <input class="form-control form-control-sm" value="${esc(row['ID'])}" disabled>
+          </div>
+          <div class="mb-2"><label class="form-label">Contract No</label>
+            <input id="sw-ct-no" class="form-control form-control-sm" value="${esc(row['Contract No']||'')}">
+          </div>
+          <div class="mb-2"><label class="form-label">Customer Name</label>
+            <input id="sw-ct-cust" class="form-control form-control-sm" value="${esc(row['Customer Name']||'')}">
+          </div>
+         <div class="mb-2"><label class="form-label">Transportion Company</label>
+            <select id="sw-ct-company" class="form-control form-control-sm">${companyOptions}</select>
+          </div>
+          <div class="mb-2"><label class="form-label">Status</label>
+            <select id="sw-ct-status" class="form-control form-control-sm">${statusOptions}</select>
+          </div>
+        </div>
+      `,
+      focusConfirm: false,
+      preConfirm: () => ({
+        ID: row['ID'],
+        'Contract No': $('#sw-ct-no').val().trim(),
+        'Customer Name': $('#sw-ct-cust').val().trim(),
+		'Transportion Company': $('#sw-ct-company').val(),
+        'Status': $('#sw-ct-status').val()
+      })
+    }).then(res => {
+      if (!res.isConfirmed) return;
+      showLoading(t.contract_loading_updating || t.loading_updating || 'Đang cập nhật...');
+      google.script.run
+        .withSuccessHandler(msg => {
+          Swal.close();
+          Swal.fire(t.success_title || 'Thành công', msg, 'success');
+          contractTable.ajax.reload(null, false);
+        })
+        .withFailureHandler(showError)
+        .upsertContract(res.value, userSession.token);
+    });
+  });
+}
+
+function bindContractToolbar(isAdmin) {
+  const t = translations[currentLang];  
+  // Reload
+  $('#ct-reload').off('click').on('click', function(e){ e.preventDefault(); contractTable.ajax.reload(); });
+
+  // Delete (admin)
+  $('#ct-delete').off('click').on('click', function(e){
+    e.preventDefault();
+    if (!isAdmin) return;
+
+    const ids = [];
+    contractTable.rows('.selected').every(function(){ const d=this.data(); if(d && d.ID) ids.push(d.ID); });
+
+    if (!ids.length) {
+      Swal.fire(
+        t.contract_no_selection_title || 'Chưa chọn dòng',
+        t.contract_no_selection_message || 'Hãy tick các dòng cần xoá.',
+        'info'
+      );
+      return;
+    }
+    Swal.fire({icon:'warning', title: t.contract_confirm_delete_title || 'Xoá các mục đã chọn?', showCancelButton:true})
+      .then(r => {
+        if (!r.isConfirmed) return;
+        showLoading(t.contract_loading_deleting || t.loading_deleting || 'Đang xoá...');
+        google.script.run
+          .withSuccessHandler(msg => {
+            Swal.close();
+            Swal.fire(t.success_title || 'Thành công', msg, 'success');
+            contractTable.ajax.reload(null, false);
+          })
+          .withFailureHandler(showError)
+          .deleteContracts(ids, userSession.token);
+      });
+  });
+
+  // Export Excel (theo đúng thứ tự cột đang hiển thị & bỏ 2 cột Select/Action)
+  $('#ct-export').off('click').on('click', function(e){
+    e.preventDefault();
+    const colDefs = contractTable.settings().init().columns; // our definition above
+    const visibleIdx = contractTable.columns(':visible').indexes().toArray()
+      .filter(i => !$(contractTable.column(i).header()).hasClass('no-export'));
+
+    const headers = visibleIdx.map(i => $(contractTable.column(i).header()).text().trim());
+    const data = contractTable.rows({search:'applied'}).data().toArray()
+      .map(row => visibleIdx.map(i => {
+        const key = colDefs[i].data; 
+        return key ? (row[key] ?? '') : '';
+      }));
+
+    const aoa = [headers, ...data];
+    const sheet = XLSX.utils.aoa_to_sheet(aoa);
+
+    const range = XLSX.utils.decode_range(sheet['!ref'] || `A1:${XLSX.utils.encode_cell({ r: aoa.length - 1, c: headers.length - 1 })}`);
+    const border = {
+      top:    { style: 'thin', color: { rgb: 'FF000000' } },
+      bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+      left:   { style: 'thin', color: { rgb: 'FF000000' } },
+      right:  { style: 'thin', color: { rgb: 'FF000000' } }
+    };
+
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellAddr = XLSX.utils.encode_cell({ r, c });
+        if (!sheet[cellAddr]) {
+          sheet[cellAddr] = { t: 's', v: '' };
+        }
+        sheet[cellAddr].s = sheet[cellAddr].s || {};
+        sheet[cellAddr].s.border = border;
+        if (r === range.s.r) {
+          sheet[cellAddr].s.font = Object.assign({}, sheet[cellAddr].s.font, { bold: true });
+        }
+      }
+    }
+
+    const textify = val => {
+      if (val == null) return '';
+      if (typeof val === 'number') return val.toString();
+      return String(val);
+    };
+    sheet['!cols'] = headers.map((header, idx) => {
+      const maxLen = aoa.reduce((max, row) => {
+        const cellText = textify(row[idx] ?? '');
+        return Math.max(max, Array.from(cellText).length);
+      }, 0);
+      const padding = 2;
+      const minWidth = 10;
+      const maxWidth = 40;
+      return { wch: Math.min(Math.max(maxLen + padding, minWidth), maxWidth) };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'Contracts');
+    XLSX.writeFile(wb, `Contracts_${new Date().toISOString().slice(0,10)}.xlsx`);
+  });
+}
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+//nạp Số HĐ cho trang Đăng ký xe
+function loadActiveContractNosForRegister() { 
+  google.script.run
+    .withSuccessHandler(arr => {
+      // vẫn nạp datalist để fallback (không bắt buộc, nhưng giữ như cũ)
+      const $dl = $('#contractNoList').empty();
+      (arr || []).forEach(no => $dl.append(`<option value="${esc(no)}"></option>`));
+
+      // ✅ khởi tạo combobox nhìn & dùng như select
+      initComboBox('#manual-contractNo', arr || []);
+    })
+    .withFailureHandler(showError)
+    .getActiveContractNos(userSession.token);
+}
+
+
+// ====== ComboBox nhẹ cho input (gõ + sổ danh sách) ======
+function initComboBox(inputSel, options) {
+  const $input = $(inputSel);
+  if (!$input.length) return;
+  const t = translations[currentLang];  
+
+  // Bọc input
+  if (!$input.parent().hasClass('combo-wrap')) {
+    $input.wrap('<div class="combo-wrap"></div>');
+    const ariaLabel = t.combo_open_list_label || 'Mở danh sách';
+    $input.after(`<button type="button" class="combo-btn" aria-label="${ariaLabel}">▾</button><div class="combo-menu"></div>`);
   }
+  const $wrap = $input.parent();
+  const $btn  = $wrap.find('.combo-btn');
+  const $menu = $wrap.find('.combo-menu');
+
+  function render(list) {
+    $menu.empty();
+    list.forEach(v => $menu.append(`<div class="combo-item" data-val="${_.escape(v)}">${_.escape(v)}</div>`));
+    $menu.toggle(list.length > 0);
+  }
+
+  function filterAndShow() {
+    const q = $input.val().toLowerCase().trim();
+    const list = (options || []).filter(v => String(v).toLowerCase().includes(q)).slice(0, 200);
+    render(list);
+  }
+
+  // Sự kiện
+  $input.on('input.combo', filterAndShow);
+  $btn.off('click.combo').on('click.combo', function(){
+    if ($menu.is(':visible')) { $menu.hide(); return; }
+    $input.trigger('focus');
+    render(options.slice(0, 200));
+  });
+  $menu.off('click.combo').on('click.combo', '.combo-item', function(){
+    $input.val($(this).data('val'));
+    $menu.hide();
+    $input.trigger('change');
+  });
+
+  // điều hướng bàn phím
+  $input.off('keydown.combo').on('keydown.combo', function(e){
+    if (!$menu.is(':visible')) return;
+    const $items = $menu.find('.combo-item');
+    let idx = $items.index($items.filter('.active'));
+    if (e.key === 'ArrowDown') { idx = Math.min(idx + 1, $items.length - 1); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { idx = Math.max(idx - 1, 0); e.preventDefault(); }
+    else if (e.key === 'Enter') { if (idx >= 0) { $items.eq(idx).click(); e.preventDefault(); } return; }
+    else { return; }
+    $items.removeClass('active'); if (idx >= 0) $items.eq(idx).addClass('active')[0].scrollIntoView({block:'nearest'});
+  });
+
+  // Ẩn khi click ngoài
+  $(document).off('mousedown.combo').on('mousedown.combo', function(ev){
+    if (!$.contains($wrap[0], ev.target)) $menu.hide();
+  });
+
+  // Lần đầu
+  render([]); // ẩn
+}
+
+// Lodash escape tối giản (nếu bạn chưa có _)
+if (typeof _ === 'undefined') {
+  window._ = { escape: s => String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') };
+}
+
+try {
+  if (translations && translations.vi)
+    translations.vi['sidebar_xppl_approval'] = translations.vi['sidebar_xppl_approval'] || 'Xử lý xe đăng ký gửi XPPL';
+  if (translations && translations.en)
+    translations.en['sidebar_xppl_approval'] = translations.en['sidebar_xppl_approval'] || 'XPPL Registration Approval';
+  if (translations && translations.vi)
+    translations.vi['sidebar_xppl_weighing'] = translations.vi['sidebar_xppl_weighing'] || 'Trạm cân XPPL';
+  if (translations && translations.en)
+    translations.en['sidebar_xppl_weighing'] = translations.en['sidebar_xppl_weighing'] || 'XPPL Weighing Station';
+  if (translations && translations.vi)
+    translations.vi['sidebar_weighing_result'] = translations.vi['sidebar_weighing_result'] || 'Kết quả bốc hàng';
+  if (translations && translations.en)
+    translations.en['sidebar_weighing_result'] = translations.en['sidebar_weighing_result'] || 'Weighing Results';    
+} catch (e) {}
+
+const XPPL_WEIGHING_HEADERS = [
+  'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
+  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
+  'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
+  'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode','Note',
+  'CreateUser'
+];
+// Excel files from the weighing station do not include the leading ID column
+const XPPL_FILE_HEADERS = XPPL_WEIGHING_HEADERS.slice(1);
+let xpplWeighingTable;
+
+function initXPPLWeighingStationPage() {
+  $('#xppl-filter-date').val('');
+
+  setupCustomFileInput('#xppl-weighing-file', {
+    trigger: '#xpplWeighingFileTrigger',
+    display: '#xpplWeighingFileDisplay',
+    defaultKey: 'file_no_file_selected'
+  });
+
+  if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+    $('#xppl-weighing-table').DataTable().destroy();
+  }
+  xpplWeighingTable = $('#xppl-weighing-table').DataTable({
+    data: [],
+    columns: XPPL_WEIGHING_HEADERS.map(h => ({
+      data: h.includes('.') ? function(row){ return row[h]; } : h,
+      title: h
+    })),
+    autoWidth: true,
+    pageLength: 50,
+    lengthChange: false,
+    searching: true,
+    paging: true,
+    columnDefs: [{ targets: '_all', className: 'text-nowrap' }]
+  });
+  xpplWeighingTable.columns.adjust();
+
+  xpplWeighingTable.on('draw.dt', function () {
+    const count = xpplWeighingTable.rows({ search: 'applied' }).count();
+    const t = (translations && translations[currentLang]) || translations.vi || {};
+    const label = t.xppl_total_rows || 'Tổng số dòng';
+    $('#xppl-count').html(label + ': <span class="badge bg-primary">' + count + '</span>');
+  });
+
+  $('#xppl-weighing-upload').off('click').on('click', handleXpplWeighingUpload);
+  $('#xppl-filter-date, #xppl-filter-contract, #xppl-filter-customer')
+    .off('change').on('change', loadXpplWeighingData);
+  $('#xppl-search').off('keyup').on('keyup', function(){
+    xpplWeighingTable.search(this.value).draw();
+  });
+  $('#xppl-page-length').off('change').on('change', function(){
+    xpplWeighingTable.page.len($(this).val()).draw();
+  });
+  $('#xppl-refresh').off('click').on('click', loadXpplWeighingData);
+  $('#xppl-export').off('click').on('click', exportXpplWeighingExcel);
+
+  loadXpplWeighingData();
+}
+
+function handleXpplWeighingUpload() {
+  const t = (translations && translations[currentLang]) || translations.vi || {};  
+  const file = $('#xppl-weighing-file')[0].files[0];
+  if (!file) {
+    Swal.fire(t.no_file_selected_title || 'Chưa chọn file', t.xppl_no_file_excel_message || t.no_file_selected_message || 'Vui lòng chọn file Excel.', 'warning');
+    return;
+  }
+  Swal.fire({
+    title: t.xppl_upload_confirm_title || 'Xác nhận',
+    text: t.xppl_upload_confirm_text || 'Bạn có chắc muốn tải lên?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: t.xppl_upload_confirm_button || 'Xác nhận',
+    cancelButtonText: t.xppl_upload_cancel_button || t.cancel_button || 'Hủy bỏ'
+  }).then(res => {
+    if (!res.isConfirmed) return;
+    showLoading(t.xppl_processing_file || 'Đang xử lý file...');
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const workbook = XLSX.read(e.target.result, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'' });
+        if (rows.length < 2) throw new Error(t.xppl_file_no_data || t.file_no_data_error || 'File không có dữ liệu');
+        const headers = rows[0].map(h => String(h || '').trim());
+        const expected = XPPL_FILE_HEADERS;
+        if (headers.length !== expected.length || !headers.every((h,i) => h === expected[i])) {
+          throw new Error(t.xppl_header_mismatch || 'Tiêu đề cột không khớp với mẫu yêu cầu.');
+        }
+        const data = rows.slice(1).map(r => {
+          const obj = { ID: '' };
+          XPPL_FILE_HEADERS.forEach((h, i) => obj[h] = r[i] || '');
+          return obj;
+        });
+        google.script.run
+          .withSuccessHandler(msg => {
+            Swal.close();
+            Swal.fire(t.success_title || 'Thành công', msg || (t.xppl_upload_success_message || 'Tải lên thành công'), 'success');
+            $('#xppl-weighing-file').val('');
+            $('#xppl-weighing-file').val('').trigger('change');
+            $('#xppl-filter-contract').val('');
+            $('#xppl-filter-customer').val('');
+            loadXpplWeighingData();
+          })
+          .withFailureHandler(err => { Swal.close(); showError(err); })
+          .saveXpplWeighingData(data, userSession.token);
+      } catch(err) {
+        Swal.close();
+        Swal.fire({
+          icon: 'warning',
+          iconHtml: '⚠️',
+          title: t.error_title || 'Lỗi',
+          text: err.message || String(err),
+          customClass: { icon: 'swal2-warning-emoji' }
+        });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function loadXpplWeighingData() {
+  const t = (translations && translations[currentLang]) || translations.vi || {};  
+  const dateVal = $('#xppl-filter-date').val();
+  const contractVal = $('#xppl-filter-contract').val();
+  const customerVal = $('#xppl-filter-customer').val();
+
+  if (!dateVal) {
+    $('#xppl-filter-contract').prop('disabled', true)
+      .empty().append(`<option value="" data-translate="xppl_select_date_first">${t.xppl_select_date_first || 'Chọn ngày trước'}</option>`);
+    $('#xppl-filter-customer').prop('disabled', true)
+     .empty().append(`<option value="" data-translate="xppl_select_date_first">${t.xppl_select_date_first || 'Chọn ngày trước'}</option>`);
+    if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+      xpplWeighingTable.clear().draw();
+    }
+    $('#xppl-summary-trucks').text(0);
+    $('#xppl-summary-weight').text(0);
+    return;
+  }
+
+  const filter = {
+    date: dateVal,
+    contractNo: contractVal,
+    customerName: customerVal
+  };
+
+  showLoading(t.xppl_loading_data || 'Đang tải dữ liệu...');
+  callServerWithRetry('getXpplWeighingData', [filter, userSession.token], {
+    attempts: 3,
+    initialDelay: 700,
+    onSuccess: res => {
+      Swal.close();
+      if (!res) res = {};
+      if (res.contracts) {
+        const $c = $('#xppl-filter-contract').prop('disabled', false)
+          .empty().append(`<option value="" data-translate="xppl_filter_all_option">${t.xppl_filter_all_option || 'Tất cả'}</option>`);
+        res.contracts.forEach(c => $c.append(`<option value="${c}">${c}</option>`));
+        if (filter.contractNo) $c.val(filter.contractNo);
+      }
+      if (res.customers) {
+        const $c2 = $('#xppl-filter-customer').prop('disabled', false)
+          .empty().append(`<option value="" data-translate="xppl_filter_all_option">${t.xppl_filter_all_option || 'Tất cả'}</option>`);
+        res.customers.forEach(c => $c2.append(`<option value="${c}">${c}</option>`));
+        if (filter.customerName) $c2.val(filter.customerName);
+      }
+      $('#xppl-summary-trucks').text(res.summary ? res.summary.trucks || 0 : 0);
+      $('#xppl-summary-weight').text(res.summary ? (res.summary.weight || 0).toLocaleString('en-US') : 0);
+      if ($.fn.DataTable.isDataTable('#xppl-weighing-table')) {
+        xpplWeighingTable.clear().rows.add(res.data || []).draw();
+        xpplWeighingTable.columns.adjust().draw();
+      }
+    },
+    onFailure: err => {
+      Swal.close();
+      showError(err);
+    }
+  });
+}
+
+function exportXpplWeighingExcel() {
+  const t = (translations && translations[currentLang]) || translations.vi || {};  
+  const rows = xpplWeighingTable.rows({ search: 'applied' }).data().toArray();
+  if (!rows.length) {
+    Swal.fire(t.no_data_title || 'Không có dữ liệu', t.xppl_no_data_export_message || t.no_data_export_message || 'Không có dữ liệu để xuất.', 'info');
+    return;
+  }
+  const dateVal = $('#xppl-filter-date').val();
+  const contractVal = $('#xppl-filter-contract').val();
+  function formatExportDate(value) {
+    if (!value) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    }
+    const isoMatch = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+    }
+    const vnMatch = String(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (vnMatch) {
+      return `${vnMatch[1]}-${vnMatch[2]}-${vnMatch[3]}`;
+    }
+    return String(value);
+  }
+  const formattedDate = formatExportDate(dateVal);
+  const filePrefix = contractVal ? contractVal : 'All';  
+  const aoa = [XPPL_WEIGHING_HEADERS];
+  rows.forEach(r => {
+    aoa.push(XPPL_WEIGHING_HEADERS.map(h => r[h] || ''));
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  (function applyWorksheetStyling() {
+    if (!ws['!ref']) return;
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const borderSide = { style: 'thin', color: { rgb: '000000' } };
+    const headerRow = range.s.r;
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[ref];
+        if (!cell) continue;
+        cell.s = cell.s || {};
+        cell.s.border = {
+          top: borderSide,
+          right: borderSide,
+          bottom: borderSide,
+          left: borderSide
+        };
+        if (R === headerRow) {
+          cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+        }
+      }
+    }
+    const colCount = aoa[0] ? aoa[0].length : 0;
+    if (!colCount) return;
+    const colWidths = [];
+    for (let cIdx = 0; cIdx < colCount; ++cIdx) {
+      let maxLen = 0;
+      for (let rIdx = 0; rIdx < aoa.length; ++rIdx) {
+        const value = aoa[rIdx][cIdx];
+        const text = value == null ? '' : String(value);
+        const parts = text.split(/\r?\n/);
+        for (let p = 0; p < parts.length; ++p) {
+          const len = parts[p].length;
+          if (len > maxLen) maxLen = len;
+        }
+      }
+      const width = Math.min(Math.max(maxLen + 2, 10), 60);
+      colWidths.push({ wch: width });
+    }
+    ws['!cols'] = colWidths;
+  })();  
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'XPPL');
+  const fileName = `${filePrefix}_Weighing Report_${formattedDate}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
+// ===== XPPL Approval Page =====
+let xpplDT;
+
+function initXuLyXPPLPage() {
+  // ===== 3.1. STATE & HELPER =====
+  const $ddContract = $('#xppl-form-contract');
+  const $ddCustomer = $('#xppl-form-customer');
+
+  // map Contract No -> [Customer Name,...]
+  let __cusMapByContract = {};
+  // trạng thái export
+  let xpplExportState = { confirmed: false, filter: null, rows: [] };
+
+  // tổng hợp số liệu theo từng hợp đồng (tổng xe / đã duyệt)
+  let contractSummary = {};
+  let fullyApprovedContracts = new Set();
+  const contractLabels = {};
+  const contractRawValues = {};
+
+  function normalizeContractValue(value) {
+    if (value == null) return '';
+    return String(value).trim();
+  }
+
+  function recordContractLabel(key, raw) {
+    if (!key) return;
+    const rawStr = raw == null ? '' : String(raw);
+    const trimmed = rawStr.trim();
+    if (trimmed) {
+      contractLabels[key] = trimmed;
+    } else if (!contractLabels[key]) {
+      contractLabels[key] = key;
+    }
+    if (!contractRawValues[key]) {
+      contractRawValues[key] = trimmed ? rawStr : key;
+    }
+  }
+
+  function computeContractSummary(rows) {
+    const summary = {};
+    (rows || []).forEach(row => {
+      const rawValue = row['Contract No'];
+      const contractNo = normalizeContractValue(rawValue);
+      if (!contractNo) return;
+      recordContractLabel(contractNo, rawValue);
+      const bucket = summary[contractNo] || { total: 0, approved: 0 };
+      bucket.total += 1;
+      if (String(row['Registration Status'] || '').toLowerCase() === 'approved') {
+        bucket.approved += 1;
+      }
+      summary[contractNo] = bucket;
+    });
+    return summary;
+  }
+
+  function formatContractLabel(contractNo, stats, markApproved) {
+    const total = stats && typeof stats.total === 'number' ? stats.total : 0;
+    const baseLabel = `${contractNo} / ${total}`;
+    return markApproved ? `${baseLabel} ✓` : baseLabel;
+  }
+
+  function isFullyApproved(contractNo, stats) {
+    const key = normalizeContractValue(contractNo);
+    if (stats && stats.total > 0) {
+      return stats.approved === stats.total;
+    }
+    return fullyApprovedContracts.has(key);
+  }
+
+  function updateContractOptionLabels() {
+    $('#xppl-contracts option').each(function () {
+      const rawValue = this.value;
+      const key = this.dataset.contractKey || normalizeContractValue(rawValue);
+      if (!key) return;
+      const stats = contractSummary[key];
+      const approved = isFullyApproved(key, stats);
+      const display = contractLabels[key] || normalizeContractValue(rawValue) || rawValue;
+      this.textContent = formatContractLabel(display, stats, approved);
+      this.classList.toggle('approved', !!approved);
+      const totalVal = stats && typeof stats.total === 'number' ? stats.total : 0;
+      const approvedVal = stats && typeof stats.approved === 'number' ? stats.approved : 0;
+      this.dataset.total = totalVal;
+      this.dataset.approved = approvedVal;
+      this.dataset.contractKey = key;
+    });
+  }  
+
+  function toggleExportButtons(on){
+    $('#xppl-form-preview').prop('disabled', !on);
+    $('#xppl-form-export').prop('disabled', !on);
+  }
+  function resetExportFormPlaceholders() {
+    $ddContract.empty().append('<option value="">— Không có hợp đồng trong ngày —</option>');
+    $ddCustomer.empty().append('<option value="">— Không có khách hàng —</option>');
+    toggleExportButtons(false);
+    xpplExportState = { confirmed:false, filter:null, rows:[] };
+  }
+  // ISO -> dd/MM/yyyy
+  function isoToVN(iso) {
+    const m = String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso||'');
+  }
+  // Luôn trả dd/MM/yyyy từ #xppl-date dù input hiển thị dạng gì
+  function getDateVN() {
+    const raw = ($('#xppl-date').val() || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return isoToVN(raw.slice(0,10));
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+    const t = new Date(raw);
+    if (!isNaN(t)) {
+      const dd=('0'+t.getDate()).slice(-2), mm=('0'+(t.getMonth()+1)).slice(-2), yy=t.getFullYear();
+      return `${dd}/${mm}/${yy}`;
+    }
+    return raw;
+  }
+
+  // set ngày mặc định hôm nay (ISO yyyy-mm-dd) cho input type=date
+  const todayISO = new Date().toISOString().slice(0,10);
+  $('#xppl-date').val(todayISO);
+
+  // ===== 3.2. NẠP OPTIONS CONTRACT/CUSTOMER THEO NGÀY =====
+  function loadExportOptionsForDate() {
+    resetExportFormPlaceholders();
+    const dateVN = getDateVN(); // dd/MM/yyyy
+
+    showLoading('Đang tải danh sách hợp đồng…');
+    google.script.run
+      .withSuccessHandler(res => {
+        Swal.close();
+        const contracts = (res && res.contracts) || [];
+        __cusMapByContract = (res && res.customersByContract) || {};
+
+        if (!contracts.length) return;
+
+        // đổ Contract No
+        const frag = document.createDocumentFragment();
+        contracts.forEach(no => {
+          const opt = document.createElement('option');
+          opt.value = no;
+          opt.textContent = no;
+          frag.appendChild(opt);
+        });
+        $ddContract.empty()[0].appendChild(frag);
+
+        // hiển thị Customer theo contract đầu tiên
+        const first = $ddContract.val();
+        const list = __cusMapByContract[first] || [];
+        $ddCustomer.empty();
+        if (list.length) {
+          const f2 = document.createDocumentFragment();
+          list.forEach(cus => {
+            const opt = document.createElement('option');
+            opt.value = cus;
+            opt.textContent = cus;
+            f2.appendChild(opt);
+          });
+          $ddCustomer[0].appendChild(f2);
+        } else {
+          $ddCustomer.append('<option value="">— Không có khách hàng —</option>');
+        }
+
+        // reset state export
+        toggleExportButtons(false);
+        xpplExportState = { confirmed:false, filter:null, rows:[] };
+      })
+      .withFailureHandler(err => { Swal.close(); showError(err); })
+      // ✅ quan trọng: TRUYỀN OBJECT { dateString }
+      .getXpplExportOptions({ dateString: dateVN }, userSession.token);
+  }
+
+  // Khi đổi Contract No → nạp Customer Name đúng map
+  $ddContract.off('change.xppl-contract').on('change.xppl-contract', function () {
+    const no = $(this).val();
+    const list = __cusMapByContract[no] || [];
+    $ddCustomer.empty();
+    if (list.length) {
+      const frag = document.createDocumentFragment();
+      list.forEach(cus => {
+        const opt = document.createElement('option');
+        opt.value = cus;
+        opt.textContent = cus;
+        frag.appendChild(opt);
+      });
+      $ddCustomer[0].appendChild(frag);
+    } else {
+      $ddCustomer.append('<option value="">— Không có khách hàng —</option>');
+    }
+    toggleExportButtons(false);
+    xpplExportState = { confirmed:false, filter:null, rows:[] };
+  });
+
+  // đổi ngày / bấm “Hiển thị/Cập nhật” → nạp lại dropdown
+  $('#xppl-date').off('change.xpplopt').on('change.xpplopt', loadExportOptionsForDate);
+  $('#xppl-refresh').off('click.xpplopt').on('click.xpplopt', function(e){
+    e.preventDefault(); loadExportOptionsForDate();
+  });
+  // nạp lần đầu
+  loadExportOptionsForDate();
+
+  // ===== 3.3. Nút "Xác nhận" — khoá điều kiện & kiểm tra Approved =====
+  $('#xppl-form-confirm').off('click.xppl').on('click.xppl', function(){
+    const filter = {
+      dateString:   getDateVN(),
+      contractNo:   $ddContract.val() || '',
+      customerName: $ddCustomer.val() || ''
+    };
+
+    const missing = [];
+    if (!filter.dateString)   missing.push('Register Date');
+    if (!filter.contractNo)   missing.push('Contract No');
+    if (!filter.customerName) missing.push('Customer Name');
+    if (missing.length){
+      Swal.fire('Thiếu điều kiện', 'Vui lòng chọn: ' + missing.join(', '), 'warning');
+      return;
+    }
+
+    showLoading('Đang kiểm tra điều kiện (Approved)…');
+    google.script.run
+      .withSuccessHandler(function(res){
+        Swal.close();
+        if (!res || !res.ok){
+          const msg = (res && res.errors && res.errors.length) ? res.errors.join('<br>') : 'Không đủ điều kiện để xuất.';
+          Swal.fire('Không đạt', msg, 'error');
+          xpplExportState = { confirmed:false, filter:null, rows:[] };
+          toggleExportButtons(false);
+          return;
+        }
+        xpplExportState = { confirmed:true, filter:res.filter, rows:res.rows || [] };
+        toggleExportButtons(true);
+        Swal.fire('OK', `Đã khoá điều kiện. Số dòng Approved: <b>${res.total}</b>.`, 'success');
+      })
+      .withFailureHandler(err => { Swal.close(); showError(err); })
+      .getXpplExportData(filter, userSession.token);
+  });
+
+  // ===== 3.4. Nút "Kiểm tra" — preview A9:J =====
+  $('#xppl-form-preview').off('click.xppl').on('click.xppl', function(){
+  if (!xpplExportState || !xpplExportState.confirmed) {
+    Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info'); return;
+  }
+  const rows = xpplExportState.rows || [];
+  if (!rows.length){ Swal.fire('Trống', 'Không có dữ liệu để xem.', 'info'); return; }
+
+  const { dateString, contractNo, customerName } = xpplExportState.filter;
+
+  const thead = `
+    <tr>
+      <th>No</th>
+      <th>Truck plate</th>
+      <th>Country</th>
+      <th>Wheel</th>
+      <th>Trailer plate</th>
+      <th>Driver name</th>
+      <th>ID/Passport</th>
+      <th>Phone number</th>
+      <th>Transportion Company</th>
+      <th>Subcontractor</th>
+    </tr>`;
+  let tbody = '';
+  rows.forEach((r,i)=>{ tbody += `
+    <tr>
+      <td>${i+1}</td>
+      <td>${r['Truck Plate']||''}</td>
+      <td>${r['Country']||''}</td>
+      <td>${r['Wheel']||''}</td>
+      <td>${r['Trailer Plate']||''}</td>
+      <td>${r['Driver Name']||''}</td>
+      <td>${r['ID/Passport']||''}</td>
+      <td>${r['Phone number']||''}</td>
+      <td>${r['Transportion Company']||''}</td>
+      <td>${r['Subcontractor']||''}</td>
+    </tr>`; });
+
+  Swal.fire({
+    width: '90%',
+    title: 'Xem trước Truck list',
+    html: `
+      <div class="text-start mb-2">
+        <b>Date:</b> ${dateString} &nbsp;&nbsp; <b>Contract:</b> ${contractNo}
+        &nbsp;&nbsp; <b>Customer:</b> ${customerName} &nbsp;&nbsp; <b>Total truck:</b> ${rows.length}
+      </div>
+      <div class="table-responsive" style="max-height:60vh;overflow:auto">
+        <table class="table table-bordered table-sm">
+          <thead>${thead}</thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>`,
+    confirmButtonText: 'Đóng'
+  });
+});
+
+
+
+// ===== 3.5. Nút "Xuất Excel" — xuất theo Google Sheet mẫu (template) =====
+$('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
+  if (!xpplExportState.confirmed) {
+    Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info');
+    return;
+  }
+  const filter = xpplExportState.filter;
+
+  showLoading('Đang tạo file…');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      Swal.close();
+      if (!res || !res.ok) {
+        Swal.fire('Không thể xuất', (res && res.message) || 'Lỗi không xác định.', 'error');
+        return;
+      }
+
+      // Đặt tên file tải về (ưu tiên server trả về fileName)
+      var filename = (res.fileName || res.name || ('XPPL_' + (filter.contractNo || '') + '_' + (filter.dateString || '') + '.xlsx'))
+        .replace(/[\\\/:\*\?"<>\|]/g, '_'); // sanitize ký tự cấm
+
+      // Tải về từ base64
+      var a = document.createElement('a');
+      a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + res.base64;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    })
+    .withFailureHandler(function (err) {
+      Swal.close();
+      showError(err && err.message ? err.message : err);
+    })
+    .exportXpplAsXlsx(filter, userSession.token);
+});
+
+
+
+  // ====== Admin guard & DataTable ======
+  if (!userSession || !isRole('admin')) {
+    $('#main-content').html('<div class="alert alert-warning">Bạn không có quyền truy cập trang này.</div>');
+    return;
+  }
+
+  if ($.fn.DataTable.isDataTable('#xppl-table')) $('#xppl-table').DataTable().destroy();
+  xpplDT = $('#xppl-table').DataTable({
+    paging:true, pageLength:50, lengthChange:false, searching:true, ordering:true,
+    autoWidth:false, deferRender:true, scrollX:true, serverSide:false,
+    processing:true, searchDelay:300, orderMulti:false,
+    columns: [
+      { title: 'Select', data: null, orderable:false, className:'text-center no-export',
+        render: ()=>'<input type="checkbox" class="row-checkbox form-check-input">' },
+      { title: 'Hành động', data: null, orderable:false, className:'text-center no-export',
+        render: ()=>'<button class="btn btn-warning btn-sm xppl-edit"><i class="fas fa-edit"></i></button>' },
+      { title: 'ID', data: 'ID' },
+      { title: 'Register Date', data: 'Register Date',
+        render: v => {
+          if (!v) return '';
+          const s = String(v);
+          if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+            const d = new Date(s); if (!isNaN(d)) {
+              const dd=('0'+d.getDate()).slice(-2), mm=('0'+(d.getMonth()+1)).slice(-2), yy=d.getFullYear();
+              return `${dd}/${mm}/${yy}`;
+            }
+          }
+          return s;
+        }
+      },
+      { title: 'Contract No', data: 'Contract No' },
+      { title: 'Truck Plate', data: 'Truck Plate' },
+      { title: 'Trailer Plate', data: 'Trailer Plate' },
+      { title: 'Transportion Company', data: 'Transportion Company' },
+      { title: 'Registration Status', data: 'Registration Status',
+        render: v => {
+          const t=(v||'');
+          const cls = t==='Approved' ? 'text-danger fw-bold' : 'text-primary fw-bold';
+          return `<span class="${cls}">${t}</span>`;
+        }}
+    ]
+  });
+
+  // ===== Realtime counters from table =====
+  function updateXpplCountersFromTable() {
+    const dt = $('#xppl-table').DataTable();
+    const data = dt.rows({ search: 'applied' }).data().toArray();
+    let p=0,a=0,s=0;
+    data.forEach(r=>{
+      const st = String(r['Registration Status']||'').toLowerCase();
+      if (st==='approved') a++; else if (st==='pending approval') p++;
+      const sx = r['Sent XPPL']||r['XPPL Sent']||r['Sent to XPPL'];
+      if (sx===true || String(sx).toLowerCase()==='yes' || String(sx).toLowerCase()==='sent' || sx===1) s++;
+    });
+    $('#xppl-pending').text(p);
+    $('#xppl-approved').text(a);
+    $('#xppl-sent').text(s);
+  }
+  $('#xppl-table').off('draw.dt search.dt').on('draw.dt search.dt', updateXpplCountersFromTable);
+
+  // ===== Snapshot + Table data =====
+  function updateSelectAllStyles(){
+    const sel = document.getElementById('xppl-contracts');
+    if (!sel) return;
+    const all = sel.options.length>0 && sel.selectedOptions.length===sel.options.length;
+    $('#btn-select-all-contracts').toggleClass('btn-primary', all).toggleClass('btn-outline-secondary', !all);
+  }
+  function fillContracts(contracts, fullyApproved) {
+    const $sel = $('#xppl-contracts');
+    const selEl = $sel[0];
+    if (!selEl) return;
+
+    const prevSelected = new Set(Array.from(selEl.selectedOptions || []).map(opt => opt.value));
+    const seen = new Set();
+    const list = Array.isArray(contracts) && contracts.length
+      ? contracts
+      : Object.keys(contractSummary).map(key => contractRawValues[key] || key);
+
+    fullyApprovedContracts = new Set((fullyApproved || []).map(normalizeContractValue));
+
+    selEl.innerHTML = '';
+    const frag = document.createDocumentFragment();
+
+    (list || []).forEach(rawValue => {
+      const key = normalizeContractValue(rawValue);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      recordContractLabel(key, rawValue);
+      const stats = contractSummary[key];
+      if (stats) {
+        const statsApproved = stats.total > 0 && stats.approved === stats.total;
+        if (statsApproved) fullyApprovedContracts.add(key);
+        else fullyApprovedContracts.delete(key);
+      }
+      const approved = isFullyApproved(key, stats);
+      const opt = document.createElement('option');
+      const rawString = rawValue == null ? key : String(rawValue);
+      opt.value = rawString;
+      const display = contractLabels[key] || key;
+      opt.textContent = formatContractLabel(display, stats, approved);
+      if (approved) opt.classList.add('approved');
+      const totalVal = stats && typeof stats.total === 'number' ? stats.total : 0;
+      const approvedVal = stats && typeof stats.approved === 'number' ? stats.approved : 0;
+      opt.dataset.total = totalVal;
+      opt.dataset.approved = approvedVal;
+      opt.dataset.contractKey = key;
+      if (prevSelected.has(opt.value)) {
+        opt.selected = true;
+      }
+      frag.appendChild(opt);
+    });
+
+    selEl.appendChild(frag);
+    updateSelectAllStyles();
+  }
+  function renderRows(rows) {
+    xpplDT.clear().rows.add(rows || []).draw();
+    let p = 0, a = 0, s = 0;
+    (rows || []).forEach(r=>{
+      const st = String(r['Registration Status']||'').toLowerCase();
+      if (st==='approved') a++;
+      else if (st==='pending approval') p++;
+      const sx = r['Sent XPPL']||r['XPPL Sent']||r['Sent to XPPL'];
+      if (sx===true || String(sx).toLowerCase()==='yes' || String(sx).toLowerCase()==='sent' || sx===1) s++;
+    });
+    $('#xppl-pending').text(p);
+    $('#xppl-approved').text(a);
+    $('#xppl-sent').text(s);
+  }
+  function refreshSnapshot() {
+    const d = getDateVN();
+    showLoading('Đang tải dữ liệu…');
+    google.script.run
+      .withSuccessHandler(res=>{
+        Swal.close();
+        $('#xppl-pending').text(res.pending||0);
+        $('#xppl-approved').text(res.approved||0);
+        $('#xppl-sent').text(res.sent||0);
+        contractSummary = computeContractSummary(res.rows || []);
+        Object.keys(contractSummary).forEach(key => {
+          recordContractLabel(key, contractRawValues[key]);
+        });
+        (Array.isArray(res.contracts) ? res.contracts : []).forEach(no => {
+          recordContractLabel(normalizeContractValue(no), no);
+        });
+        const contractList = (Array.isArray(res.contracts) && res.contracts.length)
+          ? res.contracts
+          : Object.keys(contractSummary).map(key => contractRawValues[key] || key);
+        fillContracts(contractList, res.fullyApproved||[]);
+        updateContractOptionLabels();
+        refreshTable(); // sau khi có hợp đồng -> tải bảng theo lựa chọn hiện tại
+      })
+      .withFailureHandler(err=>{ Swal.close(); showError(err); })
+      .getXpplSnapshot({dateString:d}, userSession.token);
+  }
+  function refreshTable() {
+    const d = getDateVN();
+    const selected = $('#xppl-contracts').val() || [];
+    google.script.run
+      .withSuccessHandler(res=>{
+        renderRows(res.rows||[]);
+        if (typeof res.pending === 'number')  $('#xppl-pending').text(res.pending);
+        if (typeof res.approved === 'number') $('#xppl-approved').text(res.approved);
+        if (typeof res.sent === 'number')     $('#xppl-sent').text(res.sent);
+        const per = computeContractSummary(res.rows || []);
+        Object.keys(per).forEach(contractNo => {
+          const stats = per[contractNo];
+          contractSummary[contractNo] = stats;
+          recordContractLabel(contractNo, contractRawValues[contractNo]);
+          if (stats.total > 0 && stats.approved === stats.total) {
+            fullyApprovedContracts.add(contractNo);
+          } else {
+            fullyApprovedContracts.delete(contractNo);
+          }
+        });
+        // đảm bảo các hợp đồng mới xuất hiện trong bảng cũng có trong danh sách chọn
+        const currentOptions = new Set(Array.from($('#xppl-contracts option')).map(opt => opt.dataset.contractKey || normalizeContractValue(opt.value)));
+        const missingContracts = Object.keys(per).filter(key => key && !currentOptions.has(key));
+        if (missingContracts.length) {
+          const additions = missingContracts.map(key => contractRawValues[key] || key);
+          const currentValues = Array.from($('#xppl-contracts option')).map(opt => opt.value);
+          fillContracts([...currentValues, ...additions], Array.from(fullyApprovedContracts));
+        }
+        updateContractOptionLabels();        
+      })
+      .withFailureHandler(showError)
+      .getRegistrationsForApproval({dateString:d, contracts:selected}, userSession.token);
+  }
+
+  // events snapshot/table
+  $('#xppl-date').off('change').on('change', refreshSnapshot);
+
+  // ⚠️ Sửa để KHÔNG xoá handler loadExportOptionsForDate ở trên:
+  $('#xppl-refresh').off('click.xppl-table').on('click.xppl-table', function(e){
+    e.preventDefault(); refreshTable();
+  });
+
+  $('#btn-select-all-contracts').off('click').on('click', function(e){ e.preventDefault(); $('#xppl-contracts option').prop('selected', true); $('#xppl-contracts').trigger('change'); updateSelectAllStyles(); });
+  $('#btn-clear-contracts').off('click').on('click', function(e){ e.preventDefault(); $('#xppl-contracts').val([]).trigger('change'); updateSelectAllStyles(); });
+  $('#xppl-contracts').off('change').on('change', updateSelectAllStyles);
+
+  $('#xppl-apply').off('click').on('click', function(e){
+    e.preventDefault();
+    const d = getDateVN();
+    const selected = $('#xppl-contracts').val() || [];
+    if (!selected.length) { Swal.fire('Thiếu lựa chọn','Vui lòng chọn ít nhất 1 hợp đồng.','info'); return; }
+    const newStatus = $('input[name="xppl-status"]:checked').val();
+    showLoading('Đang cập nhật…');
+    google.script.run
+      .withSuccessHandler(msg=>{ Swal.fire('Thành công', msg || 'Đã cập nhật.', 'success'); refreshSnapshot(); })
+      .withFailureHandler(err=>{ Swal.close(); showError(err); })
+      .updateRegistrationStatusBulk({dateString:d, contracts:selected}, newStatus, userSession.token);
+  });
+
+  // inline edit
+  $('#xppl-table').off('click','.xppl-edit').on('click','.xppl-edit', function(){
+    const row = xpplDT.row($(this).closest('tr')).data(); if(!row) return;
+    Swal.fire({
+      title:'Cập nhật trạng thái',
+      html:`<div class="text-start">
+        <div class="mb-2"><b>Contract No:</b> ${row['Contract No']}</div>
+        <div class="mb-2"><b>Truck Plate:</b> ${row['Truck Plate']}</div>
+        <label class="form-label">Registration Status</label>
+        <select id="sw-xppl-status" class="form-select">
+          <option value="Approved" ${row['Registration Status']==='Approved'?'selected':''}>Approved</option>
+          <option value="Pending approval" ${row['Registration Status']==='Pending approval'?'selected':''}>Pending approval</option>
+        </select>
+      </div>`
+      ,
+      showCancelButton:true, confirmButtonText:'Lưu', cancelButtonText:'Huỷ'
+    }).then(res=>{
+      if(!res.isConfirmed) return;
+      const newStatus = $('#sw-xppl-status').val();
+      const d = getDateVN();
+      google.script.run
+        .withSuccessHandler(msg=>{ Swal.fire('Thành công', msg || 'Đã cập nhật.', 'success'); refreshSnapshot(); })
+        .withFailureHandler(showError)
+        .updateRegistrationStatusBulk({dateString:d, contracts:[row['Contract No']], idsSelected:[row['ID']]}, newStatus, userSession.token);
+    });
+  });
+
+  // load lần đầu bảng + counters
+  refreshSnapshot();
+}
+
+// ====================== WEIGHING RESULT PAGE ======================
+function initWeighResultPage() {
+  const role = getUserRole();
+  const isAdmin = role === 'admin';
+  const isAdminXppl = role === 'admin-xppl';
+
+  $('#wr-unknown-btn').toggleClass('d-none', !isAdmin);
+  $('#wr-delete').toggleClass('d-none', !isAdmin);
+  $('#wr-unknown-delete').toggleClass('d-none', !isAdmin);
+  $('#wr-match-company').toggleClass('d-none', !isAdmin);
+  $('#wr-delete, #wr-unknown-delete').prop('disabled', true).addClass('disabled');  
+  const hasActions = $('#wr-actions').find('button:not(.d-none)').length > 0;
+  $('#wr-actions').toggleClass('d-none', !hasActions);
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  $('#wr-date-from').val(formatDateInput(yesterday));
+  $('#wr-date-to').val(formatDateInput(yesterday));
+  $('#wr-adv-toggle')
+    .attr('aria-expanded', 'false')
+    .attr('data-translate', 'wr_adv_toggle_show')
+    .text((translations[currentLang] && translations[currentLang].wr_adv_toggle_show) || 'Bộ lọc nâng cao');
+  $('#wr-contracts, #wr-customers').prop('disabled', true).empty();
+
+  google.script.run
+    .withSuccessHandler(list => {
+      window.__wrCompanyList = list || [];
+    })
+    .withFailureHandler(showError)
+    .getContractorOptions();
+
+  buildWeighResultTables(isAdmin);
+
+  if (isAdmin) {
+    $('#wr-unknown-btn').off('click').on('click', function(){
+      const modalEl = document.getElementById('wr-unknown-modal');
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+      if ($.fn.DataTable.isDataTable('#wr-unknown-table')) {
+        wrUnknownTable.columns.adjust();
+      }
+    });
+  }  
+
+  $('#wr-adv-toggle').off('click').on('click', function(e){
+    e.preventDefault();
+    const $adv = $('#wr-advanced');
+    const isHidden = $adv.toggleClass('d-none').hasClass('d-none');
+    const t = translations[currentLang] || translations.vi || {};
+    const key = isHidden ? 'wr_adv_toggle_show' : 'wr_adv_toggle_hide';
+    $(this)
+      .attr('data-translate', key)
+      .text(t[key] || (isHidden ? 'Bộ lọc nâng cao' : 'Ẩn bộ lọc nâng cao'));
+    $(this).attr('aria-expanded', String(!isHidden));
+  });
+
+  $('#wr-match-company').off('click').on('click', function(e){
+    e.preventDefault();
+    const t = translations[currentLang] || translations.vi || {};
+    showLoading(t.wr_matching_loading || 'Đang đối chiếu...');
+    const filter = getWrFilters();
+    google.script.run
+      .withSuccessHandler(msg => {
+        Swal.close();
+        const t2 = translations[currentLang] || translations.vi || {};
+        Swal.fire(t2.success_title || 'Thành công', msg, 'success');
+        reloadWrTables();
+      })
+      .withFailureHandler(showError)
+      .matchTransportionCompanies(filter, userSession.token);
+  });
+
+  $('#wr-search').off('keyup').on('keyup', function(){
+    const val = this.value;
+    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.search(val).draw();
+    if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
+  });
+
+  $('#wr-date-from, #wr-date-to, #wr-contracts, #wr-customers').off('change').on('change', reloadWrTables);
+
+  $('#wr-reload').off('click').on('click', function(e){ e.preventDefault(); wrResultTable.ajax.reload(); });
+  if (isAdmin) $('#wr-unknown-reload').off('click').on('click', function(e){ e.preventDefault(); wrUnknownTable.ajax.reload(); });
+
+  if (isAdmin) {
+    $('#wr-delete').off('click').on('click', function(e){ e.preventDefault(); deleteWrRows(wrResultTable); });
+    $('#wr-unknown-delete').off('click').on('click', function(e){ e.preventDefault(); deleteWrRows(wrUnknownTable); });
+  }
+
+  $('#wr-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrResultTable, 'WeighResults'); });
+  if (isAdmin) $('#wr-unknown-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrUnknownTable, 'UnknownVehicles'); });
+}
+
+function formatDateInput(d){ return d.toISOString().slice(0,10); }
+
+function parseMultiValueInput(value) {
+  if (value == null) return [];
+  const arr = Array.isArray(value)
+    ? value
+    : String(value).split(/[\r\n;|]+/);
+  return arr
+    .map(v => String(v == null ? '' : v).trim())
+    .filter(Boolean);
+}
+
+function uniqueCasePreserveOrder(list) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(val => {
+    const str = String(val == null ? '' : val).trim();
+    if (!str) return;
+    const key = str.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(str);
+  });
   return out;
 }
 
-
-const HEADERS_REGISTER = [
-  'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel',
-  'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2',
-  'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST',
-  'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
-];
-const NUMERIC_REGISTER_FIELDS = ['Wheel', 'Truck weight', 'Pay load'];
-const HEADERS_TOTAL_LIST = [
-  'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
-  'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
-  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
-  'Activity Status', 'Register Date', 'Time'
-];
-
-function coerceNumericRegisterFields_(record) {
-  if (!record) return;
-  NUMERIC_REGISTER_FIELDS.forEach(field => {
-    if (!(field in record)) return;
-    const value = record[field];
-    if (value === '' || value === null || value === undefined) return;
-    const parsed = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'));
-    if (!isNaN(parsed)) {
-      record[field] = parsed;
-    }
-  });
+function getWrAllowedCustomers() {
+  if (!userSession || !isRole('user')) return [];
+  const raw = userSession.customerName || userSession.customerNames || '';
+  const parsed = parseMultiValueInput(raw);
+  return uniqueCasePreserveOrder(parsed);
 }
 
-
-// =================================================================
-// KHỞI TẠO WEB APP
-// =================================================================
-function doGet(e) {
-  return HtmlService.createTemplateFromFile('Index')
-      .evaluate()
-      .setTitle('Hệ Thống Quản Lý Xe')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+function sanitizeWrCustomerSelection(values) {
+  const allowed = getWrAllowedCustomers();
+  const selected = uniqueCasePreserveOrder(parseMultiValueInput(values));
+  if (!allowed.length) return selected;
+  const allowedSet = new Set(allowed.map(name => name.toLowerCase()));
+  const filtered = selected.filter(name => allowedSet.has(name.toLowerCase()));
+  return filtered.length ? filtered : allowed.slice();
 }
 
-// =================================================================
-// QUẢN LÝ PHIÊN LÀM VIỆC VÀ XÁC THỰC
-// =================================================================
-
-
-/** ADMIN GUARD (XPPL admin-only) */
-function requireAdmin_(sessionToken) {
-  const s = validateSession(sessionToken);
-  if (!s || s.role !== 'admin') {
-    throw new Error('Bạn không có quyền truy cập chức năng này (Admin only).');
+function arraysEqualIgnoreCase(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i] || '').toLowerCase() !== (b[i] || '').toLowerCase()) return false;
   }
-  return s;
+  return true;
 }
 
-function requireXpplRole_(sessionToken) {
-  const s = validateSession(sessionToken);
-  if (!s || ['admin','admin-xppl'].indexOf(s.role) === -1) {
-    throw new Error('Bạn không có quyền truy cập chức năng này.');
-  }
-  return s;
-}
-
-function logLoginAttempt(username, status) {
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(HISTORY_LOGIN_SHEET);
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Timestamp', 'Username', 'Status']);
-    }
-    sheet.appendRow([new Date(), username, status]);
-  } catch (e) {
-    Logger.log('Không thể ghi lịch sử đăng nhập: ' + e.message);
+function syncWrCustomerSelection(selected) {
+  if (!Array.isArray(selected)) return;
+  const $sel = $('#wr-customers');
+  if (!$sel.length) return;
+  const current = parseMultiValueInput($sel.val());
+  if (!arraysEqualIgnoreCase(current, selected)) {
+    $sel.val(selected);
   }
 }
 
-function ensureSupervisionAccount_() {
-  try {
-    const existing = getSupabaseUserByUsername_(SUPERVISION_DEFAULT_USERNAME);
-    if (existing) return;
+function getWrFilters(){
+  const filter = {
+    dateFrom: $('#wr-date-from').val(),
+    dateTo: $('#wr-date-to').val(),
+    contracts: uniqueCasePreserveOrder($('#wr-contracts').val() || []),
+    customers: uniqueCasePreserveOrder($('#wr-customers').val() || [])
+  };
 
-    const payload = {
-      username: SUPERVISION_DEFAULT_USERNAME,
-      password_hash: SUPERVISION_DEFAULT_PASSWORD,
-      role: SUPERVISION_DEFAULT_ROLE,
-      contractor: '',
-      password_last_updated: new Date().toISOString(),
-      security_code: Math.random().toString(36).slice(-6).toUpperCase(),
-      customer_name: ''
-    };
-
-    insertSupabaseUser_(payload);
-  } catch (err) {
-    Logger.log('ensureSupervisionAccount_ error: ' + err);
-  }
-}
-
-function checkLogin(credentials) {
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const username = String(credentials.username == null ? '' : credentials.username).trim();
-  
-  try {
-    const lockoutUntil = scriptProperties.getProperty(`lockout_until_${username}`);
-    if (lockoutUntil && new Date().getTime() < parseFloat(lockoutUntil)) {
-      const timeLeft = Math.ceil((parseFloat(lockoutUntil) - new Date().getTime()) / (60 * 1000));
-      throw new Error(`Tài khoản của bạn đã bị tạm khóa. Vui lòng thử lại sau ${timeLeft} phút.`);
-    }
-
-    const userRecord = getSupabaseUserByUsername_(username);
-
-    if (!userRecord || String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(credentials.password == null ? '' : credentials.password)) {
-      logLoginAttempt(username, 'Failure');
-      let failedAttempts = parseInt(scriptProperties.getProperty(`failed_attempts_${username}`) || '0') + 1;
-      if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
-        let lockoutLevel = parseInt(scriptProperties.getProperty(`lockout_level_${username}`) || '0') + 1;
-        const lockoutDuration = (lockoutLevel === 1) ? LOCKOUT_DURATION_1 : LOCKOUT_DURATION_2;
-        const lockoutEndTime = new Date().getTime() + lockoutDuration;
-        scriptProperties.setProperty(`lockout_until_${username}`, lockoutEndTime);
-        scriptProperties.setProperty(`lockout_level_${username}`, lockoutLevel);
-        scriptProperties.deleteProperty(`failed_attempts_${username}`);
-        const lockDurationMinutes = Math.ceil(lockoutDuration / (60 * 1000));
-        throw new Error(`Bạn đã nhập sai quá nhiều lần. Tài khoản bị khóa trong ${lockDurationMinutes} phút.`);
+  if (isRole('user')) {
+    const sanitized = sanitizeWrCustomerSelection(filter.customers);
+    if (sanitized.length) {
+      filter.customers = sanitized;
+      syncWrCustomerSelection(sanitized);
+    } else {
+      const allowed = getWrAllowedCustomers();
+      if (allowed.length) {
+        filter.customers = allowed.slice();
+        syncWrCustomerSelection(allowed);
       } else {
-        scriptProperties.setProperty(`failed_attempts_${username}`, failedAttempts);
+        filter.customers = [];
+        syncWrCustomerSelection([]);
       }
-      throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
-    }
-
-    const nowMs = Date.now();
-    const activeToken = String(userRecord.active_session_token == null ? '' : userRecord.active_session_token).trim();
-    const tokenExpiry = parseSupabaseTimestamp_(userRecord.session_token_expiry);
-
-    if (activeToken) {
-      if (tokenExpiry && nowMs < tokenExpiry.getTime()) {
-        throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
-      }
-      clearUserSession_(username, activeToken);
-    }
-
-    const customerName = String(userRecord.customer_name == null ? '' : userRecord.customer_name).trim();
-
-    scriptProperties.deleteProperty(`failed_attempts_${username}`);
-    scriptProperties.deleteProperty(`lockout_level_${username}`);
-    scriptProperties.deleteProperty(`lockout_until_${username}`);    
-
-    const newSessionToken = Utilities.getUuid();
-    const tokenExpiryDate = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
-
-    updateSupabaseUserByUsername_(username, {
-      active_session_token: newSessionToken,
-      session_token_expiry: tokenExpiryDate.toISOString()
-    });
-
-    const userRole = userRecord.role;
-    const canonicalUsername = String(userRecord.username == null ? '' : userRecord.username).trim();
-    const normalizedRole = String(userRole == null ? '' : userRole).trim().toLowerCase();
-    const userContractor = String(userRecord.contractor == null ? '' : userRecord.contractor);    
-
-    const userSession = {
-      isLoggedIn: true,
-      username: canonicalUsername,
-      role: normalizedRole,
-      roleDisplay: userRole || normalizedRole,
-      contractor: userContractor,
-      customerName: customerName,
-      token: newSessionToken
-    };
-
-    logLoginAttempt(username, 'Success');
-    cacheSession_(userSession);
-
-    return userSession;
-  } catch (e) {
-    Logger.log(e);
-    throw new Error(e.message);
-  }
-}
-
-function logout(sessionToken) {
-  let token = String(sessionToken == null ? '' : sessionToken).trim();
-  let session = null;
-
-  if (token) {
-    session = getSessionFromCache_(token);
-    if (!session) {
-      session = lookupSessionFromSheet(token);
-    }
-  } else {
-    const legacy = safeGetUserCacheJSON('user_session');
-    if (legacy && legacy.token) {
-      session = legacy;
-      token = legacy.token;
     }
   }
 
-  try {
-    if (session && session.username) {
-      clearUserSession_(session.username, token);
-    } else if (token) {
-      clearUserSessionByToken_(token);
-    }
-  } catch (e) {
-    Logger.log('logout error: ' + e);
-  }
-
-  if (token) {
-    try {
-      removeSessionFromCache_(token);
-    } catch (cacheError) {
-      Logger.log('logout cache remove error: ' + cacheError);
-    }
-  }
-  safeRemoveUserCacheKey('user_session');
-  return { success: true };
+  return filter;  
 }
 
-function changePassword(passwords, sessionToken) {
-  const session = validateSession(sessionToken);
-  const { currentPassword, newPassword } = passwords;
-
-  try {
-    const userRecord = getSupabaseUserByUsername_(session.username);
-    if (!userRecord) throw new Error('Không tìm thấy người dùng.');
-    if (String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(currentPassword == null ? '' : currentPassword)) {
-      throw new Error('Mật khẩu hiện tại không đúng.');
-    }
-
-    updateSupabaseUserByUsername_(session.username, {
-      password_hash: newPassword,
-      password_last_updated: new Date().toISOString()
-    });
-
-    return 'Đổi mật khẩu thành công!';
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi đổi mật khẩu: ' + e.message); }
-}
-
-function resetPassword(data) {
-  const { username, securityCode, newPassword } = data;
-  try {
-    const userRecord = getSupabaseUserByUsername_(username);
-    if (!userRecord) throw new Error('Tên đăng nhập không tồn tại.');
-    const storedCode = String(userRecord.security_code == null ? '' : userRecord.security_code).trim();
-    if (storedCode.toUpperCase() !== String(securityCode == null ? '' : securityCode).trim().toUpperCase()) {
-      throw new Error('Mã bảo mật không chính xác.');
-    }
-
-    updateSupabaseUserByUsername_(username, {
-      password_hash: newPassword,
-      password_last_updated: new Date().toISOString()
-    });
-    clearUserSession_(username, String(userRecord.active_session_token || ''));
-
-    return 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.';
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi đặt lại mật khẩu: ' + e.message); }
-}
-
-// =================================================================
-// QUẢN LÝ NGƯỜI DÙNG CHO ADMIN
-// =================================================================
-
-function getUsers(sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-
-  try {
-    const data = supabaseRequest_(
-      SUPABASE_APP_USERS_ENDPOINT + '?select=username,password_hash,role,contractor,password_last_updated,security_code,customer_name&order=username.asc'
-    );
-    if (!Array.isArray(data)) return [];
-
-    return data.map(row => ({
-      Username: row.username || '',
-      Password: row.password_hash || '',
-      Role: row.role || '',
-      Contractor: row.contractor || '',
-      PasswordLastUpdated: formatSupabaseDateTime_(row.password_last_updated),
-      SecurityCode: row.security_code || '',
-      CustomerName: row.customer_name || ''
-    }));
-  } catch (e) { Logger.log(e); throw new Error('Không thể lấy danh sách người dùng.'); }
-}
-
-function updateUser(userData, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-
-  try {
-    const updated = updateSupabaseUserByUsername_(userData.Username, {
-      role: userData.Role,
-      contractor: userData.Contractor,
-      customer_name: userData.CustomerName || ''
-    });
-    if (!updated) throw new Error('Không tìm thấy người dùng.');
-
-    return 'Cập nhật người dùng thành công!';
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi cập nhật người dùng: ' + e.message); }
-}
-
-function adminResetPassword(username, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-
-  try {
-    const userRecord = getSupabaseUserByUsername_(username);
-    if (!userRecord) throw new Error('Không tìm thấy người dùng.');
-
-    const newPassword = Math.random().toString(36).slice(-8);
-    updateSupabaseUserByUsername_(username, {
-      password_hash: newPassword,
-      password_last_updated: new Date().toISOString()
-    });
-    clearUserSession_(username, String(userRecord.active_session_token || ''));
-
-    return `Mật khẩu mới cho ${username} là: ${newPassword}`;
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi đặt lại mật khẩu: ' + e.message); }
-}
-
-function addNewUser(newUserData, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-
-  try {
-    const existing = getSupabaseUserByUsername_(newUserData.Username);
-    if (existing) throw new Error('Tên đăng nhập đã tồn tại.');
-
-    const newPassword = Math.random().toString(36).slice(-8);
-    const newSecurityCode = Math.random().toString(36).slice(-6).toUpperCase();
-
-    insertSupabaseUser_({
-      username: newUserData.Username,
-      password_hash: newPassword,
-      role: newUserData.Role,
-      contractor: newUserData.Contractor,
-      customer_name: newUserData.CustomerName || '',
-      password_last_updated: new Date().toISOString(),
-      security_code: newSecurityCode,
-      active_session_token: null,
-      session_token_expiry: null
-    });
-
-    return `Đã tạo người dùng ${newUserData.Username} thành công.
-Mật khẩu: ${newPassword}
-Mã bảo mật: ${newSecurityCode}`;
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi tạo người dùng mới: ' + e.message); }
-}
-
-function deleteUser(username, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-  if (session.username === username) throw new Error('Bạn không thể tự xóa tài khoản của mình.');
-
-  try {
-    const userRecord = getSupabaseUserByUsername_(username);
-    if (!userRecord) throw new Error('Không tìm thấy người dùng.');
-
-    deleteSupabaseUserByUsername_(username);
-    clearUserSession_(username, String(userRecord.active_session_token || ''));
-    return `Đã xóa người dùng ${username} thành công!`;
-  } catch (e) { Logger.log(e); throw new Error('Lỗi khi xóa người dùng: ' + e.message); }
-}
-
-// =================================================================
-// KIỂM TRA THỜI GIAN ĐĂNG KÝ
-// =================================================================
-
-function checkRegistrationTime() {
-  const now = new Date();
-  const nowVn = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
-  const hour = nowVn.getHours();
-  const minute = nowVn.getMinutes();
-  const currentTimeInMinutes = hour * 60 + minute;
-  const open1 = 8 * 60, close1 = 16 * 60, open2 = 20 * 60, close2 = 22 * 60;
-  let status = { isOpen: false, period: 0, message: '', timeToOpen: 0, timeToClose: 0 };
-  
-  if ((currentTimeInMinutes >= open1 && currentTimeInMinutes < close1)) {
-    status.isOpen = true;
-    status.period = 1;
-    status.message = 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
-    status.timeToClose = (close1 - currentTimeInMinutes) * 60 * 1000;
-  } else if (currentTimeInMinutes >= open2 && currentTimeInMinutes < close2) {
-    status.isOpen = true;
-    status.period = 2;
-    status.message = 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
-    status.timeToClose = (close2 - currentTimeInMinutes) * 60 * 1000;
-  } else {
-    status.isOpen = false;
-    status.message = 'Hệ thống đăng ký bốc hàng đang đóng.';
-    if (currentTimeInMinutes < open1) status.timeToOpen = (open1 - currentTimeInMinutes) * 60 * 1000;
-    else if (currentTimeInMinutes < open2) status.timeToOpen = (open2 - currentTimeInMinutes) * 60 * 1000;
-    else status.timeToOpen = ((24 * 60 - currentTimeInMinutes) + open1) * 60 * 1000;
-  }
-  return status;
-}
-
-// =================================================================
-// XỬ LÝ DỮ LIỆU PHÍA MÁY CHỦ (SERVER-SIDE)
-// =================================================================
-
-/**
- * Trả về map { ContractNo: [Customer1, Customer2, ...] } từ sheet ContractData.
- * Dùng cho dropdown "Customer Name".
- */
-function getCustomersByContracts(contracts, sessionToken) {
-  const sess = validateSession(sessionToken);
-  if (!sess || sess.role !== 'admin') throw new Error('Chỉ admin.');
-
-  if (!contracts || !contracts.length) return {};
-
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(typeof CONTRACT_SHEET === 'string' ? CONTRACT_SHEET : 'ContractData');
-  if (!sh) return {};
-
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return {};
-
-  const lastCol = sh.getLastColumn();
-  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
-
-  // helper: tìm index cột theo nhiều tên khả dĩ
-  function findIdx(hs, names) {
-    const low = hs.map(h => String(h || '').trim().toLowerCase());
-    for (const n of names) {
-      const i = low.indexOf(String(n).trim().toLowerCase());
-      if (i !== -1) return i;
-    }
-    return -1;
-  }
-
-  const idxNo  = findIdx(headers, ['Contract No','Contract no','Số HĐ','Số hợp đồng','So HD','So hop dong']);
-  const idxCus = findIdx(headers, ['Customer Name','Customer','CustomerCode','Customer code','Khách hàng']);
-  if (idxNo === -1 || idxCus === -1) return {};
-
-  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
-
-  const allow = new Set(contracts.map(s => String(s || '').replace(/^'/,'').trim()));
-  const out = {};
-  for (const r of values) {
-    const no  = String(r[idxNo]  || '').replace(/^'/,'').trim();
-    const cus = String(r[idxCus] || '').replace(/^'/,'').trim();
-    if (!out[no]) out[no] = new Set();
-    out[no].add(cus);
-  }
-  // Set -> Array đã sort
-  const outArr = {};
-  for (const k in out) outArr[k] = Array.from(out[k]).sort();
-  return outArr;
-}
-
-function buildEmptyResult_(draw, includeSummary) {
-  const result = {
-    draw: parseInt(draw, 10),
-    recordsTotal: 0,
-    recordsFiltered: 0,
-    data: []
-  };
-  if (includeSummary) {
-    result.summary = { total: 0, pending: 0, approved: 0 };
-  }
-  return result;
-}
-
-function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
-  if (!Array.isArray(rowIndices) || !rowIndices.length) return [];
-
-  const sorted = rowIndices.slice().sort((a, b) => a - b);
-  const collected = [];
-
-  const pushBlock = (startIdx, length) => {
-    if (length <= 0) return;
-    const startRow = startIdx + 2; // +2 vì dữ liệu bắt đầu từ dòng 2
-    const values = sheet.getRange(startRow, 1, length, columnCount).getValues();
-    for (var i = 0; i < values.length; i++) {
-      collected.push(values[i]);
-    }
+function updateWrSummary(counts, overview){
+  const formatNumber = value => {
+    if (value == null) return '0';
+    const cleaned = typeof value === 'string' ? value.replace(/,/g, '') : value;
+    const num = typeof cleaned === 'number' ? cleaned : Number(cleaned);
+    return Number.isFinite(num) ? num.toLocaleString('en-US') : '0';
   };
 
-  var blockStart = sorted[0];
-  var blockLength = 1;
-  for (var i = 1; i < sorted.length; i++) {
-    if (sorted[i] === sorted[i - 1] + 1) {
-      blockLength++;
-    } else {
-      pushBlock(blockStart, blockLength);
-      blockStart = sorted[i];
-      blockLength = 1;
-    }
-  }
-  pushBlock(blockStart, blockLength);
+  $('#wr-sum-unassign').text(formatNumber(counts?.unassigned));
+  $('#wr-sum-unknown').text(formatNumber(counts?.unknown));
+  $('#wr-sum-assigned').text(formatNumber(counts?.assigned));
 
-  return collected;
+  $('#wr-summary-trucks').text(formatNumber(overview?.trucks));
+  $('#wr-summary-weight').text(formatNumber(overview?.weight));
 }
 
-function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
-  params = params || {};  
-  const userSession = validateSession(params.sessionToken);
-  const userRole = String(userSession.role || '').toLowerCase();
-  const includeSummary = sheetName === DATA_SHEET;
+function updateWrAdvancedFilters(options){
+  if (!options || typeof options !== 'object') return;
+  const t = translations[currentLang] || translations.vi || {};  
 
-  const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
-  const cachedResult = cacheKey ? safeScriptCacheGetJSON_(cacheKey) : null;
-  if (cachedResult) {
-    return cachedResult;
-  }
+  function refreshSelect(selector, values) {
+    const $sel = $(selector);
+    if (!$sel.length) return;
 
-  const respondWithCache = function (result) {
-    if (cacheKey && result) {
-      safeScriptCachePutJSON_(cacheKey, result, SERVER_SIDE_CACHE_TTL_SECONDS);
+    const currentSet = new Set(parseMultiValueInput($sel.val()).map(v => v.toLowerCase()));
+    $sel.empty();
+
+    const list = Array.isArray(values)
+      ? uniqueCasePreserveOrder(values)
+      : [];
+
+    if (!list.length) {
+      const label = t.no_data_title || 'Không có dữ liệu';
+      $sel.append(`<option value="" disabled>${esc(label)}</option>`);
+      $sel.val([]);
+      $sel.prop('disabled', true);
+      return;
     }
-    return result;
-  };  
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
-  }
+    list.forEach(val => {
+      const isSelected = currentSet.has(val.toLowerCase());
+      const opt = new Option(val, val, false, isSelected);
+      $sel.append(opt);
+    });
 
-  const totalRows = lastRow - 1;
-  const columnCount = headers.length;
+    const selected = list.filter(val => currentSet.has(val.toLowerCase()));
+    $sel.val(selected);
+    $sel.prop('disabled', false);
 
-  const idxRegisterDate = headers.indexOf('Register Date');
-  const idxContract = headers.indexOf('Contract No');
-  const idxCompany = headers.indexOf('Transportion Company');
-  const idxActivity = headers.indexOf('Activity Status');
-  const idxStatus = headers.indexOf('Registration Status');
-
-  if (params.dateString && idxRegisterDate === -1) {
-    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
-  }
-
-  const columnCache = {};
-  function getColumnValues(idx) {
-    if (idx === -1) return null;
-    if (!(idx in columnCache)) {
-      if (totalRows <= 0) {
-        columnCache[idx] = [];
+    if (selector === '#wr-customers' && isRole('user')) {
+      const sanitized = sanitizeWrCustomerSelection($sel.val());
+      if (sanitized.length) {
+        const normalizedList = list.map(val => val.toLowerCase());
+        const sanitizedExisting = sanitized.filter(name => normalizedList.includes(name.toLowerCase()));
+        const finalSelection = sanitizedExisting.length ? sanitizedExisting : sanitized;
+        $sel.val(finalSelection);
       } else {
-        const rangeValues = sheet.getRange(2, idx + 1, totalRows, 1).getValues();
-        columnCache[idx] = rangeValues.map(function (row) { return row[0]; });
-      }
-    }
-    return columnCache[idx];
-  }
-
-  const valuesRegisterDate = (params.dateString && idxRegisterDate !== -1)
-    ? getColumnValues(idxRegisterDate)
-    : null;
-  const valuesContract = (params.contractNo && idxContract !== -1)
-    ? getColumnValues(idxContract)
-    : null;
-  const valuesCompany = (userRole === 'user' && idxCompany !== -1)
-    ? getColumnValues(idxCompany)
-    : null;
-  const valuesActivity = (userRole === 'user' && idxActivity !== -1)
-    ? getColumnValues(idxActivity)
-    : null;
-  const valuesStatus = (userRole === 'user-supervision' && idxStatus !== -1)
-    ? getColumnValues(idxStatus)
-    : null;
-
-  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
-  const contractFilter = params.contractNo
-    ? String(params.contractNo).replace(/^'+/, '').trim().toLowerCase()
-    : '';
-  const contractorValue = String(userSession.contractor == null ? '' : userSession.contractor);
-
-  const timezone = 'Asia/Ho_Chi_Minh';
-  const matchedIndices = [];
-
-  for (var r = 0; r < totalRows; r++) {
-    if (userRole === 'user') {
-      if (valuesCompany) {
-        const rawCompany = valuesCompany[r];
-        const companyString = String(rawCompany == null ? '' : rawCompany);
-        if (companyString !== contractorValue) continue;
-      }
-      if (valuesActivity) {
-        const rawActivity = valuesActivity[r];
-        const activityString = String(rawActivity == null ? '' : rawActivity).toUpperCase();
-        if (activityString !== 'ACTIVE') continue;
-      }
-    } else if (userRole === 'user-supervision') {
-      if (valuesStatus) {
-        const rawStatus = valuesStatus[r];
-        const statusString = String(rawStatus == null ? '' : rawStatus).trim().toLowerCase();
-        if (statusString !== 'approved') continue;
-      }
-    }
-
-    if (dateFilter) {
-      const cellValue = valuesRegisterDate ? valuesRegisterDate[r] : null;
-      if (!cellValue) continue;
-      var cmp = '';
-      if (cellValue instanceof Date) {
-        cmp = Utilities.formatDate(cellValue, timezone, 'dd/MM/yyyy');
-      } else {
-        cmp = String(cellValue).trim().replace(/^'+/, '');
-      }
-      if (cmp !== dateFilter) continue;
-    }
-
-    if (contractFilter && valuesContract) {
-      const rawContract = valuesContract[r];
-      const contractString = String(rawContract == null ? '' : rawContract)
-        .replace(/^'+/, '')
-        .trim()
-        .toLowerCase();
-      if (contractString !== contractFilter) continue;
-    }
-
-    matchedIndices.push(r);
-  }
-
-  if (!matchedIndices.length) {
-    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
-  }
-
-  let allData = fetchRowsByIndices_(sheet, matchedIndices, columnCount);
-
-  const recordsTotal = allData.length;
-  let filteredData = allData;
-
-  if (params.search && params.search.value) {
-    const searchValue = params.search.value.toLowerCase();
-    filteredData = filteredData.filter(function (row) {
-      return row.some(function (cell) {
-        return String(cell).toLowerCase().includes(searchValue);
-      });
-    });
-  }
-
-  const recordsFiltered = filteredData.length;
-
-  
-  // === SUMMARY (for 'Xe đã đăng ký') ===
-  var summary = null;
-  try {
-    if (sheetName === DATA_SHEET) {
-      var statusIdx = headers.indexOf('Registration Status');
-      if (statusIdx !== -1) {
-        var total = filteredData.length;
-        var pending = 0, approved = 0;
-        for (var i = 0; i < filteredData.length; i++) {
-          var v = filteredData[i][statusIdx];
-          v = (v instanceof Date)
-            ? Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy')
-            : String(v || '').replace(/^'/, '').trim();
-          if (/^pending approval$/i.test(v)) pending++;
-          else if (/^approved$/i.test(v)) approved++;
-        }
-        summary = { total: total, pending: pending, approved: approved };
-      }
-    }
-  } catch (e) { /* ignore summary errors */ }
-  if (params.order && params.order.length > 0) {
-    const orderInfo = params.order[0];
-    const columnIndex = orderInfo.column;
-    const direction = orderInfo.dir === 'asc' ? 1 : -1;
-    filteredData.sort(function (a, b) {
-      const valA = a[columnIndex];
-      const valB = b[columnIndex];
-      if (valA < valB) return -1 * direction;
-      if (valA > valB) return 1 * direction;
-      return 0;
-    });
-  } else if (defaultSortColumnIndex !== -1) {
-    filteredData.sort(function (a, b) {
-      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
-    });
-  }
-
-
-  const paginatedData = filteredData.slice(params.start, params.start + params.length);
-  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
-
-  const result = {
-    draw: parseInt(params.draw, 10),
-    recordsTotal: recordsTotal,
-    recordsFiltered: recordsFiltered,
-    data: data,
-    summary: summary
-  };
-  return respondWithCache(result);  
-}
-
-function getRegisteredDataServerSide(params) {
-  return processServerSide(params, DATA_SHEET, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
-}
-
-function getRegisteredContractOptions(filter, sessionToken) {
-  const session = validateSession(sessionToken);
-  const role = String(session.role || '').toLowerCase();
-  const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
-  if (!dateString) return { contracts: [] };
-
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  if (!sheet) return { contracts: [] };
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { contracts: [] };
-
-  const dateIdx = HEADERS_REGISTER.indexOf('Register Date');
-  const contractIdx = HEADERS_REGISTER.indexOf('Contract No');
-  if (dateIdx === -1 || contractIdx === -1) return { contracts: [] };
-
-  const activityIdx = HEADERS_REGISTER.indexOf('Activity Status');
-  const companyIdx = HEADERS_REGISTER.indexOf('Transportion Company');
-  const statusIdx = HEADERS_REGISTER.indexOf('Registration Status');
-
-  let rows = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
-
-  if (role === 'user') {
-    if (companyIdx !== -1) {
-      rows = rows.filter(row => row[companyIdx] === session.contractor);
-    }
-    if (activityIdx !== -1) {
-      rows = rows.filter(row => String(row[activityIdx]).toUpperCase() === 'ACTIVE');
-    }
-  } else if (role === 'user-supervision') {
-    if (statusIdx !== -1) {
-      rows = rows.filter(row => String(row[statusIdx] || '').trim().toLowerCase() === 'approved');
-    }
-  }
-
-  const toDateString = value => {
-    if (value instanceof Date) {
-      return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
-    }
-    return String(value == null ? '' : value).replace(/^'+/, '').trim();
-  };
-
-  const contractsSet = new Set();
-  rows.forEach(row => {
-    if (toDateString(row[dateIdx]) !== dateString) return;
-    const contract = String(row[contractIdx] == null ? '' : row[contractIdx]).replace(/^'+/, '').trim();
-    if (contract) contractsSet.add(contract);
-  });
-
-  const contracts = Array.from(contractsSet).sort();
-  return { contracts: contracts };
-}
-
-function getTotalListDataServerSide(params) {
-  return processServerSide(params, TRUCK_LIST_TOTAL_SHEET, HEADERS_TOTAL_LIST, HEADERS_TOTAL_LIST.indexOf('Register Date'));
-}
-
-/** =========================
- *  XPPL — OPTIONS cho dropdown
- *  Input:  getXpplExportOptions({ dateString: 'dd/MM/yyyy' }, sessionToken)
- *  Return: { contracts: string[], customersByContract: { [contractNo]: string[] } }
- * ========================= */
-function getXpplExportOptions(filter, sessionToken) {
-  // Tùy hệ thống của bạn dùng validateSession/requireAdmin_:
-  if (typeof validateSession === 'function') validateSession(sessionToken);
-
-  const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
-  const normH = x => s(x).toLowerCase().replace(/\s+/g, '');
-  const findIdx = (headers, variants) => {
-    const H = headers.map(normH);
-    for (const v of variants) {
-      const i = H.indexOf(v);
-      if (i !== -1) return i;
-    }
-    return -1;
-  };
-
-  const dateIn = s(filter && filter.dateString);
-  const dateKey = _toDateKey(dateIn);
-  if (!dateKey) return { contracts: [], customersByContract: {} };
-
-  const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shV = ss.getSheetByName(DATA_SHEET);       // 'VehicleData'
-  const shC = ss.getSheetByName(CONTRACT_SHEET);   // 'ContractData'
-  if (!shV || shV.getLastRow() < 2) return { contracts: [], customersByContract: {} };
-
-  // ---- VehicleData: lấy Contract theo ngày + Approved
-  const lcV      = shV.getLastColumn();
-  const headVRaw = shV.getRange(1, 1, 1, lcV).getValues()[0];
-  const idxDate   = findIdx(headVRaw, ['registerdate','ngàydăngký','date','register']);
-  const idxNo     = findIdx(headVRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const idxStatus = findIdx(headVRaw, ['registrationstatus','status','trạngtháiđăngký','trangthai']);
-  if (idxDate === -1 || idxNo === -1) return { contracts: [], customersByContract: {} };
-
-  const rowsV = shV.getRange(2, 1, shV.getLastRow() - 1, lcV).getValues();
-  const setContracts = new Set();
-  for (const r of rowsV) {
-    if (_toDateKey(r[idxDate]) !== dateKey) continue;
-    if (idxStatus !== -1) {
-      const st = s(r[idxStatus]).toLowerCase();
-      if (st !== 'approved') continue;
-    }
-    const cno = s(r[idxNo]);
-    if (cno) setContracts.add(cno);
-  }
-  const contracts = Array.from(setContracts).sort();
-  if (!contracts.length) return { contracts: [], customersByContract: {} };
-
-  // ---- ContractData: map Contract -> Customers (ưu tiên Status=Active nếu có)
-  const customersByContract = {};
-  for (const c of contracts) customersByContract[c] = [];
-
-  if (shC && shC.getLastRow() > 1) {
-    const lcC      = shC.getLastColumn();
-    const headCRaw = shC.getRange(1, 1, 1, lcC).getValues()[0];
-    const idxCNo     = findIdx(headCRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const idxCus     = findIdx(headCRaw, ['customername','customer','kháchhàng','khachhang']);
-    const idxCStatus = findIdx(headCRaw, ['status','trạngthái','trangthai']);
-
-    if (idxCNo !== -1 && idxCus !== -1) {
-      const rowsC = shC.getRange(2, 1, shC.getLastRow() - 1, lcC).getValues();
-      for (const r of rowsC) {
-        const cno = s(r[idxCNo]);
-        if (!(cno in customersByContract)) continue;
-        if (idxCStatus !== -1) {
-          const st = s(r[idxCStatus]).toLowerCase();
-          if (st && st !== 'active') continue;
-        }
-        const cus = s(r[idxCus]);
-        if (cus && customersByContract[cno].indexOf(cus) === -1) {
-          customersByContract[cno].push(cus);
-        }
-      }
-      Object.keys(customersByContract).forEach(no => customersByContract[no].sort());
-    }
-  }
-
-  return { contracts, customersByContract };
-}
-
-/** =========================
- *  XPPL — Lấy dữ liệu xuất theo filter
- *  Input:  getXpplExportData({ dateString, contractNo, customerName }, sessionToken)
- *  Return: { ok, errors?, total, headers, rows }
- * ========================= */
-function getXpplExportData(filter, sessionToken) {
-  if (typeof requireAdmin_ === 'function') requireAdmin_(sessionToken);
-
-  // helpers
-  const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
-
-  // validate input
-  const dateIn       = s(filter && filter.dateString);
-  const contractNo   = s(filter && filter.contractNo);
-  const customerName = s(filter && filter.customerName);
-  const inputErr = [];
-  if (!dateIn)       inputErr.push('Thiếu Register Date.');
-  if (!contractNo)   inputErr.push('Thiếu Contract No.');
-  if (!customerName) inputErr.push('Thiếu Customer Name.');
-  if (inputErr.length) return { ok:false, errors: inputErr };
-
-  // open SS + normalize date
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const tz = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || 'Asia/Ho_Chi_Minh';
-  const toDateKey = (v) => {
-    if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
-    let str = String(v||'').trim().replace(/^'+/, '');
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return str;
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-      const d = new Date(str); if (!isNaN(d)) return Utilities.formatDate(d, tz, 'dd/MM/yyyy');
-    }
-    return str;
-  };
-  const dateKey = toDateKey(dateIn);
-
-  // 1) Xác thực Contract–Customer (nếu có sheet ContractData)
-  const shC = ss.getSheetByName(CONTRACT_SHEET);
-  if (shC && shC.getLastRow() > 1) {
-    const lc = shC.getLastColumn();
-    const H  = shC.getRange(1,1,1,lc).getValues()[0];
-    const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
-    const findIndex = (hdr, keys) => {
-      const HH = hdr.map(normalizeHeader);
-      for (const k of keys) { const i = HH.indexOf(k); if (i !== -1) return i; }
-      return -1;
-    };
-    const iNo  = findIndex(H, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const iCus = findIndex(H, ['customername','customer','kháchhàng','khachhang']);
-    const iStt = findIndex(H, ['status','trạngthái','trangthai']);
-
-    if (iNo !== -1 && iCus !== -1) {
-      const ok = shC.getRange(2,1,shC.getLastRow()-1,lc).getValues().some(r => {
-        if (s(r[iNo]) !== contractNo || s(r[iCus]) !== customerName) return false;
-        if (iStt === -1) return true;
-        const st = s(r[iStt]).toLowerCase();
-        return st === '' || st === 'active';
-      });
-      if (!ok) {
-        return { ok:false, errors:['Customer Name không khớp với Contract No (hoặc hợp đồng không Active).'] };
-      }
-    }
-  }
-
-  // 2) Lọc VehicleData
-  const shV = ss.getSheetByName(DATA_SHEET);
-  if (!shV || shV.getLastRow() < 2) return { ok:false, errors:['Không có dữ liệu VehicleData.'] };
-
-  const lcV = shV.getLastColumn();
-  const HV  = shV.getRange(1,1,1,lcV).getValues()[0];
-
-  // chuẩn hóa header + tìm index (có fuzzy)
-  const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
-  const findIdx = (keys) => {
-    const H = HV.map(normalizeHeader);
-    // exact
-    for (const k of keys) {
-      const i = H.indexOf(k);
-      if (i !== -1) return i;
-    }
-    // fuzzy: keys[0] chứa các từ cần có
-    if (keys.length) {
-      const need = keys[0].split(' ').filter(Boolean);
-      for (let i = 0; i < H.length; i++) {
-        const h = H[i];
-        if (need.every(w => h.includes(w))) return i;
-      }
-    }
-    return -1;
-  };
-
-  const iDate   = findIdx(['registerdate','ngàydăngký','date','register']);
-  const iNo2    = findIdx(['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const iStReg  = findIdx(['registrationstatus','status','trạngtháiđăngký','trangthai']);
-
-  const iTruck  = findIdx(['truckplate','truck plate','biểnxe','biensoxe']);
-  const iCountry= findIdx(['country','quốcgia','quocgia']);
-  const iWheel  = findIdx(['wheel','sốtrục','sotruc']);
-  const iTrailer= findIdx(['trailerplate','trailer plate','biểnromooc','bienromooc']);
-  const iDriver = findIdx(['drivername','driver name','tênlái','tenlai']);
-  const iID     = findIdx(['id/passport','idpassport','passport','id']);
-  const iPhone  = findIdx(['phone number','phonenumber','điệnthoại','dienthoai']);
-
-  // CHÚ Ý: bắt mọi biến thể "transportion/transportation/transport company"
-  const iTrans  = findIdx([
-    'transportion company',
-    'transport company',
-    'transportation company',
-    'transportationcompany',
-    'transportioncompany',
-    'transportcompany'
-  ]);
-
-  const iSub    = findIdx(['subcontractor','thầuphụ','thaophu']);
-
-  if (iDate === -1 || iNo2 === -1) {
-    return { ok:false, errors:['Thiếu cột bắt buộc trong VehicleData (Register Date / Contract No).'] };
-  }
-
-  const all = shV.getRange(2,1,shV.getLastRow()-1,lcV).getValues();
-  const rows = [];
-  for (const r of all) {
-    if (toDateKey(r[iDate]) !== dateKey) continue;
-    if (s(r[iNo2]) !== contractNo) continue;
-    if (iStReg !== -1 && s(r[iStReg]).toLowerCase() !== 'approved') continue;
-
-    rows.push({
-      'Truck Plate':            iTruck  !== -1 ? s(r[iTruck])  : '',
-      'Country':                iCountry!== -1 ? s(r[iCountry]): '',
-      'Wheel':                  iWheel  !== -1 ? s(r[iWheel])  : '',
-      'Trailer Plate':          iTrailer!== -1 ? s(r[iTrailer]): '',
-      'Driver Name':            iDriver !== -1 ? s(r[iDriver]) : '',
-      'ID/Passport':            iID     !== -1 ? s(r[iID])     : '',
-      'Phone number':           iPhone  !== -1 ? s(r[iPhone])  : '',
-      'Transportion Company':   iTrans  !== -1 ? s(r[iTrans])  : '',
-      'Subcontractor':          iSub    !== -1 ? s(r[iSub])    : ''
-    });
-  }
-
-  if (!rows.length) return { ok:false, errors:['Không có dòng Approved phù hợp để xuất.'] };
-
-  return { ok:true, filter:{ dateString: dateKey, contractNo, customerName }, total: rows.length, rows };
-}
-
-
-// Tìm range theo danh sách NamedRange / nếu không có thì fallback tìm marker text
-function _getRangeByAnyName_(ss, aliases){
-  const names = Array.isArray(aliases) ? aliases : [aliases];
-  const nr = ss.getNamedRanges();
-  const low = {};
-  nr.forEach(n => low[String(n.getName()).toLowerCase()] = n.getRange());
-
-  for (const n of names) {
-    const k = String(n).toLowerCase().trim();
-    if (low[k]) return low[k];
-  }
-  // fallback: tìm ô chứa đúng chuỗi marker
-  return _findMarkerCell_(ss, names);
-}
-
-/** Tìm ô có chữ 'NR_TABLE_START' trên sheet (fallback khi thiếu named-range). */
-function _findMarkerCell_(ss, names){
-  const shNames = XPPL_NR_ALIASES.SHEET;
-  for (const sn of shNames){
-    const sh = ss.getSheetByName(sn);
-    if (!sh) continue;
-    const lastR = Math.max(1, sh.getLastRow());
-    const lastC = Math.max(1, sh.getLastColumn());
-    const values = sh.getRange(1,1,lastR,lastC).getValues();
-
-    for (let r=0;r<values.length;r++){
-      for (let c=0;c<values[r].length;c++){
-        const v = String(values[r][c]||'').trim();
-        if (names.some(n => String(n).trim()===v)){
-          return sh.getRange(r+1, c+1);
+        const allowed = getWrAllowedCustomers();
+        if (allowed.length) {
+          const normalizedList = list.map(val => val.toLowerCase());
+          const allowedExisting = allowed.filter(name => normalizedList.includes(name.toLowerCase()));
+          const finalSelection = allowedExisting.length ? allowedExisting : allowed;
+          $sel.val(finalSelection);
+        } else {
+          $sel.val([]);
         }
       }
     }
   }
-  return null;
+
+  refreshSelect('#wr-contracts', options.contracts);
+  refreshSelect('#wr-customers', options.customers);
 }
 
+function reloadWrTables(){
+  if (wrReloadTimer) clearTimeout(wrReloadTimer);
+  wrReloadTimer = setTimeout(() => {
+    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
+    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload();
+    wrReloadTimer = null;
+  }, 200);
+}
 
-// Copy template và ép CONVERT thành Google Sheets trước khi open
-function _copyTemplateAsGoogleSheet_(templateFileId, newTitle) {
-  var meta = Drive.Files.get(templateFileId); // cần Advanced Drive Service
-  if (meta.mimeType === 'application/vnd.google-apps.spreadsheet') {
-    // Template là Google Sheet -> copy trực tiếp
-    return DriveApp.getFileById(templateFileId).makeCopy(newTitle).getId();
+function deleteWrRows(table){
+  const ids = [];
+  table.rows('.selected').every(function(){ const d=this.data(); if(d && d.ID) ids.push(d.ID); });
+  const t = translations[currentLang] || translations.vi || {};
+  if (!ids.length) { Swal.fire(t.wr_no_row_selected_title || 'Chưa chọn dòng', t.wr_no_row_selected_message || 'Hãy tick các dòng cần xoá.', 'info'); return; }
+  Swal.fire({icon:'warning', title: t.wr_delete_confirm_title || 'Xoá các mục đã chọn?', showCancelButton:true})
+    .then(r => {
+      if (!r.isConfirmed) return;
+      const t2 = translations[currentLang] || translations.vi || {};
+      showLoading(t2.wr_deleting_loading || 'Đang xoá...');
+      google.script.run
+        .withSuccessHandler(msg => {
+          Swal.close();
+          const t3 = translations[currentLang] || translations.vi || {};
+          Swal.fire(t3.success_title || 'Thành công', msg, 'success');
+          reloadWrTables();
+        })
+        .withFailureHandler(showError)
+        .deleteWeighResults(ids, userSession.token);
+    });
+}
+
+function exportWrTable(table, name){
+  if (!table) return;
+  const t = translations[currentLang] || translations.vi || {};  
+  const settings = table.settings();
+  if (!settings || !settings.length) return;
+
+  const init = typeof table.settings().init === 'function' ? table.settings().init() : null;
+  let colDefs = [];
+  if (init && Array.isArray(init.columns)) {
+    colDefs = init.columns;
   } else {
-    // Template là .xlsx -> convert sang Google Sheet
-    var blob = DriveApp.getFileById(templateFileId).getBlob();
-    var file = Drive.Files.insert(
-      { title: newTitle, mimeType: 'application/vnd.google-apps.spreadsheet' },
-      blob,
-      { convert: true }
-    );
-    return file.id;
+    colDefs = $(table.table().node()).data('wrColumns') || [];
   }
-}
-
-
-
-/** Ghi dữ liệu vào bản sao template (Google Sheet). Trả về {ok, fileId, name}. */
-function _exportXpplToTemplate_(sheetId, filter, rows) {
-  const ss = SpreadsheetApp.openById(sheetId);
-
-  // --- Header ---
-  const rDate = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.REG_DATE);
-  if (rDate) rDate.setValue(filter.dateString);
-  const rCus = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CUSTOMER);
-  if (rCus) rCus.setValue(filter.customerName);
-  const rCon = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CONTRACT_NO);
-  if (rCon) rCon.setValue(filter.contractNo);
-  const rTot = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TOTAL_TRUCK);
-  if (rTot) rTot.setValue(rows.length);
-
-  // --- Table ---
-  const start = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TABLE_START);
-  if (!start) throw new Error('Không tìm thấy named range TABLE_START / NR_TABLE_START');
-
-  const sh = start.getSheet();
-  const r0 = start.getRow();     // ví dụ: 9
-  const c0 = start.getColumn();  // ví dụ: 1 (cột A)
-
-  // map 10 cột A..J
-  const data = rows.map(o => ([
-    '', // A - No (đổ sau)
-    o['Truck Plate'] || '',
-    o['Country'] || '',
-    o['Wheel'] || '',
-    o['Trailer Plate'] || '',
-    o['Driver Name'] || '',
-    o['ID/Passport'] || '',
-    o['Phone number'] || '',
-    o['Transportion Company'] || '',
-    o['Subcontractor'] || ''
-  ]));
-
-  if (data.length) {
-    // Ghi ĐÈ trực tiếp tại TABLE_START để dòng 9 là bản ghi #1
-    sh.getRange(r0, c0, data.length, data[0].length).setValues(data);
-
-    // Cột A: No = 1..N
-    const nos = Array.from({ length: data.length }, (_, i) => [i + 1]);
-    sh.getRange(r0, c0, data.length, 1).setValues(nos);
+  const visibleIdx = table.columns(':visible').indexes().toArray()
+    .filter(i => !$(table.column(i).header()).hasClass('no-export'));
+  if (!visibleIdx.length) {
+    Swal.fire(t.wr_no_export_columns_title || 'Không có cột để xuất', t.wr_no_export_columns_message || 'Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.', 'info');
+    return;
   }
 
-  // ---------- ĐỊNH DẠNG ----------
-  // Row 1 cao ~27.6px => 28px
-  sh.setRowHeight(1, 28);
-  // Row 3 cao ~31.2px => 31px
-  sh.setRowHeight(3, 31);
-
-  if (data.length) {
-    // Kẻ ALL BORDERS cho vùng dữ liệu A..J từ dòng r0
-    const tableRange = sh.getRange(r0, c0, data.length, 10);
-    tableRange
-      .setBorder(true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.SOLID)
-      .setWrap(true); // chữ xuống dòng nếu dài
-
-    // (Tuỳ chọn) Font Times New Roman cho bảng
-    // tableRange.setFontFamily('Times New Roman');
-  }
-
-  SpreadsheetApp.flush();
-}
-
-
-
-/**
- * Xuất ra XLSX (base64) rồi xóa bản sao Google Sheet để không phình dung lượng.
- * YÊU CẦU: bật Advanced Drive Service (Drive API v2).
- */
-function exportXpplAsXlsx(payload, sessionToken) {
-  const lock = LockService.getScriptLock();
-  let locked = false;
-  try {
-    try {
-      lock.waitLock(30 * 1000); // đảm bảo tuần tự hoá khi nhiều người cùng export
-      locked = true;
-    } catch (e) {
-      return { ok:false, message:'Hệ thống đang bận. Vui lòng thử lại sau ít phút.' };
-    }
-
-    const res = getXpplExportData(payload, sessionToken);
-    if (!res || !res.ok) {
-      return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
-    }
-    const { dateString, contractNo, customerName } = res.filter;
-    const rows = res.rows || [];
-    if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
-
-    // 1) Copy template -> Google Sheet
-    const nameSuffix = dateString.replace(/\//g, '-');
-
-    // QUAN TRỌNG: thêm prefix để sweeper tìm và xoá
-    const copyName = `${XPPL_TEMP_PREFIX}(${contractNo}_${nameSuffix})-XPPL FORM`;
-    const copiedId = _copyTemplateAsGoogleSheet_(XPPL_TEMPLATE_ID, copyName);
-
-   // 2) Ghi dữ liệu vào bản copy
-   _exportXpplToTemplate_(copiedId, { dateString, contractNo, customerName }, rows);
-
-   // 3) Flush + đợi 1 nhịp rồi export đúng bản copy
-   SpreadsheetApp.flush();
-   Utilities.sleep(800);
-
-    const url  = `https://docs.google.com/spreadsheets/d/${copiedId}/export?format=xlsx`;
-    let resp;
-    try {
-      resp = _fetchWithRetry_(url, {
-        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-        muteHttpExceptions: true
-      });
-    } catch (fetchErr) {
-      return { ok:false, message:'Export lỗi: ' + (fetchErr && fetchErr.message ? fetchErr.message : fetchErr) };
-    }
-    if (resp.getResponseCode() !== 200) {
-      return { ok:false, message:'Export lỗi: ' + resp.getContentText() };
-    }
-
-   // 4) Tên file tải về -> làm sạch ký tự cấm
-   const safeName = (copyName + '.xlsx').replace(/[\\\/:\*\?"<>\|]/g, '_');
-
-   // 5) (BỎ) trigger one-shot sau 3 phút — không cần nữa
-   // try { ScriptApp.newTrigger('cleanupXpplTempFiles').timeBased().after(3*60*1000).create(); } catch(e){}
-
-   // 6) ĐẢM BẢO đã có sweeper chạy định kỳ (nếu chưa có thì tạo 1 lần)
-   try { ensureXpplSweeper(); } catch (e) { /* ignore */ }
-
-    return {
-      ok: true,
-      fileName: safeName,
-      base64: Utilities.base64Encode(resp.getBlob().getBytes())
-    };
-  } finally {
-    if (locked) {
-      try { lock.releaseLock(); } catch (e) {}
-    }
-  }
-}
-
-function _fetchWithRetry_(url, options) {
-  const maxAttempts = 4;
-  const baseDelayMs = 500;
-  let lastError = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const resp = UrlFetchApp.fetch(url, options);
-      const code = resp.getResponseCode();
-      if (code === 429 || (code >= 500 && code < 600)) {
-        throw new Error('Drive export quota hit: ' + code);
-      }
-      return resp;
-    } catch (err) {
-      lastError = err;
-      if (attempt === maxAttempts) {
-        throw (err instanceof Error) ? err : new Error(err);
-      }
-      Utilities.sleep(baseDelayMs * Math.pow(2, attempt - 1));
-    }
-  }
-  throw (lastError instanceof Error) ? lastError : new Error(lastError);
-}
-
-
-// ====== Sweeper dọn file tạm XPPL ======
-
-// Tạo 1 time-based trigger chạy cleanupXpplTempFiles mỗi 5 phút (chỉ tạo 1 lần)
-function ensureXpplSweeper() {
-  var key = 'XPPL_SWEEPER_CREATED';
-  var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(key)) return;
-
-  ScriptApp.newTrigger('cleanupXpplTempFiles')
-    .timeBased()
-    .everyMinutes(5)   // 5 phút/lần
-    .create();
-
-  props.setProperty(key, '1');
-}
-
-// Hàm dọn rác: xóa các file có tên bắt đầu bằng XPPL_TEMP_PREFIX và cũ > 3 phút
-function cleanupXpplTempFiles() {
-  var prefix = XPPL_TEMP_PREFIX || 'XPPL_TMP-';
-  var cutoff = new Date(Date.now() - 3 * 60 * 1000); // 3 phút trước
-
-  var it = DriveApp.searchFiles('title contains "' + prefix + '" and trashed = false');
-  var removed = 0;
-  while (it.hasNext()) {
-    try {
-      var f = it.next();
-      if (f.getName().indexOf(prefix) === 0 && f.getDateCreated() < cutoff) {
-        f.setTrashed(true);
-        removed++;
-      }
-    } catch (e) {}
-  }
-  return removed;
-}
-
-// (Khuyến nghị) Bảo đảm sweeper tồn tại ngay khi mở project
-function onOpen() {
-  try { ensureXpplSweeper(); } catch (e) {}
-}
-
-
-
-// Tạo 1 trigger một-lần chạy vào/ sau thời điểm due sớm nhất
-function _ensureCleanupTrigger_(dueTs) {
-  var exists = ScriptApp.getProjectTriggers()
-    .some(function(t){ return t.getHandlerFunction() === 'xpplCleanupDueFiles'; });
-  if (!exists) {
-    var now = Date.now();
-    var when = Math.max(dueTs, now + 60 * 1000); // luôn >= 1 phút để an toàn
-    ScriptApp.newTrigger('xpplCleanupDueFiles').timeBased().at(new Date(when)).create();
-  }
-}
-
-// Xoá vĩnh viễn tất cả file copy đã đến hạn; nếu còn file chưa đến hạn -> hẹn trigger lần sau
-function xpplCleanupDueFiles() {
-  var props = PropertiesService.getScriptProperties();
-  var all   = props.getProperties();
-  var now   = Date.now();
-  var prefix = 'xppl_delete_';
-  var nextDue = null;
-
-  for (var k in all) {
-    if (k.indexOf(prefix) !== 0) continue;
-    var fileId = k.substring(prefix.length);
-    var due = parseInt(all[k], 10) || 0;
-
-    if (now >= due) {
-      // đã đến hạn -> xoá vĩnh viễn
-      try { Drive.Files.remove(fileId); } 
-      catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (_) {} }
-      // xoá key
-      props.deleteProperty(k);
-    } else {
-      // chưa đến hạn -> giữ lại và ghi nhận mốc sớm nhất
-      if (nextDue === null || due < nextDue) nextDue = due;
-    }
-  }
-
-  // Nếu vẫn còn file cần xoá trong tương lai -> đặt lại trigger đến mốc sớm nhất
-  if (nextDue !== null) _ensureCleanupTrigger_(nextDue);
-}
-
-
-
-/** Dự phòng _toDateKey nếu dự án chưa có */
-function _toDateKey(v) {
-  if (v == null || v === '') return '';
-  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-    const dd = ('0' + v.getDate()).slice(-2);
-    const mm = ('0' + (v.getMonth() + 1)).slice(-2);
-    const yy = v.getFullYear();
-    return `${dd}/${mm}/${yy}`;
-  }
-  let s = String(v).trim().replace(/^'+/, '');
-  // dd/MM/yyyy
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
-  // yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss...
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s);
-    if (!isNaN(d)) return _toDateKey(d);
-  }
-  // dd-MM-yyyy
-  if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
-    const [d, m, y] = s.split('-').map(Number);
-    return _toDateKey(new Date(y, m - 1, d));
-  }
-  return '';
-}
-
-
-
-// =================================================================
-// LOGIC XỬ LÝ ĐĂNG KÝ XE
-// =================================================================
-
-// =================================================================
-// LOGIC XỬ LÝ ĐĂNG KÝ XE
-// Gom tất cả biển số mới (chưa có trong danh sách tổng) thay vì trả về ngay chiếc đầu tiên
-// =================================================================
-// =================================================================
-// LOGIC XỬ LÝ ĐĂNG KÝ XE
-// Gom tất cả biển số mới (chưa có trong danh sách tổng) thay vì trả về ngay chiếc đầu tiên
-// =================================================================
-// =================================================================
-// LOGIC XỬ LÝ ĐĂNG KÝ XE – Gom đủ "Xe mới" và "Xe trùng đơn vị khác"
-// =================================================================
-const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu. Không thể đăng ký. Vui lòng liên hệ PSVN.';
-const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
-
-function checkVehiclesAgainstTotalList(vehicles) {
-  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (totalListSheet.getLastRow() < 2) {
-    return {
-      isValid: false,
-      message: TOTAL_LIST_EMPTY_MESSAGE_VI,
-      messageEn: TOTAL_LIST_EMPTY_MESSAGE_EN
-    };
-  }
-
-  const totalListData = totalListSheet.getRange(
-    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
-  ).getValues();
-
-  const truckPlateIndex = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
-  const companyIndex    = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
-
-  // Map: PLATE -> Company (normalize biển số: uppercase & bỏ khoảng trắng)
-  const totalListMap = new Map();
-  totalListData.forEach(row => {
-    const plate = row[truckPlateIndex];
-    if (plate) {
-      totalListMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[companyIndex]);
-    }
-  });
-
-  const newPlates = [];            // các xe chưa có trong danh sách tổng
-  const mismatchPlates = [];       // các xe đã đăng ký với đơn vị khác
-  const seenNew = new Set();
-  const seenMismatch = new Set();
-
-  for (const vehicle of vehicles) {
-    const plateRaw = vehicle['Truck Plate'] || '';
-    const plate    = String(plateRaw).toUpperCase().replace(/\s/g, '');
-    const company  = vehicle['Transportion Company'];
-
-    if (!plate) continue;
-
-    if (!totalListMap.has(plate)) {
-      if (!seenNew.has(plate)) {
-        seenNew.add(plate);
-        newPlates.push(plate);
-      }
-      continue;
-    }
-
-    const registeredCompany = totalListMap.get(plate);
-    if (registeredCompany !== company) {
-      if (!seenMismatch.has(plate)) {
-        seenMismatch.add(plate);
-        mismatchPlates.push(plate);
-      }
-    }
-  }
-
-  // Ưu tiên báo "Xe mới" nếu có
-  if (newPlates.length > 0) {
-    const message = `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`;    
-    return {
-      isValid: false,
-      message: message,
-      messageEn: `Vehicle plate(s) ${newPlates.join(', ')} are new. Please submit an additional registration to the total list with PSVN.`
-    };
-  }
-
-  // Nếu có xe trùng đơn vị khác → trả về danh sách biển số
-  if (mismatchPlates.length > 0) {
-    const message = `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`;    
-    return {
-      isValid: false,
-      message: message,
-      messageEn: `Vehicle plate(s) ${mismatchPlates.join(', ')} have already been registered with another transport company. Please contact PSVN for assistance.`
-    };
-  }
-
-  return { isValid: true };
-}
-
-// =================================================================
-// LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
-// =================================================================
-function checkVehicleActivityStatus(vehicles) {
-  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (totalListSheet.getLastRow() < 2) {
-    return {
-      isValid: false,
-      message: TOTAL_LIST_EMPTY_MESSAGE_VI,
-      messageEn: TOTAL_LIST_EMPTY_MESSAGE_EN
-    };
-  }
-
-  const totalListData = totalListSheet.getRange(
-    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
-  ).getValues();
-
-  const plateIdx    = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
-  const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
-
-  const activityMap = new Map();
-  totalListData.forEach(row => {
-    const plate = row[plateIdx];
-    if (plate) {
-      activityMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[activityIdx]);
-    }
-  });
-
-  const bannedPlates = [];
-  vehicles.forEach(v => {
-    const plate = String(v['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-    if (!plate) return;
-    const status = activityMap.get(plate);
-    if (status && String(status).toLowerCase() === 'banned') {
-      bannedPlates.push(plate);
-    }
-  });
-
-  if (bannedPlates.length > 0) {
-   const message = `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`;    
-    return {
-      isValid: false,
-      message: message,
-      messageEn: `Vehicle plate(s) ${bannedPlates.join(', ')} are currently banned. Please contact PSVN for assistance.`
-    };
-  }
-
-  return { isValid: true };
-}
-
-
-function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) {
-  const userSession = validateSession(sessionToken);
-  const role = String(userSession.role || '').toLowerCase();
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(DATA_SHEET);
-
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
-
-    const headers = HEADERS_REGISTER;
-    let rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-    const contractFilter = contractNo
-      ? String(contractNo).replace(/^'+/, '').trim().toLowerCase()
-      : '';    
-
-    // Lọc theo quyền user (nếu là user thường)
-     if (role === 'user') {
-      const compIdx = headers.indexOf('Transportion Company');
-      rows = rows.filter(r => r[compIdx] === userSession.contractor);
-    }
-    if (role === 'user-supervision') {
-      const statusIdx = headers.indexOf('Registration Status');
-      if (statusIdx !== -1) {
-        rows = rows.filter(r => String(r[statusIdx] || '').trim().toLowerCase() === 'approved');
-      }
-    }
-
-    // Lọc theo ngày (định dạng dd/MM/yyyy, bỏ dấu ')
-    if (dateString) {
-      const dateIdx = headers.indexOf('Register Date');
-      rows = rows.filter(r => {
-        const v = r[dateIdx];
-        if (!v) return false;
-        let s = (v instanceof Date)
-          ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-          : String(v).replace(/^'/,'').trim();
-        return s === dateString;
-      });
-    }
-
-    if (contractFilter) {
-      const contractIdx = headers.indexOf('Contract No');
-      if (contractIdx !== -1) {
-        rows = rows.filter(r => {
-          const raw = r[contractIdx];
-          const value = String(raw == null ? '' : raw).replace(/^'+/, '').trim().toLowerCase();
-          return value === contractFilter;
-        });
-      }
-    }
-
-    // Lọc theo từ khóa search (nếu có)
-    if (searchQuery && String(searchQuery).trim()) {
-      const q = String(searchQuery).toLowerCase();
-      rows = rows.filter(r => r.some(c => String(c).toLowerCase().indexOf(q) !== -1));
-    }
-
-    // Trả về mảng object đã format (ngày/thời gian dạng chuỗi chuẩn)
-    return rows.map(r => formatRowForClient_(r, headers));
-  } catch (e) {
-    Logger.log(e);
-    throw new Error('Cannot retrieve export data: ' + e.message);
-  }
-}
-
-function createMessagePicker_(language) {
-  const lang = String(language || '').toLowerCase() === 'en' ? 'en' : 'vi';
-  return function(vi, en) {
-    return lang === 'en' && en ? en : vi;
-  };
-}
-
-function saveData(dataToSave, sessionToken, language) {
-  const userSession = validateSession(sessionToken);
-
-  const pickMessage = createMessagePicker_(language);
-  if (!dataToSave || dataToSave.length === 0) {
-    throw new Error(pickMessage('Không có dữ liệu để lưu.', 'There is no data to save.'));
-  }
-
-  if (userSession.role !== 'admin') {
-    const timeStatus = checkRegistrationTime();
-    if (!timeStatus.isOpen) {
-      throw new Error(pickMessage(
-        'Đã hết thời gian cho phép đăng ký dữ liệu trong ngày.',
-        'The allowed registration time for today has ended.'
-      ));
-    }
-  }
-
-  const activityResult = checkVehicleActivityStatus(dataToSave);
-  if (!activityResult.isValid) {
-    throw new Error(pickMessage(activityResult.message, activityResult.messageEn));
-  }
-
-  const validationResult = checkVehiclesAgainstTotalList(dataToSave);
-  if (!validationResult.isValid) {
-    throw new Error(pickMessage(validationResult.message, validationResult.messageEn));
-  }
-
-  // Kiểm tra Contract No thuộc đúng đơn vị & Active
-  (function () {
-    const activeMap = buildActiveContractMap_();
-    const invalid = [];
-
-    dataToSave.forEach(rec => {
-      const cno = String(rec['Contract No'] || '').trim();
-      const comp = String(
-        (userSession.role === 'user' ? userSession.contractor : rec['Transportion Company']) || ''
-      ).trim().toUpperCase();
-
-      if (!cno || !comp || !activeMap.has(comp) || !activeMap.get(comp).has(cno)) {
-        invalid.push(`${cno} (${comp})`);
-      }
-    });
-
-    if (invalid.length > 0) {
-      throw new Error(pickMessage(
-        'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active): ' + invalid.join(', '),
-        'Invalid contract numbers. Please verify the transport contract (Contract No must belong to the correct company and be Active): ' + invalid.join(', ')
-      ));
-    }
-  })();
-
-  const dupCheckRecords = dataToSave.map(r => {
-    const obj = Object.assign({}, r);
-    if (userSession.role === 'user') {
-      obj['Transportion Company'] = userSession.contractor;
-    }
-    return obj;
-  });
-
-  const existingDuplicates = checkForExistingRegistrations(dupCheckRecords, sessionToken);
-  if (existingDuplicates && existingDuplicates.length > 0) {
-      throw new Error(pickMessage(
-        `Các xe sau đã được đăng ký trong ngày: ${existingDuplicates.join(', ')}. Vui lòng kiểm tra lại.`,
-        `The following vehicles have already been registered today: ${existingDuplicates.join(', ')}. Please verify.`
-      ));
-  }
-
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const dataArray = dataToSave.map(obj => {
-      if (userSession.role === 'user') {
-        obj['Transportion Company'] = userSession.contractor;
-      }
-      coerceNumericRegisterFields_(obj);      
-      obj['Register Date'] = normalizeDate(obj['Register Date']);
-      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
-      obj['Registration Status'] = 'Pending approval';
-      return HEADERS_REGISTER.map(header => obj[header] || "");
-    });
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(30000)) {
-      throw new Error(pickMessage(
-        'Hệ thống đang bận, vui lòng thử lại sau.',
-        'The system is busy, please try again later.'
-      ));
-    }
-
-    try {
-      const lastRow = sheet.getLastRow();
-      sheet
-        .getRange(lastRow + 1, 1, dataArray.length, HEADERS_REGISTER.length)
-        .setValues(dataArray);
-    } finally {
-      lock.releaseLock();
-    }
-    bumpSheetCacheVersion_(DATA_SHEET);    
-    return pickMessage('Dữ liệu đã được lưu thành công!', 'Data saved successfully!');
-  } catch (error) {
-    Logger.log(error);
-    throw new Error(pickMessage('Lỗi khi lưu dữ liệu: ' + error.message, 'Error saving data: ' + error.message));
-  }
-}
-
-function updateData(rowData, sessionToken) {
-  const userSession = validateSession(sessionToken);
-  if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
-
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const dataRange = sheet.getRange(2, 1, sheet.getLastRow(), HEADERS_REGISTER.length);
-    const allValues = dataRange.getValues();
-    let rowToUpdate = -1;
-    let recordTimeStr = '';
-
-    for (let i = 0; i < allValues.length; i++) {
-      if (allValues[i][0] == rowData.ID) {
-        rowToUpdate = i + 2;
-        recordTimeStr = String(allValues[i][19]).replace("'", "");
-        break;
-      }
-    }
-
-    if (rowToUpdate === -1) throw new Error('Không tìm thấy dòng với ID: ' + rowData.ID);
-    
-    if (userSession.role === 'user') {
-      const timeStatus = checkRegistrationTime();
-      if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép chỉnh sửa dữ liệu.');
-
-      const recordHour = parseInt(recordTimeStr.split(':')[0]);
-      
-      if (recordHour >= 8 && recordHour < 16 && timeStatus.period !== 1) {
-        throw new Error('Dữ liệu đăng ký từ 8:00-16:00 chỉ có thể sửa trong khung giờ này.');
-      }
-      if (recordHour >= 20 && recordHour < 22 && timeStatus.period !== 2) {
-        throw new Error('Dữ liệu đăng ký từ 20:00-22:00 chỉ có thể sửa trong khung giờ này.');
-      }
-    }
-    
-    if (rowData['Register Date']) {
-    rowData['Register Date'] = "'" + rowData['Register Date'];
-    }
-    coerceNumericRegisterFields_(rowData);    
-    rowData['Time'] = "'" + Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss");
-    const dataArray = HEADERS_REGISTER.map(header => rowData[header] || "");
-    sheet.getRange(rowToUpdate, 1, 1, HEADERS_REGISTER.length).setValues([dataArray]);
-    bumpSheetCacheVersion_(DATA_SHEET);    
-    return 'Dữ liệu đã được cập nhật thành công!';
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật dữ liệu: ' + error.message); }
-}
-
-function deleteMultipleData(ids,sessionToken) {
-  const userSession = validateSession(sessionToken);
-  if (!ids || ids.length === 0) throw new Error('Cần cung cấp ID để xóa.');
-  if (userSession.role === 'user') {
-    const timeStatus = checkRegistrationTime();
-    if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép xóa dữ liệu trong ngày.');
-  }
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    const companyColumnValues = sheet.getRange(2, 16, sheet.getLastRow(), 1).getValues().flat();
-
-    let rowsToDelete = [];
-    ids.forEach(id => {
-      const rowIndex = idColumnValues.indexOf(id);
-      if (rowIndex !== -1) {
-          if (userSession.role === 'user' && companyColumnValues[rowIndex] !== userSession.contractor) {
-            throw new Error(`Bạn không có quyền xóa xe có ID: ${id}.`);
-          }
-          rowsToDelete.push(rowIndex + 2);
-      }
-    });
-    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
-    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
-      sheet.deleteRow(rowNum);
-    });
-    bumpSheetCacheVersion_(DATA_SHEET);    
-    return `Đã xóa thành công ${rowsToDelete.length} mục.`;
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa dữ liệu: ' + error.message); }
-}
-
-function checkForExistingRegistrations(recordsToCheck, sessionToken) {
-  validateSession(sessionToken);
-  if (!recordsToCheck || recordsToCheck.length === 0) return [];
-
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const lastRow = sheet.getLastRow();
-
-    // Thu thập các bản ghi đã tồn tại trong ngày
-    const existingKeys = new Set();
-    if (lastRow >= 2) {
-      const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
-      allData.forEach(row => {
-        const dateStr = Utilities.formatDate(new Date(row[1]), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
-        const plate = String(row[3] || '').toUpperCase().replace(/\s/g, '');
-        const company = String(row[15] || '').trim().toUpperCase();
-        existingKeys.add(`${dateStr}-${plate}-${company}`);
-      });
-    }
-
-    // Kiểm tra dữ liệu đầu vào (bao gồm cả trùng lặp trong file)
-    const seen = new Set();
-    
-    const duplicates = [];
-    recordsToCheck.forEach(rec => {
-      const regDate = normalizeDate(rec['Register Date']);
-      const dateStr = regDate ? Utilities.formatDate(regDate, "Asia/Ho_Chi_Minh", "yyyy-MM-dd") : '';
-      const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-      const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
-      const key = `${dateStr}-${plate}-${company}`;
-
-      if (existingKeys.has(key) || seen.has(key)) {
-        duplicates.push(plate);
-      }
-      seen.add(key);
-    });
-    
-    return duplicates;
-  } catch (e) {
-    Logger.log(e);
-    throw new Error('Lỗi khi kiểm tra dữ liệu trùng lặp: ' + e.message);
-  }
-}
-
-// =================================================================
-// XỬ LÝ DỮ LIỆU DANH SÁCH XE TỔNG
-// =================================================================
-
-function getTotalListSummary(sessionToken) {
-  const userSession = validateSession(sessionToken);
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    const lastRow = sheet.getLastRow();
-    
-    if (lastRow < 2) {
-      return { total: 0, active: 0, banned: 0 };
-    }
-
-    const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_TOTAL_LIST.length).getValues();
-    
-    let filteredData = allData;
-    if (userSession.role === 'user') {
-      const companyIndex = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
-      const activityIndex = HEADERS_TOTAL_LIST.indexOf('Activity Status');
-      filteredData = allData.filter(row => row[companyIndex] === userSession.contractor &&
-        String(row[activityIndex]).toUpperCase() === 'ACTIVE');
-    }
-
-    const summary = { total: filteredData.length, active: 0, banned: 0 };
-    const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
-
-    filteredData.forEach(row => {
-      const act = String(row[activityIdx]).toUpperCase();
-      if (act === 'ACTIVE') summary.active++;
-      else if (act === 'BANNED') summary.banned++;
-    });
-    
-    return summary;
-  } catch (e) {
-    Logger.log(e);
-    throw new Error('Không thể lấy thông tin tóm tắt: ' + e.message);
-  }
-}
-
-
-function saveTotalTruckData(dataToSave, sessionToken) {
-  const userSession = validateSession(sessionToken);
-  if (userSession.role !== 'admin') throw new Error('Chỉ có admin mới được thực hiện chức năng này.');
-  if (!dataToSave || dataToSave.length === 0) throw new Error('Không có dữ liệu để lưu.');
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
-
-    // Chuẩn hóa biển số để so sánh
-    const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
-
-    // Lấy tất cả biển số hiện có
-    const plateIdx = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
-    const companyIdx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
-
-    let existingPlates = {};
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1 && plateIdx > 0) {
-      const plates = sheet.getRange(2, plateIdx, lastRow - 1, 1).getValues().flat();
-      plates.forEach(p => { const k = norm(p); if (k) existingPlates[k] = true; });
-    }
-
-    // Kiểm tra trùng lặp trong file và với dữ liệu hiện có
-    const inFileSeen = {};
-    const skippedInFile = [];
-    const skippedExisting = [];
-    const rowsToAppend = [];
-
-    dataToSave.forEach(obj => {
-      const plate = norm(obj['Truck Plate']);
-      const company = obj['Transportion Company'] || '';
-      if (!plate) return;
-
-      if (inFileSeen[plate]) {
-        skippedInFile.push({ plate: plate, company: company });
-        return;
-      }
-      inFileSeen[plate] = true;
-
-      if (existingPlates[plate]) {
-        skippedExisting.push({ plate: plate, company: company });
-        return;
-      }
-
-      // Bổ sung ngày/giờ và map theo header
-      obj['Register Date'] = normalizeDate(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "dd/MM/yyyy"));
-      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
-      rowsToAppend.push(HEADERS_TOTAL_LIST.map(h => obj[h] || ""));
-    });
-
-    // Append thay vì replace
-    let inserted = 0;
-    if (rowsToAppend.length > 0) {
-      const startRow = (lastRow || 1) + 1;
-      sheet.getRange(startRow, 1, rowsToAppend.length, HEADERS_TOTAL_LIST.length).setValues(rowsToAppend);
-      inserted = rowsToAppend.length;
-    }
-
-    if (inserted > 0) {
-      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
-    }    
-
-    // Trả chi tiết để client hiển thị
-    return {
-      status: 'ok',
-      inserted: inserted,
-      skippedExisting: skippedExisting,   // trùng với dữ liệu đang có
-      skippedInFile: skippedInFile        // trùng trong chính file upload
-    };
-  } catch (error) {
-    Logger.log(error);
-    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + error.message);
-  }
-}
-
-function deleteTotalListVehicles(ids, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-  if (!ids || ids.length === 0) throw new Error('Cần cung cấp ID để xóa.');
-  
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    let rowsToDelete = [];
-
-    ids.forEach(id => {
-      const rowIndex = idColumnValues.indexOf(id);
-      if (rowIndex !== -1) {
-        rowsToDelete.push(rowIndex + 2);
-      }
-    });
-
-    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
-    
-    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
-      sheet.deleteRow(rowNum);
-    });
-
-    if (rowsToDelete.length > 0) {
-      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
-    }    
-
-    return `Đã xóa thành công ${rowsToDelete.length} xe.`;
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + error.message); }
-}
-
-function updateTotalListVehicle(rowData, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
-  if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
-
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    let rowToUpdate = -1;
-
-    const rowIndex = idColumnValues.indexOf(rowData.ID);
-    if (rowIndex !== -1) {
-        rowToUpdate = rowIndex + 2;
-    }
-
-    if (rowToUpdate === -1) throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
-
-    const now = new Date();
-    rowData['Register Date'] = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
-    rowData['Time'] = "'" + Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "HH:mm:ss");
-    const dataArray = HEADERS_TOTAL_LIST.map(header => rowData[header] || "");
-    sheet.getRange(rowToUpdate, 1, 1, HEADERS_TOTAL_LIST.length).setValues([dataArray]);
-    bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);    
-    return 'Cập nhật thông tin xe thành công!';
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật thông tin xe: ' + error.message); }
-}
-
-// --- Helpers an toàn cho CacheService ---
-function safeScriptCacheGetJSON_(key) {
-  if (!key) return null;
-  try {
-    const cache = CacheService.getScriptCache();
-    if (!cache) return null;
-    const value = cache.get(key);
-    return value ? JSON.parse(value) : null;
-  } catch (e) {
-    Logger.log('Script cache get error: ' + e);
-    return null;
-  }
-}
-
-function safeScriptCachePutJSON_(key, obj, seconds) {
-  if (!key) return;
-  try {
-    CacheService.getScriptCache().put(key, JSON.stringify(obj), seconds || SERVER_SIDE_CACHE_TTL_SECONDS);
-  } catch (e) {
-    Logger.log('Script cache put error: ' + e);
-  }
-}
-
-function getSheetCacheVersion_(sheetName) {
-  if (!sheetName) return String(Date.now());
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const key = SHEET_CACHE_VERSION_PREFIX + sheetName;
-    let version = props.getProperty(key);
-    if (!version) {
-      version = String(Date.now());
-      props.setProperty(key, version);
-    }
-    return version;
-  } catch (e) {
-    Logger.log('getSheetCacheVersion_ error: ' + e);
-    return String(Date.now());
-  }
-}
-
-function bumpSheetCacheVersion_(sheetName) {
-  if (!sheetName) return;
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const key = SHEET_CACHE_VERSION_PREFIX + sheetName;
-    const newVersion = String(Date.now()) + '_' + Math.floor(Math.random() * 1000);
-    props.setProperty(key, newVersion);
-  } catch (e) {
-    Logger.log('bumpSheetCacheVersion_ error: ' + e);
-  }
-}
-
-function buildServerSideCacheKey_(sheetName, params, userRole) {
-  if (!sheetName) return '';
-  try {
-    params = params || {};
-    const version = getSheetCacheVersion_(sheetName);
-    const payload = {
-      sheet: sheetName,
-      version: version,
-      role: userRole || '',
-      draw: params.draw || '',
-      start: params.start || 0,
-      length: params.length || 0,
-      dateString: params.dateString || '',
-      contractNo: params.contractNo || '',
-      search: params.search && params.search.value ? String(params.search.value) : '',
-      order: Array.isArray(params.order)
-        ? params.order.map(function (o) { return o ? [o.column, o.dir] : null; })
-        : [],
-      columns: Array.isArray(params.columns)
-        ? params.columns.map(function (col) {
-            return {
-              data: col && col.data,
-              search: col && col.search ? col.search.value : '',
-              searchable: col && col.searchable,
-              orderable: col && col.orderable
-            };
-          })
-        : []
-    };
-    const serialized = JSON.stringify(payload);
-    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, serialized);
-    const hash = Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, '');
-    return 'srv_cache:' + sheetName + ':' + version + ':' + hash;
-  } catch (e) {
-    Logger.log('buildServerSideCacheKey_ error: ' + e);
-    return '';
-  }
-}
-
-function safeGetUserCacheJSON(key) {
-  try {
-    const v = CacheService.getUserCache().get(key);
-    return v ? JSON.parse(v) : null;
-  } catch (e) {
-    Logger.log('CacheService get error: ' + e);
-    return null;
-  }
-}
-function safePutUserCacheJSON(key, obj, seconds) {
-  try {
-    CacheService.getUserCache().put(key, JSON.stringify(obj), seconds || SESSION_TIMEOUT_SECONDS);
-  } catch (e) {
-    Logger.log('CacheService put error: ' + e);
-  }
-}
-
-function safeRemoveUserCacheKey(key) {
-  try {
-    CacheService.getUserCache().remove(key);
-  } catch (e) {
-    Logger.log('CacheService remove error: ' + e);
-  }
-}
-
-function buildSessionCacheKey_(token) {
-  return token ? 'user_session_' + token : '';
-}
-
-function getSessionFromCache_(token) {
-  const key = buildSessionCacheKey_(token);
-  if (!key) return null;
-  return safeGetUserCacheJSON(key);
-}
-
-function cacheSession_(session) {
-  if (!session || !session.token) return;
-  const key = buildSessionCacheKey_(session.token);
-  if (!key) return;
-  safePutUserCacheJSON(key, session, SESSION_TIMEOUT_SECONDS);
-}
-
-function removeSessionFromCache_(token) {
-  const key = buildSessionCacheKey_(token);
-  if (!key) return;
-  safeRemoveUserCacheKey(key);
-}
-
-function refreshSessionExpiry_(username, token) {
-  if (!username || !token) return;
-  try {
-    const query = SUPABASE_APP_USERS_ENDPOINT + '?select=active_session_token,session_token_expiry&username=eq.' + encodeURIComponent(username) + '&limit=1';
-    const data = supabaseRequest_(query);
-    if (!Array.isArray(data) || data.length === 0) return;
-    const user = data[0];
-    if (String(user.active_session_token == null ? '' : user.active_session_token).trim() !== token) return;
-
-    const nowMs = Date.now();
-    const currentExpiry = parseSupabaseTimestamp_(user.session_token_expiry);
-    const desiredExpiry = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
-    const halfWindowMs = (SESSION_TIMEOUT_SECONDS * 1000) / 2;    
-
-    let shouldUpdate = false;
-    if (!currentExpiry) {
-      shouldUpdate = true;
-    } else if (currentExpiry.getTime() - nowMs < halfWindowMs) {
-      shouldUpdate = true;
-    }
-
-    if (shouldUpdate) {
-      updateSupabaseUserByUsername_(username, {
-        session_token_expiry: desiredExpiry.toISOString()
-      });
-    }
-  } catch (e) {
-    Logger.log('refreshSessionExpiry_ error: ' + e);
-  }
-}
-
-// --- Fallback lookup trong sheet Users bằng sessionToken ---
-function lookupSessionFromSheet(sessionToken) {
-  if (!sessionToken) return null;
-  try {
-    const query = SUPABASE_APP_USERS_ENDPOINT + '?select=username,role,contractor,customer_name,active_session_token,session_token_expiry&active_session_token=eq.' + encodeURIComponent(sessionToken) + '&limit=1';
-    const data = supabaseRequest_(query);
-    if (!Array.isArray(data) || data.length === 0) return null;
-    const user = data[0];
-
-    const expiryDate = parseSupabaseTimestamp_(user.session_token_expiry);
-    const nowMs = Date.now();
-    if (!expiryDate || nowMs >= expiryDate.getTime()) {
-      clearUserSession_(user.username, sessionToken);
-      return null;
-    }
-
-    return {
-      isLoggedIn: true,
-      username: String(user.username == null ? '' : user.username).trim(),
-      role: String(user.role == null ? '' : user.role).trim(),
-      contractor: String(user.contractor == null ? '' : user.contractor).trim(),
-      customerName: String(user.customer_name == null ? '' : user.customer_name).trim(),
-      token: sessionToken
-    };
-  } catch (e) {
-    Logger.log('lookupSessionFromSheet error: ' + e);
-  }
-  return null;
-}
-
-// ==========================
-// THAY THẾ validateSession()
-// ==========================
-
-function validateSession(sessionToken) {
-  const token = String(sessionToken == null ? '' : sessionToken).trim();
-  if (!token) {
-    throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
-  }
-
-  let session = getSessionFromCache_(token);
-  if (session && session.token === token) {
-    cacheSession_(session);
-    refreshSessionExpiry_(session.username, session.token);
-    return session;
-  }
-
-  session = lookupSessionFromSheet(token);
-  if (session) {
-    cacheSession_(session);
-    refreshSessionExpiry_(session.username, session.token);
-    return session;
-  }
-
-  throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.');
-}
-
-// ==========================
-// THAY THẾ getUserSession()
-// ==========================
-function getUserSession(sessionToken) {
-  try {
-    ensureSupervisionAccount_();
-  } catch (e) {
-    Logger.log('ensureSupervisionAccount_ wrapper error: ' + e);
-  }
-  try {
-    const token = String(sessionToken == null ? '' : sessionToken).trim();
-    if (token) {
-      return validateSession(token);
-    }
-  } catch (e) {
-    // Bỏ qua lỗi cache, trả về khách ẩn danh
-  }
-  return { isLoggedIn: false, role: null, contractor: null, customerName: null };
-}
-
-// Trả về Map: company (UPPER) -> Set(contractNo) chỉ chứa hợp đồng Active
-function buildActiveContractMap_() {
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, CONTRACT_HEADERS.length).getValues();
-  const IDX_NO = 1, IDX_COMP = 3, IDX_STATUS = 4;
-
-  const map = new Map();
-  for (const r of rows) {
-    const no     = String(r[IDX_NO]   || '').trim();
-    const comp   = String(r[IDX_COMP] || '').trim().toUpperCase();
-    const status = String(r[IDX_STATUS] || '').trim().toLowerCase();
-    if (!no || !comp || status !== 'active') continue;
-    if (!map.has(comp)) map.set(comp, new Set());
-    map.get(comp).add(no);
-  }
-  return map;
-}
-
-// true nếu Contract No thuộc đúng Company và Active
-function isContractActiveForCompany_(contractNo, company) {
-  const cno = String(contractNo || '').trim();
-  const comp = String(company || '').trim().toUpperCase();
-  if (!cno || !comp) return false;
-  const m = buildActiveContractMap_();
-  return m.has(comp) && m.get(comp).has(cno);
-}
-
-
-//Page hop dong van chuyen
-function ensureContractSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sh = ss.getSheetByName(CONTRACT_SHEET);
-  if (!sh) {
-    sh = ss.insertSheet(CONTRACT_SHEET);
-    sh.getRange(1, 1, 1, CONTRACT_HEADERS.length).setValues([CONTRACT_HEADERS]);
-  }
-  return sh;
-}
-
-function genContractId_() {
-  const tz = Session.getScriptTimeZone();
-  const ddmm = Utilities.formatDate(new Date(), tz, 'dd/MM');
-  const rand = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
-  return `C${ddmm}${rand}`;
-}
-
-function getContractDataServerSide(params) {
-  const session = validateSession(params.sessionToken);
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, CONTRACT_HEADERS.length).getValues();
-
-  // map -> object
-  let data = rows.map(r => ({
-    'ID': r[0] || '',
-    'Contract No': r[1] || '',
-    'Customer Name': r[2] || '',
-    'Transportion Company': r[3] || '',
-    'Status': r[4] || ''
-  }));
-
-  // User chỉ nhìn thấy theo đơn vị mình
-  if (session.role !== 'admin') {
-    data = data.filter(x => String(x['Transportion Company'] || '') === String(session.contractor || ''));
-  }
-
-  // Search toàn cục
-  const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
-  let filtered = q
-    ? data.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(q)))
-    : data;
-
-  // Order
-  const order = Array.isArray(params.order) ? params.order[0] : null;
-  if (order && order.column != null) {
-    const columns = ['ID','Contract No','Customer Name','Transportion Company','Status']; // đúng thứ tự trả về cho DataTable
-    const key = columns[order.column >= columns.length ? columns.length-1 : order.column];
-    const dir = (order.dir || 'asc').toLowerCase();
-    filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true}))
-      * (dir === 'desc' ? -1 : 1));
-  }
-
-  // Paging
-  const start = Number(params.start || 0);
-  const length = Number(params.length || 50);
-  const page = filtered.slice(start, start + length);
-
-  return {
-    draw: Number(params.draw || 1),
-    recordsTotal: data.length,
-    recordsFiltered: filtered.length,
-    data: page
-  };
-}
-
-function upsertContract(contract, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
-
-  const { ID, 'Contract No': contractNo, 'Customer Name': customerName,
-          'Transportion Company': tc, 'Status': status } = contract;
-		  
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const ids = last < 2 ? [] : sh.getRange(2, 1, last - 1, 1).getValues().flat();
-
-  if (ID) {
-    const idx = ids.indexOf(ID);
-    if (idx === -1) throw new Error('Không tìm thấy ID để cập nhật.');
-    sh.getRange(idx + 2, 2, 1, 4).setValues([[contractNo, customerName, tc, status]]); // 4 cột
-    return 'Đã cập nhật hợp đồng.';
+  const headers = visibleIdx.map(i => $(table.column(i).header()).text().trim());
+  const searchValue = table.search() || '';
+  const order = (table.order() || []).map(([column, dir]) => ({ column, dir }));
+
+  const info = (typeof table.page === 'function' && typeof table.page.info === 'function')
+    ? table.page.info()
+    : null;
+  const settingsObj = (settings && settings.length) ? settings[0] : null;
+  let totalRecords = null;
+  if (settingsObj && typeof settingsObj._iRecordsDisplay === 'number') {
+    totalRecords = settingsObj._iRecordsDisplay;
+  } else if (info && typeof info.recordsDisplay === 'number') {
+    totalRecords = info.recordsDisplay;
   } else {
-    const newId = genContractId_();
-    sh.appendRow([newId, contractNo, customerName, tc, status]);
-    return 'Đã tạo hợp đồng mới.';
-  }
-}
-
-
-function deleteContracts(ids, sessionToken) {
-  const session = validateSession(sessionToken);
-  if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
-
-  if (!Array.isArray(ids) || !ids.length) return 'Không có mục nào để xoá.';
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  if (last < 2) return 'Không có dữ liệu.';
-
-  const allIds = sh.getRange(2,1,last-1,1).getValues().flat();
-  const rowsToDelete = [];
-  ids.forEach(id => {
-    const idx = allIds.indexOf(id);
-    if (idx !== -1) rowsToDelete.push(idx + 2); // sheet index
-  });
-
-  // xoá từ dưới lên
-  rowsToDelete.sort((a,b)=>b-a).forEach(r => sh.deleteRow(r));
-  return `Đã xoá ${rowsToDelete.length} hợp đồng.`;
-}
-
-//Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
-function getContractorOptions() {
-  try {
-    const data = supabaseRequest_(
-      SUPABASE_APP_USERS_ENDPOINT + '?select=contractor&contractor=not.is.null'
-    );
-    if (!Array.isArray(data)) return [];
-    const set = new Set();
-    data.forEach(row => {
-      const value = String(row.contractor == null ? '' : row.contractor).trim();
-      if (value) set.add(value);
-    });
-    return Array.from(set).sort();
-  } catch (e) {
-    Logger.log('getContractorOptions error: ' + e);
-    return [];
-  }
-}
-
-
-
-//Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
-function getTransportCompanies() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (!sh) return [];
-  const n = sh.getLastRow();
-  if (n < 2) return [];
-  const idx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
-  if (idx <= 0) return [];
-  const vals = sh.getRange(2, idx, n - 1, 1).getValues().flat();
-  const set = new Set();
-  vals.forEach(v => {
-    const s = String(v || '').trim();
-    if (s) set.add(s);
-  });
-  return Array.from(set).sort();
-}
-
-//Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
-function getActiveContractNos(sessionToken) {
-  const session = validateSession(sessionToken);
-  const sh = ensureContractSheet_();
-  const n  = sh.getLastRow();
-  if (n < 2) return [];
-  const data = sh.getRange(2, 1, n - 1, CONTRACT_HEADERS.length).getValues();
-
-  const IDX_NO = 1, IDX_COMP = 3, IDX_STATUS = 4;
-  const out = [];
-  const seen = new Set();
-
-  for (const r of data) {
-    const status = String(r[IDX_STATUS] || '').trim().toLowerCase();
-    if (status !== 'active') continue;
-
-    if (session.role !== 'admin') {
-      if (String(r[IDX_COMP] || '') !== String(session.contractor || '')) continue;
-    }
-
-    const no = String(r[IDX_NO] || '').trim();
-    if (no && !seen.has(no)) { seen.add(no); out.push(no); }
-  }
-  return out.sort();
-}
-
-
-
-// ====== GS: Trả về danh sách biển số đang có để đánh dấu trùng ======
-function getExistingTruckPlates(sessionToken) {
-  const session = validateSession(sessionToken);
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
-
-  const plateCol = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
-  const lastRow  = sheet.getLastRow();
-  if (plateCol <= 0 || lastRow < 2) return [];
-
-  const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
-  const values = sheet.getRange(2, plateCol, lastRow - 1, 1).getValues().flat();
-  return values.map(norm).filter(Boolean);
-}
-
-
-
-// ====== GS: LƯU NỐI TIẾP VÀO "DANH SÁCH XE TỔNG" ======
-function saveTotalListAppend(rows, sessionToken) {
-  const session = validateSession(sessionToken);
-
-  if (!rows || !rows.length) return 'Không có dữ liệu để lưu.';
-
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (!sh) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
-
-  const header = HEADERS_TOTAL_LIST;
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, header.length).setValues([header]);
+    const dataApi = table.rows({ search: 'applied' }).data();
+    totalRecords = dataApi && typeof dataApi.length === 'number' ? dataApi.length : 0;
   }
 
-  // Format ngày/giờ
-  const pad = n => ('0' + n).slice(-2);
-  const formatDateText = d =>
-    `'${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; // thêm dấu '
-  const formatTimeText = d =>
-    `'${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; // thêm dấu '
-
-  const normPlate = s => String(s || '').replace(/\s/g, '').toUpperCase();
-
-  const values = rows.map(obj => {
-    const dNow = new Date();
-    const regDate = obj['Register Date']
-      ? `${obj['Register Date']}`
-      : formatDateText(dNow);
-    const regTime = obj['Time']
-      ? `${obj['Time']}`
-      : formatTimeText(dNow);
-
-    return header.map(h => {
-      switch (h) {
-        case 'Truck Plate':
-        case 'Trailer Plate':
-          return normPlate(obj[h]);
-        case 'Register Date':
-          return regDate;
-        case 'Time':
-          return regTime;
-        default:
-          return obj[h] == null ? '' : String(obj[h]);
-      }
-    });
-  });
-
-  const startRow = sh.getLastRow() + 1;
-  sh.getRange(startRow, 1, values.length, header.length).setValues(values);
-  bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);  
-
-  return `Đã thêm ${values.length} dòng mới vào Danh sách xe tổng.`;
-}
-
-
-// Helper tạo ID ngắn, chữ hoa (15 ký tự)
-function generateShortId() {
-  return Utilities.getUuid().replace(/-/g, '').slice(0, 15).toUpperCase();
-}
-
-// === THAY TOÀN BỘ addManualVehicle ===
-function addManualVehicle(record, sessionToken, language) {
-  const userSession = validateSession(sessionToken);
-  const pickMessage = createMessagePicker_(language);
-
-  try {
-    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(DATA_SHEET);
-    if (!sheet) throw new Error('Không tìm thấy sheet dữ liệu đăng ký.');
-
-    // Chuẩn hóa/điền thêm các field bắt buộc
-    const rowObj = Object.assign({}, record);
-
-    // ✅ NEW: khóa Contractor cho user thường
-    if (userSession.role === 'user') {
-      rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
-    }
-
-    coerceNumericRegisterFields_(rowObj);
-
-    const activityCheck = checkVehicleActivityStatus([{ 'Truck Plate': rowObj['Truck Plate'] }]);
-    if (!activityCheck.isValid) {
-     throw new Error(pickMessage(activityCheck.message, activityCheck.messageEn));
-    }
-
-    // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
-    const precheck = checkVehiclesAgainstTotalList([{
-      'Truck Plate'         : String(rowObj['Truck Plate'] || '').toUpperCase().replace(/\s/g, ''),
-      'Transportion Company': rowObj['Transportion Company']
-    }]);
-    if (!precheck.isValid) {
-      throw new Error(pickMessage(precheck.message, precheck.messageEn));
-    }
-
-    // ✅ NEW: kiểm tra Contract No thuộc đúng Contractor & Active
-    const contractNo = String(rowObj['Contract No'] || '').trim();
-    const company    = String(rowObj['Transportion Company'] || '').trim();
-    if (!isContractActiveForCompany_(contractNo, company)) {
-      throw new Error(pickMessage(
-        'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).',
-        'Invalid contract numbers. Please verify the transport contract (Contract No must belong to the correct company and be Active).'
-      ));
-    }
-
-    // ✅ NEW: kiểm tra xe đã đăng ký trong ngày (tái dùng logic của saveData)
-    const dup = checkForExistingRegistrations([{
-      'Register Date'       : rowObj['Register Date'],
-      'Truck Plate'         : rowObj['Truck Plate'],
-      'Transportion Company': rowObj['Transportion Company']
-    }], sessionToken);
-    if (dup && dup.length > 0) {
-      throw new Error(pickMessage(
-        `Các xe sau đã được đăng ký trong ngày: ${dup.join(', ')}. Vui lòng kiểm tra lại.`,
-        `The following vehicles have already been registered today: ${dup.join(', ')}. Please verify.`
-      ));
-    }
-
-    // ID do server tự sinh
-    rowObj['ID'] = generateShortId();
-
-    // Lưu ngày dạng text (chỉ thêm 1 dấu ')
-    if (rowObj['Register Date']) {
-      rowObj['Register Date'] = normalizeDate(rowObj['Register Date']);
-    }
-
-    // Thời gian tạo (giữ nguyên cách lưu hiện tại)
-    rowObj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
-
-        // ✅ Bổ sung cột Registration Status
-    rowObj['Registration Status'] = 'Pending approval';
-
-    // Ghi theo đúng thứ tự header
-    const values = [HEADERS_REGISTER.map(h => rowObj[h] ?? "")];
-    sheet.getRange(sheet.getLastRow() + 1, 1, 1, HEADERS_REGISTER.length).setValues(values);
-    bumpSheetCacheVersion_(DATA_SHEET);    
-
-    return pickMessage('Đăng ký xe thành công!', 'Vehicle registered successfully!');
-  } catch (e) {
-    Logger.log(e);
-    throw new Error('Add New Error: ' + e.message);
-  }
-}
-
-
-
-function _cache(){ return CacheService.getScriptCache(); }
-function _getCache(key){ try{ const v=_cache().get(key); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
-function _putCache(key,obj,sec){ try{ _cache().put(key, JSON.stringify(obj), sec||60); } catch(e){} }
-function _bust(keys){ try{ keys.forEach(k=>_cache().put(k,'x',1)); } catch(e){} }
-
-
-
-function _toDateKey(v){
-  if (v instanceof Date){
-    var dd=('0'+v.getDate()).slice(-2);
-    var mm=('0'+(v.getMonth()+1)).slice(-2);
-    var yy=v.getFullYear();
-    return dd+'/'+mm+'/'+yy;
-  }
-  if (v == null) return '';
-  var s = String(v).trim();
-  if (s.startsWith("'")) s = s.slice(1);
-  var m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) return s;
-  var m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m2) return m2[3]+'/'+m2[2]+'/'+m2[1];
-  var d = new Date(s);
-  if (!isNaN(d.getTime())) return _toDateKey(d);
-  return s;
-}
-
-function getXpplSnapshot(payload, sessionToken){
-  var userSession = requireAdmin_(sessionToken);
-  var dateString = payload && payload.dateString;
-  if (!dateString) throw new Error('Thiếu ngày đăng ký');
-  var scope = 'ALL'; //admin-only
-  var ck = 'SNAP_'+dateString+'_'+scope;
-  var cached = _getCache(ck);
-  if (cached) return cached;
-
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  if (!sh) throw new Error('Không tìm thấy sheet dữ liệu');
-  var headers = HEADERS_REGISTER;
-  var values = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), headers.length).getValues();
-
-  var idxDate = headers.indexOf('Register Date');
-  var idxCno  = headers.indexOf('Contract No');
-  var idxComp = headers.indexOf('Transportion Company');
-  var idxRS   = headers.indexOf('Registration Status');
-
-  var rows = [];
-  var pending=0, approved=0;
-  var per={};
-
-  for (var i=0;i<values.length;i++){
-    var r=values[i];
-    if (_toDateKey(r[idxDate]) !== dateString) continue;
-    if (scope !== 'ALL' && String(r[idxComp]||'').trim() !== scope) continue;
-
-    // (SAU) – dùng helper đã có để đảm bảo DD/MM/YYYY + HH:mm:ss
-    var obj = formatRowForClient_(r, headers);
-    rows.push(obj);
-
-    var st = String(obj['Registration Status']||'');
-    if (st === 'Approved') approved++; else pending++;
-
-    var cno = String(obj['Contract No']||'');
-    if (!per[cno]) per[cno]={t:0,a:0};
-    per[cno].t++; if (st==='Approved') per[cno].a++;
-  }
-
-  var fullyApproved = Object.keys(per).filter(function(k){ var v=per[k]; return v.t>0 && v.a===v.t; });
-
-  var contracts = Object.keys(per).sort();
-
-  var ret = { contracts:contracts, rows:rows, pending:pending, approved:approved, sent:0, fullyApproved:fullyApproved };
-  _putCache(ck, ret, 300);
-  return ret;
-}
-
-
-
-
-function getRegistrationsForApproval(payload, sessionToken){
-  var snap = getXpplSnapshot({dateString: payload.dateString}, sessionToken);
-  var rows = snap.rows;
-  if (payload.contracts && payload.contracts.length){
-    var set = {};
-    payload.contracts.forEach(function(c){ set[String(c).trim()] = true; });
-    rows = rows.filter(function(r){ return set[String(r['Contract No']||'').trim()]; });
-  }
-  // Đếm nhanh theo TẬP ĐANG LỌC (bám sát DataTable XPPL)
-  var pending = 0, approved = 0, sent = 0;
-  for (var i=0;i<rows.length;i++){
-    var st = String(rows[i]['Registration Status']||'').toLowerCase();
-    if (st === 'approved') approved++;
-    else if (st === 'pending approval') pending++;
-    // Cột "đã gửi XPPL" nếu có (tùy chọn)
-    var s = rows[i]['Sent XPPL'] || rows[i]['XPPL Sent'] || rows[i]['Sent to XPPL'];
-    if (s === true || String(s).toLowerCase()==='yes' || String(s).toLowerCase()==='sent' || s===1) sent++;
-  }
-  return { rows: rows, pending: pending, approved: approved, sent: sent };
-}
-
-
-function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
-  var userSession = requireAdmin_(sessionToken);
-  var dateString = filters && filters.dateString;
-  var set = {};
-  (filters.contracts||[]).forEach(function(c){ set[String(c).trim()] = true; });
-  var idsSelected = (filters.idsSelected||[]).map(String);
-
-  if (!dateString) throw new Error('Thiếu ngày đăng ký.');
-  if (!newStatus || (['Approved','Pending approval'].indexOf(newStatus)===-1)) throw new Error('Trạng thái không hợp lệ.');
-
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  var headers = HEADERS_REGISTER;
-  var values = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), headers.length).getValues();
-
-  var idxDate = headers.indexOf('Register Date');
-  var idxCno  = headers.indexOf('Contract No');
-  var idxRS   = headers.indexOf('Registration Status');
-  var idxID   = headers.indexOf('ID');
-  var idxComp = headers.indexOf('Transportion Company');
-
-  var scope = scope = 'ALL';
-  var changed = 0;
-
-  for (var r=0; r<values.length; r++){
-    var row = values[r];
-    if (_toDateKey(row[idxDate]) !== dateString) continue;
-    if (scope !== 'ALL' && String(row[idxComp]||'').trim() !== scope) continue;
-    if (Object.keys(set).length && !set[String(row[idxCno]||'').trim()]) continue;
-    if (idsSelected.length && idsSelected.indexOf(String(row[idxID]||''))===-1) continue;
-    if (row[idxRS] === newStatus) continue;
-    row[idxRS] = newStatus;
-    sh.getRange(r+2, idxRS+1).setValue(newStatus);
-    changed++;
-  }
-
-  if (changed > 0) {
-    bumpSheetCacheVersion_(DATA_SHEET);
-  }  
-
-  _bust(['SNAP_'+dateString+'_'+scope, 'SNAP_'+dateString+'_ALL']);
-  return 'Đã cập nhật ' + changed + ' dòng.';
-}
-
-
-/**
- * Trả về toàn bộ dữ liệu (đÃ format) theo bộ lọc hiện tại để xuất Excel.
- * params: { dateString?: 'dd/MM/yyyy', search?: string }
- */
-function exportRegisteredVehicles(params) {
-  const sheet = SpreadsheetApp.getActive().getSheetByName('VehicleData'); // đổi tên nếu bạn dùng sheet khác
-  const headers = HEADERS_REGISTER; // mảng header của Registered (đang dùng cho DataTable)
-  const range = sheet.getRange(2, 1, Math.max(0, sheet.getLastRow() - 1), headers.length);
-  let allData = range.getValues();
-
-  // --- lọc theo ngày (chấp nhận Date thật hoặc text có/dính dấu ')
-  if (params && params.dateString) {
-    const dateIdx = headers.indexOf('Register Date');
-    allData = allData.filter(row => {
-      const v = row[dateIdx];
-      const cmp = (v instanceof Date)
-        ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-        : String(v).replace(/^'/, '');
-      return cmp === params.dateString;
-    });
-  }
-
-  // --- lọc theo chuỗi tìm kiếm (áp dụng trên toàn hàng đã bóc dấu ')
-  if (params && params.search) {
-    const q = params.search.toLowerCase();
-    allData = allData.filter(row => row.some(cell => String(cell).replace(/^'/, '').toLowerCase().includes(q)));
-  }
-
-  // --- map & format để client đổ thẳng vào Excel
-  const rows = allData.map(row => formatRowForClient_(row, headers));
-  return { headers: headers, rows: rows };
-}
-
-
-
-function exportXpplToTemplateDownload(filter, sessionToken) {
-  const res = getXpplExportData(filter, sessionToken);
-  if (!res || !res.ok) return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
-
-  const { dateString, contractNo, customerName } = res.filter;
-  const rows  = res.rows || [];
-  if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
-
-  // 1) Copy + convert template -> Google Sheet (dễ ghi định dạng)
-  const name = `(${contractNo}_${dateString.replace(/\//g,'-')})-XPPL FORM`;
-  const copied = Drive.Files.copy({ title:name, mimeType: MimeType.GOOGLE_SHEETS }, XPPL_TEMPLATE_ID);
-  const fileId = copied.id;
-  const ss = SpreadsheetApp.openById(fileId);
-
-  try {
-    // Ghi header
-    const rDate = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.REG_DATE);
-    if (rDate) rDate.setValue(dateString);
-
-    const rCus  = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CUSTOMER_NAME);
-    if (rCus) rCus.setValue(customerName);
-
-    const rCon  = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CONTRACT_NO);
-    if (rCon) rCon.setValue(contractNo);
-
-    const rTotal= _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TOTAL_TRUCK);
-    if (rTotal) rTotal.setValue(rows.length);
-
-    // Ghi bảng Truck list
-    const start = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TABLE_START);
-    if (!start) throw new Error('Không tìm thấy TABLE_START / NR_TABLE_START');
-
-    const sh = start.getSheet();
-    const r0 = start.getRow();
-    const c0 = start.getColumn();
-
-    const aoa = rows.map((r,i)=>[
-      i+1,
-      r['Truck Plate']||'',
-      r['Country']||'',
-      r['Wheel']||'',
-      r['Trailer Plate']||'',
-      r['Driver Name']||'',
-      r['ID/Passport']||'',
-      r['Phone number']||'',
-      r['Transportion Company']||'',
-      r['Subcontractor']||''
-    ]);
-    if (aoa.length) sh.getRange(r0, c0, aoa.length, 10).setValues(aoa);
-
-    // 2) Export về XLSX (blob) rồi xoá file tạm để không tăng dung lượng
-    const exportUrl = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx`;
-    const resp = UrlFetchApp.fetch(exportUrl, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions:true });
-    const blob = resp.getBlob().setName(name + '.xlsx');
-
-    // Xoá vĩnh viễn file Google Sheet tạm
-    try { Drive.Files.remove(fileId); } catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(_){ } }
-
-    return { ok:true, filename: blob.getName(), base64: Utilities.base64Encode(blob.getBytes()) };
-
-  } catch (e) {
-    try { Drive.Files.remove(fileId); } catch(_){}
-    return { ok:false, message: 'Xuất thất bại: ' + (e && e.message) };
-  }
-}
-
-// ===== XPPL Weighing Station functions =====
-function saveXpplWeighingData(rows, sessionToken) {
-  const user = requireXpplRole_(sessionToken);
-  if (!rows || !rows.length) throw new Error('Không có dữ liệu.');
-
-  // build valid Contract-Customer set from ContractData
-  const ssMain = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shCon = ssMain.getSheetByName(CONTRACT_SHEET);
-  const lc = shCon.getLastColumn();
-  const head = shCon.getRange(1,1,1,lc).getValues()[0];
-  const idxCNo = head.indexOf('Contract No');
-  const idxCus = head.indexOf('Customer Name');
-  const validSet = new Set();
-  if (idxCNo !== -1 && idxCus !== -1) {
-    const data = shCon.getRange(2,1,Math.max(0, shCon.getLastRow()-1), lc).getValues();
-    data.forEach(r => {
-      const key = String(r[idxCus]).trim() + '|' + String(r[idxCNo]).trim();
-      validSet.add(key);
-    });
-  }
-
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
-  const prefix = Utilities.formatDate(new Date(), tz, 'dd-MM') + '-';
-  let lr = sh.getLastRow();
-  if (lr === 0) {
-    sh.getRange(1, 1, 1, XPPL_DB_HEADERS.length).setValues([XPPL_DB_HEADERS]);
-    applyXpplDbFormats_(sh, 2, Math.max(0, sh.getMaxRows() - 1));    
-    lr = 1;
-  }
-
-  const toSave = rows.map(r => {
-    const key = String(r['Customer Name']||'').trim() + '|' + String(r['Contract No']||'').trim();
-    if (validSet.size && !validSet.has(key)) {
-      throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
-    }
-    const arr = XPPL_DB_HEADERS.map(h => normalizeXpplDbValue_(h, r[h]));
-    arr[0] = sanitizeXpplText_(prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0'));
-    const idxCreateUser = XPPL_DB_HEADERS.indexOf('CreateUser');
-    if (idxCreateUser !== -1) {
-      arr[idxCreateUser] = sanitizeXpplText_(user.username || user.user || user.email || '');
-    }
-    return arr;
-  });
-
-  if (toSave.length) {
-    const startRow = lr + 1;
-    sh.getRange(startRow, 1, toSave.length, XPPL_DB_HEADERS.length).setValues(toSave);
-    applyXpplDbFormats_(sh, startRow, toSave.length);
-  }
-  return 'Đã lưu ' + toSave.length + ' dòng.';
-}
-
-function getXpplWeighingData(filter, sessionToken) {
-  requireXpplRole_(sessionToken);
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) {
-    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
-  }
-  const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
-  const filterDate = s(filter && filter.date);
-  const dateKey = filterDate ? _toDateKey(filterDate) : null;
-  if (!dateKey) {
-    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
-  }
-
-  const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
-  const idxDate = XPPL_DB_HEADERS.indexOf('Date Out');
-  const idxContract = XPPL_DB_HEADERS.indexOf('Contract No');
-  const idxCustomer = XPPL_DB_HEADERS.indexOf('Customer Name');
-  const idxNet = XPPL_DB_HEADERS.indexOf('Net Weight');
-
-  const filterContract = s(filter && filter.contractNo);
-  const filterCustomer = s(filter && filter.customerName);
-
-  const contracts = new Set();
-  const customers = new Set();
-  const rows = [];
-  let totalWeight = 0;
-  data.forEach(r => {
-    const d = _toDateKey(r[idxDate]);
-    if (d !== dateKey) return;
-    const cno = s(r[idxContract]);
-    const cus = s(r[idxCustomer]);
-    const net = Number(r[idxNet]) || 0;
-    contracts.add(cno);
-    customers.add(cus);
-    if (filterContract && filterContract !== cno) return;
-    if (filterCustomer && filterCustomer !== cus) return;
-    rows.push(formatRowForClient_(r, XPPL_DB_HEADERS));
-    totalWeight += net;
-  });
-
-  return {
-    data: rows,
-    summary: { trucks: rows.length, weight: totalWeight },
-    contracts: Array.from(contracts).sort(),
-    customers: Array.from(customers).sort()
-  };
-}
-
-// ===== WEIGHING RESULT HELPERS =====
-function matchTransportionCompanies(filter, sessionToken) {
-  const user = requireXpplRole_(sessionToken);
-  const main = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  const totalLast = totalSh.getLastRow();
-  const totalHead = totalLast > 0 ? totalSh.getRange(1,1,1,totalSh.getLastColumn()).getValues()[0] : [];
-  const idxPlateTL = totalHead.indexOf('Truck Plate');
-  const idxCompTL = totalHead.indexOf('Transportion Company');
-  const plateMap = new Map();
-  if (idxPlateTL > -1 && idxCompTL > -1 && totalLast > 1) {
-    const vals = totalSh.getRange(2,1,totalLast-1,totalSh.getLastColumn()).getValues();
-    vals.forEach(r => {
-      const plate = String(r[idxPlateTL]||'').replace(/\s/g,'').toUpperCase();
-      if (plate) plateMap.set(plate, String(r[idxCompTL]||'').trim());
-    });
-  }
-
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) return 'Không có dữ liệu.';
-
-  const headers = XPPL_DB_HEADERS;
-  const idxTruck = headers.indexOf('Truck No');
-  const idxComp = headers.indexOf('Transportation Company');
-  const idxDate = headers.indexOf('Changed Date');
-  const idxTime = headers.indexOf('Changed Time');
-  const idxUser = headers.indexOf('Username');
-  const idxDateOut = headers.indexOf('Date Out');
-
-  const f = filter || {};
-  const from = _toDateKey(f.dateFrom);
-  const to = _toDateKey(f.dateTo);  
-
-  const data = sh.getRange(2,1,lr-1,headers.length).getValues();
-  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
-  const now = new Date();
-  const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const timeValue = (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400;
-  const uname = sanitizeXpplText_(user.username || user.user || user.email || '');
-
-  const updates = [];
-  data.forEach((r,i) => {
-    const dk = _toDateKey(r[idxDateOut]);
-    if (from && dk < from) return;
-    if (to && dk > to) return;
-    const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
-    const compName = sanitizeXpplText_(plateMap.get(plate) || 'Unknown');
-    r[idxComp] = compName;
-    r[idxDate] = dateValue;
-    r[idxTime] = timeValue;
-    r[idxUser] = uname;
-    updates.push({row: i+2, values: r});
-  });
-
-  if (!updates.length) return 'Không tìm thấy dữ liệu phù hợp.';
-
-  updates.sort((a,b) => a.row - b.row);
-  let start = updates[0].row;
-  let block = [updates[0].values];
-  for (let j = 1; j < updates.length; j++) {
-    const cur = updates[j];
-    const prev = updates[j-1];
-    if (cur.row === prev.row + 1) {
-      block.push(cur.values);
-    } else {
-      sh.getRange(start,1,block.length,headers.length).setValues(block);
-      applyXpplDbFormats_(sh, start, block.length);      
-      start = cur.row;
-      block = [cur.values];
-    }
-  }
-  sh.getRange(start,1,block.length,headers.length).setValues(block);
-  applyXpplDbFormats_(sh, start, block.length);
-
-  return 'Đã đối chiếu ' + updates.length + ' dòng.';
-}
-
-
-function formatWeighResultCell_(header, value) {
-  if (header === 'Register Date' || header === 'Date In' || header === 'Date Out' || header === 'Changed Date') {
-    return formatDateForClient(value);
-  }
-  if (header === 'Time' || header === 'Time In' || header === 'Time Out' || header === 'Changed Time') {
-    return formatTimeForClient(value);
-  }
-  const v = stripLeadingApostrophe(value);
-  return v == null ? '' : v;
-}
-
-function weighResultRowMatchesQuery_(row, headers, queryLower) {
-  for (var i = 0; i < headers.length; i++) {
-    var text = formatWeighResultCell_(headers[i], row[i]);
-    if (text != null && String(text).toLowerCase().indexOf(queryLower) !== -1) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function getWeighResultData(params) {
-  const session = validateSession(params.sessionToken);
-  const sh = SpreadsheetApp.openById(XPPL_DB_ID).getSheetByName(XPPL_DB_SHEET);
-  const headers = XPPL_DB_HEADERS;
-  const lr = sh.getLastRow();  
-  const f = params.filter || {};
-  const from = _toDateKey(f.dateFrom);
-  const to = _toDateKey(f.dateTo);
-  const normalizeListInput = function(value) {
-    if (value == null) return [];
-    if (Array.isArray(value)) {
-      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
-    }
-    const str = String(value == null ? '' : value).trim();
-    return str ? [str] : [];
-  };
-
-  const contractFilter = normalizeListInput(f.contracts);
-  const customerFilter = normalizeListInput(f.customers);
-  const draw = Number(params.draw || 1);
-  const isUser = String(session.role || '').toLowerCase() === 'user';
-  const parseCustomerAssignment = function(value) {
-    if (value == null) return [];
-    if (Array.isArray(value)) {
-      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
-    }
-    return String(value)
-      .split(/[\r\n;|]+/)
-      .map(function(v){ return v.trim(); })
-      .filter(function(v){ return v; });
-  };
-  const assignedCustomerNames = isUser
-    ? parseCustomerAssignment(session.customerName || session.customerNames)
-    : [];
-  const uniqueSortedList = function(list) {
-    if (!Array.isArray(list)) return [];
-    const seen = new Set();
-    const out = [];
-    for (var i = 0; i < list.length; i++) {
-      var val = String(list[i] == null ? '' : list[i]).trim();
-      if (!val) continue;
-      var key = val.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(val);
-    }
-    return out.sort(function(a, b) {
-      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-    });
-  };
-  const buildEmpty = function(customerNames) {
-    return {
-      draw: draw,
-      recordsTotal: 0,
-      recordsFiltered: 0,
-      data: [],
-      counts: { unassigned: 0, unknown: 0, assigned: 0 },
-      summary: { trucks: 0, weight: 0 },
-      options: {
-        contracts: [],
-        customers: uniqueSortedList(customerNames)
-      }
-    };
-  };
-
-  if (!from && !to && !contractFilter.length && !customerFilter.length && !(params.search && params.search.value)) {
-    return buildEmpty(isUser ? assignedCustomerNames : null);
-  }
-
-  if (lr < 2) {
-   return buildEmpty(isUser ? assignedCustomerNames : null);
-  }
-
-  const idxDateOut = headers.indexOf('Date Out');
-  const idxContract = headers.indexOf('Contract No');
-  const idxCompany = headers.indexOf('Transportation Company');
-  const idxCustomer = headers.indexOf('Customer Name');
-  const idxNetWeight = headers.indexOf('Net Weight');
-  if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
-   return buildEmpty(isUser ? assignedCustomerNames : null);
-  }
-
-  let rows = [];
-
-  if (from || to) {
-    const dateValues = sh.getRange(2, idxDateOut + 1, lr - 1, 1).getValues();
-    let start = 0;
-    let end = dateValues.length - 1;
-    if (from) {
-      while (start <= end && _toDateKey(dateValues[start][0]) < from) start++;
-    }
-    if (to) {
-      while (end >= start && _toDateKey(dateValues[end][0]) > to) end--;
-    }
-    if (end >= start) {
-      rows = sh.getRange(start + 2, 1, end - start + 1, headers.length).getValues();
-    }
-  } else {
-    rows = sh.getRange(2, 1, lr - 1, headers.length).getValues();    
-  }
-
-  if (!rows.length) {
-    var fallbackCustomers = null;
-    if (isUser) {
-      fallbackCustomers = assignedCustomerNames.length ? assignedCustomerNames : customerFilter;
-    }
-    return buildEmpty(fallbackCustomers);
-  }
-
-  const assignedCustomerLowerSet = assignedCustomerNames.length
-    ? new Set(assignedCustomerNames.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
-    : null;
-  const requestedCustomerLowerSet = customerFilter.length
-    ? new Set(customerFilter.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
-    : null;
-
-  let accessibleCustomerLowerSet = null;
-  let accessibleCustomerNamesForOptions = [];
-  if (isUser) {
-    if (assignedCustomerLowerSet && assignedCustomerLowerSet.size) {
-      accessibleCustomerLowerSet = assignedCustomerLowerSet;
-      accessibleCustomerNamesForOptions = assignedCustomerNames.slice();
-    } else if (requestedCustomerLowerSet && requestedCustomerLowerSet.size) {
-      accessibleCustomerLowerSet = requestedCustomerLowerSet;
-      accessibleCustomerNamesForOptions = customerFilter.slice();
-    } else {
-      return buildEmpty(assignedCustomerNames);
-    }
-  }    
-
-  let filterCustomerLowerSet = null;
-  if (isUser) {
-    if (assignedCustomerLowerSet && assignedCustomerLowerSet.size) {
-      if (requestedCustomerLowerSet && requestedCustomerLowerSet.size) {
-        const intersection = [];
-        requestedCustomerLowerSet.forEach(function(name){
-          if (assignedCustomerLowerSet.has(name)) {
-            intersection.push(name);
-          }
-        });
-        filterCustomerLowerSet = new Set(intersection);
-        if (filterCustomerLowerSet.size === 0) {
-          return buildEmpty(accessibleCustomerNamesForOptions.length ? accessibleCustomerNamesForOptions : assignedCustomerNames);
-        }
-      } else {
-        filterCustomerLowerSet = assignedCustomerLowerSet;
-      }
-    } else {
-      filterCustomerLowerSet = requestedCustomerLowerSet;
-    }
-  } else {
-    filterCustomerLowerSet = requestedCustomerLowerSet;
-  }
-
-  const restrictByCustomer = Boolean(accessibleCustomerLowerSet && accessibleCustomerLowerSet.size);
-
-  const contractSet = contractFilter.length
-    ? new Set(contractFilter.map(function(v){ return String(v); }))
-    : null;
-  const customerSet = filterCustomerLowerSet && filterCustomerLowerSet.size
-    ? filterCustomerLowerSet
-    : null;
-
-  const baseRows = [];
-  const optionContracts = new Set();
-  const optionCustomers = new Set();
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var dateKey = _toDateKey(row[idxDateOut]);
-    if (from && (!dateKey || dateKey < from)) continue;
-    if (to && (!dateKey || dateKey > to)) continue;
-
-    var rowContract = String(stripLeadingApostrophe(row[idxContract]) || '').trim();
-    var rowCustomer = String(stripLeadingApostrophe(row[idxCustomer]) || '').trim();
-    var rowCustomerKey = rowCustomer.toLowerCase();
-
-    if (restrictByCustomer && (!rowCustomerKey || !accessibleCustomerLowerSet.has(rowCustomerKey))) continue;
-  
-    if (rowContract) optionContracts.add(rowContract);
-    if (rowCustomer) optionCustomers.add(rowCustomer);
-
-    if (contractSet && !contractSet.has(rowContract)) continue;
-    if (customerSet && (!rowCustomerKey || !customerSet.has(rowCustomerKey))) continue;
-
-    baseRows.push(row);
-  }
-
-  var availableContracts = Array.from(optionContracts).sort(function(a, b) {
-    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-  });
-  var availableCustomers = Array.from(optionCustomers).sort(function(a, b) {
-    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-  });
-  if (!availableCustomers.length && accessibleCustomerNamesForOptions.length) {
-    availableCustomers = uniqueSortedList(accessibleCustomerNamesForOptions);
-  }
-
-  var totalRecords = baseRows.length;
   if (!totalRecords) {
-    return {
-      draw: draw,
-      recordsTotal: 0,
-      recordsFiltered: 0,
-      data: [],
-      counts: { unassigned: 0, unknown: 0, assigned: 0 },
-      summary: { trucks: 0, weight: 0 },      
-      options: { contracts: availableContracts, customers: availableCustomers }
-    };
+    Swal.fire(t.no_data_title || 'Không có dữ liệu', t.wr_no_matching_data_message || 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
+    return;
   }
 
-  const searchValue = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
-  let filteredForSearch = baseRows;
-  if (searchValue) {
-    filteredForSearch = [];
-    for (var j = 0; j < baseRows.length; j++) {
-      if (weighResultRowMatchesQuery_(baseRows[j], headers, searchValue)) {
-        filteredForSearch.push(baseRows[j]);
+  const reqLength = Math.max(0, Number(totalRecords));
+
+  const extra = {};
+  const tableId = table.table().node().id;
+  if (tableId === 'wr-unknown-table') {
+    extra.onlyUnknown = true;
+  } else if (tableId === 'wr-result-table') {
+    extra.excludeUnknown = true;
+  }
+
+  showLoading(t.wr_exporting_data || 'Đang xuất dữ liệu...');
+
+  const req = {
+    draw: 0,
+    start: 0,
+    length: reqLength,
+    search: { value: searchValue },
+    order: order,
+    sessionToken: userSession.token,
+    filter: getWrFilters(),
+    ...extra
+  };
+
+  callServerWithRetry('getWeighResultData', [req], {
+    attempts: 3,
+    initialDelay: 700,
+    onSuccess: res => {
+      Swal.close();
+      const rows = (res && Array.isArray(res.data)) ? res.data : [];
+      if (!rows.length) {
+        const t2 = translations[currentLang] || translations.vi || {};
+        Swal.fire(t2.no_data_title || 'Không có dữ liệu', t2.wr_no_matching_data_message || 'Không có bản ghi phù hợp với bộ lọc hiện tại.', 'info');
+        return;
       }
-    }
-  }
 
-  const counts = { unassigned: 0, unknown: 0, assigned: 0 };
-  let totalWeight = 0;  
-  for (var k = 0; k < filteredForSearch.length; k++) {
-    var comp = String(stripLeadingApostrophe(filteredForSearch[k][idxCompany]) || '').trim();
-    if (!comp) counts.unassigned++;
-    else if (comp.toLowerCase() === 'unknown') counts.unknown++;
-    else counts.assigned++;
+      const data = rows.map(row => visibleIdx.map(i => {
+        const def = colDefs[i] || {};
+        const key = def.data;
+        if (typeof key === 'function') {
+          try { return key(row); }
+          catch (err) { return ''; }
+        }
+        return key ? (row[key] ?? '') : '';
+      }));
 
-    if (idxNetWeight > -1) {
-      var rawWeight = stripLeadingApostrophe(filteredForSearch[k][idxNetWeight]);
-      if (typeof rawWeight === 'string') {
-        rawWeight = rawWeight.replace(/,/g, '');
+      const sheetData = [headers, ...data];
+      const sheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+      const range = XLSX.utils.decode_range(sheet['!ref']);
+      const border = {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } }
+      };
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = sheet[cellRef];
+          if (!cell) continue;
+          cell.s = cell.s || {};
+          cell.s.border = border;
+        }
       }
-      var weightNum = Number(rawWeight);
-      if (Number.isFinite(weightNum)) {
-        totalWeight += weightNum;
-      }
-    }    
-  }
 
-  let filtered = filteredForSearch;
-  if (params.onlyUnknown) {
-    filtered = filtered.filter(function(row) {
-      var comp = String(stripLeadingApostrophe(row[idxCompany]) || '').trim().toLowerCase();
-      return comp === 'unknown';
-    });
-  } else if (params.excludeUnknown) {
-    filtered = filtered.filter(function(row) {
-      var comp = String(stripLeadingApostrophe(row[idxCompany]) || '').trim().toLowerCase();
-      return comp !== 'unknown';
-    });
-  }
-
-  const order = Array.isArray(params.order) ? params.order[0] : null;
-  if (order && order.column != null) {
-    const offset = session.role === 'admin' ? 2 : 0;
-    const idx = Number(order.column) - offset;
-    if (idx >= 0 && idx < headers.length) {
-      const dir = (order.dir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
-      filtered.sort(function(a, b) {
-        const va = formatWeighResultCell_(headers[idx], a[idx]);
-        const vb = formatWeighResultCell_(headers[idx], b[idx]);
-        return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
+      const colWidths = headers.map((header, idx) => {
+        let maxLen = header ? header.length : 0;
+        for (let r = 0; r < data.length; r++) {
+          const val = data[r][idx];
+          const len = (val == null) ? 0 : String(val).length;
+          if (len > maxLen) maxLen = len;
+        }
+        const wch = Math.min(Math.max(maxLen + 2, 10), 60);
+        return { wch };
       });
+      sheet['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, sheet, name);
+      XLSX.writeFile(wb, `${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    },
+    onFailure: err => {
+      Swal.close();
+      showError(err);
     }
-  }
-
-  const start = Math.max(0, Number(params.start || 0));
-  const length = Math.max(0, Number(params.length || 50));
-  const pageRows = filtered.slice(start, start + length);
-  const data = pageRows.map(function(row) {
-    return formatRowForClient_(row, headers);
   });
+}
 
+function normalizeDtResponse(res, draw){
+  if (!res || typeof res !== 'object') {
+    return { draw, recordsTotal:0, recordsFiltered:0, data:[] };
+  }
   return {
-    draw: draw,
-    recordsTotal: totalRecords,
-    recordsFiltered: filtered.length,
-    data: data,
-    counts: counts,
-    summary: { trucks: filteredForSearch.length, weight: totalWeight },    
-    options: { contracts: availableContracts, customers: availableCustomers }
+    draw: Number(res.draw ?? draw ?? 1),
+    recordsTotal: Number(res.recordsTotal ?? 0),
+    recordsFiltered: Number(res.recordsFiltered ?? res.recordsTotal ?? 0),
+    data: Array.isArray(res.data) ? res.data : []
   };
 }
 
-function updateWeighResultCompany(payload, sessionToken) {
-  const user = requireAdmin_(sessionToken);
-  const { ID, 'Transportation Company': company } = payload || {};
-  if (!ID) throw new Error('Thiếu ID.');
+function buildWeighResultTables(isAdmin) {
+  const headers = ['ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out','Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name','DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo','ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode','Note','CreateUser','Transportation Company','Changed Date','Changed Time','Username'];
 
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) throw new Error('Không có dữ liệu.');
+  if ($.fn.DataTable.isDataTable('#wr-result-table')) $('#wr-result-table').DataTable().destroy();
+  const resWrap = $('#wr-result-table').parent();  
 
-  const ids = sh.getRange(2,1,lr-1,1).getValues().flat();
-  const rowIdx = ids.indexOf(ID);
-  if (rowIdx === -1) throw new Error('Không tìm thấy ID.');
+  let cols = [];
+  if (isAdmin) {
+    const selectAllLabel = (translations[currentLang] && translations[currentLang].select_all_checkbox) || 'Select all';
+    cols.push({
+      data: null,
+      title: `<input type="checkbox" class="form-check-input" id="wr-select-all" aria-label="${selectAllLabel}" title="${selectAllLabel}">`,
+      orderable: false,
+      className: 'no-export text-center',
+      render: () => `<input type="checkbox" class="row-checkbox form-check-input">`
+    });
+    cols.push({ data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>`});
+  }
+  cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID' ) ? { data: row => row[h], title:h } : { data:h, title:h }));
 
-  const idxComp = XPPL_DB_HEADERS.indexOf('Transportation Company') + 1;
-  const idxDate = XPPL_DB_HEADERS.indexOf('Changed Date') + 1;
-  const idxTime = XPPL_DB_HEADERS.indexOf('Changed Time') + 1;
-  const idxUser = XPPL_DB_HEADERS.indexOf('Username') + 1;
-  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
-  const now = new Date();
+  const resTable = `<table id="wr-result-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${cols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+  resWrap.html(resTable);
+  $('#wr-result-table').data('wrColumns', cols);  
 
-  const sanitizedCompany = sanitizeXpplText_(company);
-  const userLabel = sanitizeXpplText_(user.username || user.user || user.email || '');
-  const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const timeValue = (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400;
+  wrResultTable = $('#wr-result-table').DataTable({
+    processing:true,
+    serverSide:true,
+    pageLength:50,
+    autoWidth:false,
+    deferRender:true,
+    columnDefs:[{ targets:'_all', className:'text-nowrap' }],
+    ajax: function(dtReq, callback){
+      const req = {
+        draw: dtReq.draw,
+        start: dtReq.start,
+        length: dtReq.length,
+        search: dtReq.search,
+        order: dtReq.order,
+        sessionToken: userSession.token,
+        filter: getWrFilters(),
+        excludeUnknown: true
+      };
+      callServerWithRetry('getWeighResultData', [req], {
+        attempts: 3,
+        initialDelay: 700,
+        onSuccess: res => {
+          updateWrSummary(res && res.counts, res && res.summary);
+          if (res && res.options) updateWrAdvancedFilters(res.options);
+          const dtRes = {
+            draw: Number(res && res.draw) || dtReq.draw || 0,
+            recordsTotal: Number(res && res.recordsTotal) || 0,
+            recordsFiltered: Number(res && res.recordsFiltered) || 0,
+            data: (res && res.data) || []
+          };
+          callback(dtRes);
+        },
+        onFailure: err => {
+          showError(err);
+          callback({ draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: [] });
+        }
+      });
+    },
+    columns: cols,
+    drawCallback:function(){ this.api().columns.adjust(); }    
+  });
+  wrResultTable.columns.adjust();
 
-  sh.getRange(rowIdx + 2, idxComp).setValue(sanitizedCompany);
-  sh.getRange(rowIdx + 2, idxDate).setValue(dateValue);
-  sh.getRange(rowIdx + 2, idxTime).setValue(timeValue);
-  sh.getRange(rowIdx + 2, idxUser).setValue(userLabel);
-  applyXpplDbFormats_(sh, rowIdx + 2, 1);
+  $('#wr-result-table tbody').off('click','.wr-edit').on('click','.wr-edit', function(){
+    if (!isAdmin) return;
+    const row = wrResultTable.row($(this).closest('tr')).data();
+    if (!row) return;
+    showWrEditDialog(row);
+  });
 
-  return 'Đã cập nhật.';
+  if (isAdmin) {
+    const $wrDelete = $('#wr-delete');
+    const $wrSelectAll = $('#wr-select-all');
+
+    const updateResultSelectionState = () => {
+      if (!wrResultTable) return;
+      const nodes = wrResultTable.rows({ page: 'current' }).nodes();
+      const $rows = $(nodes);
+      const selectedCount = $rows.filter('.selected').length;
+      const totalRows = $rows.length;
+      const disableDelete = selectedCount === 0;
+      if ($wrDelete.length) {
+        $wrDelete.prop('disabled', disableDelete).toggleClass('disabled', disableDelete);
+      }
+      if ($wrSelectAll.length) {
+        if (!totalRows) {
+          $wrSelectAll.prop({ checked: false, indeterminate: false });
+        } else if (selectedCount === totalRows) {
+          $wrSelectAll.prop({ checked: true, indeterminate: false });
+        } else if (selectedCount === 0) {
+          $wrSelectAll.prop({ checked: false, indeterminate: false });
+        } else {
+          $wrSelectAll.prop({ checked: false, indeterminate: true });
+        }
+      }
+    };
+
+    $('#wr-result-table').off('draw.dt.selection').on('draw.dt.selection', () => updateResultSelectionState());
+
+    if ($wrSelectAll.length) {
+      $wrSelectAll.prop({ checked: false, indeterminate: false });
+      $wrSelectAll.off('change').on('change', function(){
+        const isChecked = $(this).prop('checked');
+        const nodes = wrResultTable.rows({ page: 'current' }).nodes();
+        const $rows = $(nodes);
+        $rows.toggleClass('selected', isChecked);
+        $rows.find('.row-checkbox').prop('checked', isChecked);
+        updateResultSelectionState();
+      });
+    }
+
+    $('#wr-result-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
+      $(this).closest('tr').toggleClass('selected', this.checked);
+      updateResultSelectionState();
+    });
+
+    updateResultSelectionState();
+  } else {
+    $('#wr-result-table tbody').off('change','.row-checkbox');
+  }
+
+  if (isAdmin) {
+    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) $('#wr-unknown-table').DataTable().destroy();
+    const uWrap = $('#wr-unknown-table').parent();
+    const uHeaders = ['ID','Truck No','Date Out','Net Weight','Customer Name','ContractNo','Transportation Company','Changed Date','Changed Time','Username'];
+    const unknownSelectAllLabel = (translations[currentLang] && translations[currentLang].select_all_checkbox) || 'Select all';    
+    let uCols = [
+      { data:null, title:`<input type="checkbox" class="form-check-input" id="wru-select-all" aria-label="${unknownSelectAllLabel}" title="${unknownSelectAllLabel}">`, orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
+      { data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>`}
+    ];
+    uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
+    const uTable = `<table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${uCols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+    uWrap.html(uTable);
+    $('#wr-unknown-table').data('wrColumns', uCols);
+
+    wrUnknownTable = $('#wr-unknown-table').DataTable({
+      processing:true,
+      serverSide:true,
+      pageLength:50,
+      autoWidth:false,
+      deferRender:true,
+      columnDefs:[{ targets:'_all', className:'text-nowrap' }],
+  
+      ajax: function(dtReq, callback){
+        const req = {
+          draw: dtReq.draw,
+          start: dtReq.start,
+          length: dtReq.length,
+          search: dtReq.search,
+          order: dtReq.order,
+          sessionToken: userSession.token,
+          filter: getWrFilters(),
+          onlyUnknown: true
+        };
+        callServerWithRetry('getWeighResultData', [req], {
+          attempts: 3,
+          initialDelay: 700,
+          onSuccess: res => {
+            updateWrSummary(res && res.counts, res && res.summary);
+            if (res && res.options) updateWrAdvancedFilters(res.options);
+            const dtRes = {
+              draw: Number(res && res.draw) || dtReq.draw || 0,
+              recordsTotal: Number(res && res.recordsTotal) || 0,
+              recordsFiltered: Number(res && res.recordsFiltered) || 0,
+              data: (res && res.data) || []
+            };
+            callback(dtRes);
+          },
+          onFailure: err => {
+            showError(err);
+            callback({ draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: [] });
+          }
+        });
+      },
+      columns: uCols,
+      drawCallback:function(){ this.api().columns.adjust(); }
+    });
+    wrUnknownTable.columns.adjust();
+
+    const $unknownDelete = $('#wr-unknown-delete');
+    const $unknownSelectAll = $('#wru-select-all');
+
+    const updateUnknownSelectionState = () => {
+      if (!wrUnknownTable) return;
+      const nodes = wrUnknownTable.rows({ page: 'current' }).nodes();
+      const $rows = $(nodes);
+      const selectedCount = $rows.filter('.selected').length;
+      const totalRows = $rows.length;
+      const disableDelete = selectedCount === 0;
+      if ($unknownDelete.length) {
+        $unknownDelete.prop('disabled', disableDelete).toggleClass('disabled', disableDelete);
+      }
+      if ($unknownSelectAll.length) {
+        if (!totalRows) {
+          $unknownSelectAll.prop({ checked: false, indeterminate: false });
+        } else if (selectedCount === totalRows) {
+          $unknownSelectAll.prop({ checked: true, indeterminate: false });
+        } else if (selectedCount === 0) {
+          $unknownSelectAll.prop({ checked: false, indeterminate: false });
+        } else {
+          $unknownSelectAll.prop({ checked: false, indeterminate: true });
+        }
+      }
+    };
+
+    $('#wr-unknown-table').off('draw.dt.selection').on('draw.dt.selection', () => updateUnknownSelectionState());
+
+    if ($unknownSelectAll.length) {
+      $unknownSelectAll.prop({ checked: false, indeterminate: false });
+      $unknownSelectAll.off('change').on('change', function(){
+        const isChecked = $(this).prop('checked');
+        const nodes = wrUnknownTable.rows({ page: 'current' }).nodes();
+        const $rows = $(nodes);
+        $rows.toggleClass('selected', isChecked);
+        $rows.find('.row-checkbox').prop('checked', isChecked);
+        updateUnknownSelectionState();
+      });
+    }
+
+    $('#wr-unknown-table tbody').off('change','.row-checkbox').on('change','.row-checkbox', function(){
+      $(this).closest('tr').toggleClass('selected', this.checked);
+    });
+      updateUnknownSelectionState();    
+
+    $('#wr-unknown-table tbody').off('click','.wru-edit').on('click','.wru-edit', function(){
+      const row = wrUnknownTable.row($(this).closest('tr')).data();
+      if (!row) return;
+      showWrEditDialog(row);
+    });
+
+    updateUnknownSelectionState();    
+  }
 }
 
-function deleteWeighResults(ids, sessionToken) {
-  const user = requireAdmin_(sessionToken);
-  if (!Array.isArray(ids) || !ids.length) return 'Không có ID.';
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) return 'Không có dữ liệu.';
-  const idList = sh.getRange(2,1,lr-1,1).getValues().flat();
-  const rows = ids.map(id => idList.indexOf(id)).filter(i => i !== -1).map(i => i + 2).sort((a,b) => b - a);
-  rows.forEach(r => sh.deleteRow(r));
-  return 'Đã xoá ' + rows.length + ' dòng.';
+function showWrEditDialog(row){
+  const opts = ['Unknown', ...(window.__wrCompanyList || [])]
+    .map(v => `<option value="${esc(v)}" ${v === (row['Transportation Company']||'') ? 'selected' : ''}>${esc(v)}</option>`)
+    .join('');
+  const t = translations[currentLang] || translations.vi || {};    
+  Swal.fire({
+    title: t.wr_update_company_title || 'Cập nhật đơn vị vận chuyển',
+    html: `<select id="sw-wr-company" class="form-select">${opts}</select>`,
+    focusConfirm:false,
+    preConfirm: () => $('#sw-wr-company').val()
+  }).then(res => {
+    if (!res.isConfirmed) return;
+    const t2 = translations[currentLang] || translations.vi || {};
+    showLoading(t2.loading_updating || 'Đang cập nhật...');
+    google.script.run
+      .withSuccessHandler(msg => {
+        Swal.close();
+        const t3 = translations[currentLang] || translations.vi || {};
+        Swal.fire(t3.success_title || 'Thành công', msg, 'success');
+        reloadWrTables();
+      })
+      .withFailureHandler(showError)
+      .updateWeighResultCompany({ ID: row.ID, 'Transportation Company': res.value }, userSession.token);
+  });
 }
 
-/*** END ***/
+
+$(document).off('click', '#total-list-exportBtn').on('click', '#total-list-exportBtn', exportTotalListExcel);
+</script>
