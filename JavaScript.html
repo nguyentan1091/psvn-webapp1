@@ -2302,8 +2302,9 @@ function validateAndTransformData(dataRows) {
         });
 
         const dateParseResult = parseExcelDateDetailed(record['Register Date'], {
-            expectedDate: isUserRole ? tomorrow : (isAdmin ? null : tomorrow),
-            strictAmbiguity: isUserRole
+            expectedDate: isAdmin ? null : tomorrow,
+            strictAmbiguity: isUserRole,
+            requireExpected: isUserRole
         });
 
         if (!dateParseResult.date) {
@@ -2317,14 +2318,23 @@ function validateAndTransformData(dataRows) {
             }
         } else {
             const dateStr = getFormattedDate(dateParseResult.date);
-            if (!isAdmin) {
-                if (currentHour >= 8 && currentHour < 16) {
-                    if (dateStr !== tomorrowStr) {
-                        appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
+            const isTomorrow = dateStr === tomorrowStr;
+
+            if (isUserRole) {
+                if (!isTomorrow) {
+                    appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
+                }
+                record['Register Date'] = tomorrowStr;
+            } else {
+                if (!isAdmin) {
+                    if (currentHour >= 8 && currentHour < 16) {
+                        if (!isTomorrow) {
+                            appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
+                        }
                     }
+                record['Register Date'] = dateStr;                    
                 }
             }
-            record['Register Date'] = dateStr;
         }
 
         if (record['Truck Plate'].length > 11) {
