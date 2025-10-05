@@ -588,6 +588,7 @@ const translations = {
     "invalid_data_title": "Dữ liệu không hợp lệ!",
     "file_no_data_error": "File không có dữ liệu.",
     "validation_required": "- Cột '{field}' không được để trống.",
+    "validation_ambiguous_date": "- Cột '{field}' có định dạng ngày không xác định rõ (dd/MM/yyyy hay MM/dd/yyyy). Vui lòng kiểm tra lại.",    
     "validation_invalid_date": "- Cột '{field}' có định dạng ngày không hợp lệ.",
     "validation_only_tomorrow": "- Cột '{field}' chỉ chấp nhận ngày mai.",
     "validation_max_length": "- Cột '{field}' không được vượt quá {max} ký tự.",
@@ -868,6 +869,7 @@ const translations = {
     "file_no_data_error": "The file has no data.",
     "validation_required": "- Column '{field}' cannot be empty.",
     "validation_invalid_date": "- Column '{field}' has an invalid date format.",
+    "validation_ambiguous_date": "- Column '{field}' has an ambiguous date format (dd/MM/yyyy vs MM/dd/yyyy). Please verify.",
     "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
     "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
     "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
@@ -2236,6 +2238,8 @@ function validateAndTransformData(dataRows) {
     
     const allowedStatus = ['RO', 'CO', 'PM', 'CM', 'AC', 'ND'];
     const allowedCountries = ['Vietnam', 'Laos'];
+    const isAdmin = isRole('admin');
+    const isUserRole = isRole('user');    
 
     const t = translations[currentLang];
     const formatMessage = (template, replacements = {}) => {
@@ -2297,12 +2301,23 @@ function validateAndTransformData(dataRows) {
             }
         });
 
-        const parsedDate = parseExcelDate(record['Register Date']);
-        if (!parsedDate) {
-            appendError('Register Date', t.validation_invalid_date || "- Cột '{field}' có định dạng ngày không hợp lệ.", { field: columnNames['Register Date'] });
+        const dateParseResult = parseExcelDateDetailed(record['Register Date'], {
+            expectedDate: isUserRole ? tomorrow : (isAdmin ? null : tomorrow),
+            strictAmbiguity: isUserRole
+        });
+
+        if (!dateParseResult.date) {
+            const errorCode = dateParseResult.errorCode;
+            if (errorCode === 'ambiguous') {
+                appendError('Register Date', t.validation_ambiguous_date || "- Cột '{field}' có định dạng ngày không xác định rõ (dd/MM/yyyy hay MM/dd/yyyy). Vui lòng kiểm tra lại.", { field: columnNames['Register Date'] });
+            } else if (errorCode === 'unexpected') {
+                appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
+            } else {
+                appendError('Register Date', t.validation_invalid_date || "- Cột '{field}' có định dạng ngày không hợp lệ.", { field: columnNames['Register Date'] });
+            }
         } else {
-            const dateStr = getFormattedDate(parsedDate);
-            if (!isRole('admin')) {
+            const dateStr = getFormattedDate(dateParseResult.date);
+            if (!isAdmin) {
                 if (currentHour >= 8 && currentHour < 16) {
                     if (dateStr !== tomorrowStr) {
                         appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
@@ -2344,7 +2359,7 @@ function validateAndTransformData(dataRows) {
             appendError('Vehicle Status', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Vehicle Status'], values: allowedStatus.join(', ') });
         }
         
-        if (isRole('user')) {
+        if (isUserRole) {
             if (record['Transportion Company'] && record['Transportion Company'] !== userSession.contractor) {
                 appendError('Transportion Company', t.validation_contractor_mismatch || '- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).', { contractor: userSession.contractor });
             }
@@ -3885,32 +3900,140 @@ function normalizeRegisterDateValue(value) {
     return parsed ? getFormattedDate(parsed) : '';
 }
 
-function parseExcelDate(excelDate) {
-    if (typeof excelDate === 'number') {
-        return new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+function normalizeToUtcDate(date) {
+    if (!(date instanceof Date) || isNaN(date)) return null;
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function toUtcDateKey(date) {
+    const normalized = normalizeToUtcDate(date);
+    if (!normalized) return '';
+    const y = normalized.getUTCFullYear();
+    const m = String(normalized.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(normalized.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function createUtcDate(year, month, day) {
+    if (typeof year !== 'number' || !isFinite(year) || typeof month !== 'number' || !isFinite(month) || typeof day !== 'number' || !isFinite(day)) return null;
+    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+        return null;
     }
-    if (typeof excelDate === 'string') {
-        const parts = excelDate.match(/(\d+)/g);
-        if (parts && parts.length === 3) {
-            let day, month, year;
-            if (parts[2].length === 4) {
-                year = parseInt(parts[2], 10);
-                month = parseInt(parts[1], 10);
-                day = parseInt(parts[0], 10);
-            } else {
-                 year = parseInt(parts[0], 10);
-                 month = parseInt(parts[1], 10);
-                 day = parseInt(parts[2], 10);
+    return date;
+}
+
+function collectExcelDateCandidates(value) {
+    const candidates = new Map();
+
+    const addCandidate = (date, format) => {
+        const normalized = normalizeToUtcDate(date);
+        if (!normalized) return;
+        const key = toUtcDateKey(normalized);
+        if (!key || candidates.has(key)) return;
+        candidates.set(key, { date: normalized, format: format || 'unknown', key });
+    };
+
+    if (value instanceof Date && !isNaN(value)) {
+        addCandidate(value, 'dateObject');
+    } else if (typeof value === 'number' && isFinite(value)) {
+        const millis = Math.round((value - 25569) * 86400 * 1000);
+        addCandidate(new Date(millis), 'serial');
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+            const sanitized = trimmed.replace(/^'+/, '').replace(/"/g, '');
+            const digitParts = sanitized.match(/(\d{1,4})/g);
+
+            if (digitParts && digitParts.length === 3) {
+                const numbers = digitParts.map(part => parseInt(part, 10));
+                const lengths = digitParts.map(part => part.length);
+
+                const addFromParts = (year, month, day, format) => {
+                    const candidate = createUtcDate(year, month, day);
+                    if (candidate) addCandidate(candidate, format);
+                };
+
+                if (lengths[0] === 4) {
+                    addFromParts(numbers[0], numbers[1], numbers[2], 'YMD');
+                } else if (lengths[2] === 4) {
+                    addFromParts(numbers[2], numbers[1], numbers[0], 'DMY');
+                    addFromParts(numbers[2], numbers[0], numbers[1], 'MDY');
+                } else if (lengths[1] === 4) {
+                    addFromParts(numbers[1], numbers[0], numbers[2], 'DMY');
+                    addFromParts(numbers[1], numbers[2], numbers[0], 'MDY');
+                } else {
+                    addFromParts(numbers[2], numbers[1], numbers[0], 'DMY');
+                    addFromParts(numbers[2], numbers[0], numbers[1], 'MDY');
+                }
             }
-            if (day > 0 && month > 0 && year > 1900) {
-                return new Date(Date.UTC(year, month - 1, day));
+
+            const fallback = new Date(sanitized);
+            if (!isNaN(fallback)) {
+                addCandidate(fallback, 'native');
             }
         }
     }
-    const date = new Date(excelDate);
-    if (!isNaN(date)) return date;
 
-    return null;
+    return Array.from(candidates.values());
+}
+
+function parseExcelDateDetailed(excelDate, options = {}) {
+    const preferDayFirst = options.preferDayFirst !== false;
+    const strictAmbiguity = Boolean(options.strictAmbiguity);
+    const requireExpected = Boolean(options.requireExpected);
+    const expectedDate = options.expectedDate instanceof Date && !isNaN(options.expectedDate)
+        ? normalizeToUtcDate(options.expectedDate)
+        : null;
+    const expectedKey = expectedDate ? toUtcDateKey(expectedDate) : '';
+
+    const candidates = collectExcelDateCandidates(excelDate);
+    if (!candidates.length) {
+        return { date: null, errorCode: 'invalid' };
+    }
+
+    let matching = [];
+    if (expectedKey) {
+        matching = candidates.filter(candidate => candidate.key === expectedKey);
+        if (matching.length === 1) {
+            return { date: matching[0].date, errorCode: null };
+        }
+        if (matching.length > 1) {
+            return { date: matching[0].date, errorCode: null };
+        }
+        if (requireExpected) {
+            return { date: null, errorCode: 'unexpected' };
+        }
+    }
+
+    if (candidates.length === 1) {
+        return { date: candidates[0].date, errorCode: null };
+    }
+
+    if (matching.length === 1) {
+        return { date: matching[0].date, errorCode: null };
+    }
+
+    if (strictAmbiguity) {
+        return { date: null, errorCode: 'ambiguous' };
+    }
+
+    if (preferDayFirst) {
+        const dmy = candidates.find(candidate => candidate.format === 'DMY');
+        if (dmy) {
+            return { date: dmy.date, errorCode: null };
+        }
+    }
+
+    return { date: candidates[0].date, errorCode: null };
+}
+
+function parseExcelDate(excelDate, options) {
+    const result = parseExcelDateDetailed(excelDate, options || {});
+    return result.date || null;    
 }
 
 
