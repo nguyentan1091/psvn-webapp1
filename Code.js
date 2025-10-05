@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
+const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
@@ -104,8 +104,8 @@ const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
 
 // ================= SUPABASE CONFIGURATION =================
-const SUPABASE_URL = 'https://medlgvtmhujuqdvceaoz.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lZGxndnRtaHVqdXFkdmNlYW96Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODg5NzY5NSwiZXhwIjoyMDc0NDczNjk1fQ.h-hVavhpp_NbJ4tiaFTPJBQsdS0SNfpndQeGp-eyFAo';
+const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
 const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
 const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
@@ -936,6 +936,18 @@ function checkRegistrationTime() {
   }
   return status;
 }
+
+function getVietnamCurrentTime() {
+  const timezone = 'Asia/Ho_Chi_Minh';
+  const now = new Date();
+  return {
+    epochMillis: now.getTime(),
+    isoDate: Utilities.formatDate(now, timezone, 'yyyy-MM-dd'),
+    dateString: Utilities.formatDate(now, timezone, 'dd/MM/yyyy'),
+    timeString: Utilities.formatDate(now, timezone, 'HH:mm:ss')
+  };
+}
+
 
 // =================================================================
 // XỬ LÝ DỮ LIỆU PHÍA MÁY CHỦ (SERVER-SIDE)
