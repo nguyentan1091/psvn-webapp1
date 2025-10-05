@@ -35,11 +35,15 @@ const SESSION_STORAGE_KEY = 'psvn_userSession';
 const DEFAULT_RETRY_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY = 700;
 const MAX_RETRY_DELAY = 5000;
+const VIETNAM_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 let wrReloadTimer = null;
 
 let serverBusyToastEl = null;
 let serverBusyToastTimer = null;
+
+let vietnamTimeState = null;
+let vietnamTimePromise = null;
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('storage', handleStorageEvent);
@@ -1252,6 +1256,7 @@ function initializeApp(existingToken) {
                 persistUserSession(userSession);
                 loadDashboard();
                 setupInactivityTimer();
+                ensureVietnamTime();
                 google.script.run
                   .withSuccessHandler(list => { allowedCompanies = (list || []).filter(Boolean); })
                   .withFailureHandler(showError)
@@ -1924,81 +1929,83 @@ function handleChangePassword(e) {
 }
 
 function initRegisterPage() {
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-  const todayStr = getFormattedDate(today);
-  const tomorrowStr = getFormattedDate(tomorrow);
-  const t = translations[currentLang];
+  ensureVietnamTime().then(() => {
+    const nowVietnam = getVietnamNowClient();
+    const today = new Date(nowVietnam.getTime());
+    const tomorrow = addVietnamDays(today, 1);
+    const todayStr = getFormattedDate(today);
+    const tomorrowStr = getFormattedDate(tomorrow);
+    const t = translations[currentLang];
 
-  setupCustomFileInput('#fileUploader', {
-    trigger: '#fileUploaderTrigger',
-    display: '#fileUploaderDisplay',
-    defaultKey: 'file_no_file_selected'
-  });
+    setupCustomFileInput('#fileUploader', {
+      trigger: '#fileUploaderTrigger',
+      display: '#fileUploaderDisplay',
+      defaultKey: 'file_no_file_selected'
+    });
 
-  const dateSelect = $('#formRegisterDate');
+    let dateControl = $('#formRegisterDate');
 
-  google.script.run.withSuccessHandler(status => {
+    google.script.run.withSuccessHandler(status => {
 
-    if (userSession.role === 'admin') {
-      const todayInput = today.toISOString().split('T')[0];
-      dateSelect.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
-      $('#upload-date-note').text('');
-      $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
-      $('#registration-content .card').removeClass('opacity-50 disabled-card');
-      $('#registration-content .card').find('input, select, button').prop('disabled', false);
-    } else {
-      const tomorrowLabel = t.register_tomorrow_label ? ` ${t.register_tomorrow_label}` : '';
-      dateSelect.html(`<option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>`);
-      if (status.period === 1) {
-        const uploadNote = (t.register_upload_date_note || '').replace('{date}', tomorrowStr);
-        $('#upload-date-note').text(uploadNote);
-      } else {
+      if (userSession.role === 'admin') {
+        const todayInput = getVietnamIsoDate(today);
+        dateControl.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
+        dateControl = $('#formRegisterDate');
         $('#upload-date-note').text('');
-      }
-      startRegistrationTimer();
-    }
-  }).checkRegistrationTime();
-
-  $('#manualEntryForm').on('submit', handleManualAdd);
-  $('#uploadButton').on('click', handleFileUpload);
-  $('#saveUploadBtn').on('click', handleSaveUploadedData);
-
-  // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
-  google.script.run
-    .withSuccessHandler(list => {
-      allowedCompanies = (list || []).filter(Boolean);
-      const $sel = $('#formTransportionCompany');
-
-
-      if (isRole('user')) {//đã làm đến đây lúc 15:28
-        // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
-        const me = String((userSession.contractor || '')).trim();
-        if (me) {
-          $sel.html(`<option value="${me}">${me}</option>`)
-              .val(me)
-              .prop('disabled', true)
-              .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
+        $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
+        $('#registration-content .card').removeClass('opacity-50 disabled-card');
+        $('#registration-content .card').find('input, select, button').prop('disabled', false);
+      } else {
+        const tomorrowLabel = t.register_tomorrow_label ? ` ${t.register_tomorrow_label}` : '';
+        dateControl.html(`<option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>`);
+        if (status.period === 1) {
+          const uploadNote = (t.register_upload_date_note || '').replace('{date}', tomorrowStr);
+          $('#upload-date-note').text(uploadNote);
         } else {
-          // Không có contractor → vẫn cho chọn (ít gặp)
-          const firstOption = t.select_company_option || 'Chọn đơn vị';
+          $('#upload-date-note').text('');
+        }
+        startRegistrationTimer();        
+      }
+    }).checkRegistrationTime();
+
+    $('#manualEntryForm').off('submit').on('submit', handleManualAdd);
+    $('#uploadButton').off('click').on('click', handleFileUpload);
+    $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
+
+    // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
+    google.script.run
+      .withSuccessHandler(list => {
+        allowedCompanies = (list || []).filter(Boolean);
+        const $sel = $('#formTransportionCompany');
+
+        if (isRole('user')) {//đã làm đến đây lúc 15:28
+          // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
+          const me = String((userSession.contractor || '')).trim();
+          if (me) {
+            $sel.html(`<option value="${me}">${me}</option>`)
+                .val(me)
+                .prop('disabled', true)
+                .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
+          } else {
+            // Không có contractor → vẫn cho chọn (ít gặp)
+            const firstOption = t.select_company_option || 'Chọn đơn vị';
+            const html = [`<option value="">${firstOption}</option>`,
+                          ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
+            $sel.html(html).prop('disabled', false).removeClass('bg-light');
+          }
+        } else {
+          // Admin: danh sách đầy đủ
+            const firstOption = t.select_company_option || 'Chọn đơn vị';
           const html = [`<option value="">${firstOption}</option>`,
                         ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
           $sel.html(html).prop('disabled', false).removeClass('bg-light');
         }
-      } else {
-        // Admin: danh sách đầy đủ
-          const firstOption = t.select_company_option || 'Chọn đơn vị';
-        const html = [`<option value="">${firstOption}</option>`,
-                      ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
-        $sel.html(html).prop('disabled', false).removeClass('bg-light');
-      }
-    })
-    .withFailureHandler(showError)
-    .getTransportCompanies();   // <-- đang đọc từ ContractData như bạn yêu cầu
+      })
+      .withFailureHandler(showError)
+      .getTransportCompanies();   // <-- đang đọc từ ContractData như bạn yêu cầu
 
-  loadActiveContractNosForRegister();
+    loadActiveContractNosForRegister();
+  });
 }
 
 
@@ -2055,9 +2062,7 @@ function handleManualAdd(e) {
 
   // Lấy đúng id các input trên Page_Register.html
   const rawRegisterDate     = $('#formRegisterDate').val();
-  const registerDate        = rawRegisterDate && rawRegisterDate.includes('-')
-                                ? getFormattedDate(new Date(rawRegisterDate))
-                                : rawRegisterDate;               // KHÔNG thêm dấu ' ở client
+  const registerDate        = normalizeRegisterDateValue(rawRegisterDate);               // KHÔNG thêm dấu ' ở client
   const contractNo          = $('#manual-contractNo').val().trim();
   const truckPlate          = $('#formTruckPlate').val().trim();
   const country             = $('#formCountry').val();
@@ -2217,11 +2222,14 @@ function handleFileUpload() {
 }
 
 function validateAndTransformData(dataRows) {
-    const today = new Date();
-    const tomorrow = new Date();
-    tomorrow.setDate(today.getDate() + 1);
+    ensureVietnamTime();
+    const nowVietnam = getVietnamNowClient();
+    const today = new Date(nowVietnam.getTime());
+    const tomorrow = addVietnamDays(today, 1);
     const todayStr = getFormattedDate(today);
     const tomorrowStr = getFormattedDate(tomorrow);
+    const nowParts = getVietnamDateParts(nowVietnam);
+    const currentHour = nowParts && nowParts.hour ? parseInt(nowParts.hour, 10) : new Date().getHours();    
 
     const transformedData = [];
     const allErrors = [];
@@ -2295,7 +2303,6 @@ function validateAndTransformData(dataRows) {
         } else {
             const dateStr = getFormattedDate(parsedDate);
             if (!isRole('admin')) {
-                const currentHour = new Date().getHours();
                 if (currentHour >= 8 && currentHour < 16) {
                     if (dateStr !== tomorrowStr) {
                         appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
@@ -2519,9 +2526,10 @@ function initializeDataTable(config) {
 function initViewPage() {
   const dateFilterControl = $('#date-filter-control');
   const contractFilter = $('#contract-filter');
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
+  ensureVietnamTime();
+  const nowVietnam = getVietnamNowClient();
+  const today = new Date(nowVietnam.getTime());
+  const tomorrow = addVietnamDays(today, 1);
   const todayStr = getFormattedDate(today);
   const tomorrowStr = getFormattedDate(tomorrow);
   const t = translations[currentLang];
@@ -2539,7 +2547,7 @@ function initViewPage() {
 
   if (useDateInput) {
     dateFilterControl.html('<input type="date" id="date-filter-input" class="form-control form-control-sm">');
-    $('#date-filter-input').val(today.toISOString().split('T')[0]);
+    $('#date-filter-input').val(getVietnamIsoDate(today));
   } else {
     const todayLabel = t.view_today_label ? ` ${t.view_today_label}` : '';
     const tomorrowLabel = t.view_tomorrow_label ? ` ${t.view_tomorrow_label}` : '';
@@ -2555,8 +2563,9 @@ function initViewPage() {
 
   const getSelectedDateString = () => {
     if (useDateInput) {
-      const raw = dateInput.val();
-      return raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date());
+      const raw = (dateInput.val() || '').trim();
+      const parsed = parseDateValue(raw);
+      return parsed ? getFormattedDate(parsed) : getFormattedDate(getVietnamNowClient());
     }
     return dateInput.val();
   };
@@ -2838,8 +2847,9 @@ function handleExportExcel() {
   // Lấy ngày theo đúng logic cũ
   var selectedDateStr;
   if (hasAnyRole(['admin', 'admin-xppl', 'user-supervision'])) {
-    const raw = $('#date-filter-input').val();
-    selectedDateStr = raw ? getFormattedDate(new Date(raw)) : getFormattedDate(new Date());
+    const raw = ($('#date-filter-input').val() || '').trim();
+    const parsed = parseDateValue(raw);
+    selectedDateStr = parsed ? getFormattedDate(parsed) : getFormattedDate(getVietnamNowClient());
   } else {
     selectedDateStr = $('#date-filter-select').val();
   }
@@ -3733,6 +3743,148 @@ function handleEditTotalListVehicle(rowData) {
 // =================================================================
 // UTILITY FUNCTIONS
 // =================================================================
+function ensureVietnamTime() {
+    if (vietnamTimeState && typeof vietnamTimeState.epochMillis === 'number' && typeof vietnamTimeState.clientCapturedAt === 'number') {
+        return Promise.resolve(vietnamTimeState);
+    }
+    if (vietnamTimePromise) {
+        return vietnamTimePromise;
+    }
+
+    vietnamTimePromise = new Promise(resolve => {
+        const finish = data => {
+            setVietnamTimeState(data);
+            resolve(vietnamTimeState);
+            vietnamTimePromise = null;
+        };
+
+        if (typeof google === 'undefined' || !google.script || !google.script.run) {
+            finish({ epochMillis: Date.now() });
+            return;
+        }
+
+        google.script.run
+            .withSuccessHandler(finish)
+            .withFailureHandler(err => {
+                console.error('Failed to fetch Vietnam time:', err);
+                finish({ epochMillis: Date.now() });
+            })
+            .getVietnamCurrentTime();
+    });
+
+    return vietnamTimePromise;
+}
+
+function setVietnamTimeState(data) {
+    const epochMillis = data && typeof data.epochMillis === 'number'
+        ? data.epochMillis
+        : Date.now();
+    vietnamTimeState = {
+        epochMillis,
+        clientCapturedAt: Date.now(),
+        isoDate: data && typeof data.isoDate === 'string' ? data.isoDate : null,
+        dateString: data && typeof data.dateString === 'string' ? data.dateString : null,
+        timeString: data && typeof data.timeString === 'string' ? data.timeString : null
+    };
+}
+
+function getVietnamNowClient() {
+    if (vietnamTimeState && typeof vietnamTimeState.epochMillis === 'number' && typeof vietnamTimeState.clientCapturedAt === 'number') {
+        const elapsed = Date.now() - vietnamTimeState.clientCapturedAt;
+        return new Date(vietnamTimeState.epochMillis + elapsed);
+    }
+    return new Date();
+}
+
+function addVietnamDays(date, days) {
+    if (!(date instanceof Date) || isNaN(date) || !Number.isFinite(days)) {
+        return new Date(NaN);
+    }
+    const result = new Date(date.getTime());
+    result.setUTCDate(result.getUTCDate() + days);
+    return result;
+}
+
+function getVietnamDateParts(date) {
+    if (!(date instanceof Date) || isNaN(date)) {
+        return null;
+    }
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: VIETNAM_TIMEZONE,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(date);
+    const result = {};
+    parts.forEach(part => {
+        if (part.type !== 'literal') {
+            result[part.type] = part.value;
+        }
+    });
+    return result;
+}
+
+function getFormattedDate(date) {
+    const parts = getVietnamDateParts(date);
+    if (!parts) return '';
+    return `${parts.day}/${parts.month}/${parts.year}`;
+}
+
+function getVietnamIsoDate(date) {
+    const parts = getVietnamDateParts(date);
+    if (!parts) return '';
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function parseDateValue(value) {
+    if (value instanceof Date) {
+        return isNaN(value) ? null : value;
+    }
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    let match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const day = parseInt(match[3], 10);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            const date = new Date(Date.UTC(year, month - 1, day));
+            if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) {
+                return date;
+            }
+        }
+        return null;
+    }
+
+    match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (match) {
+        const day = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const year = parseInt(match[3], 10);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            const date = new Date(Date.UTC(year, month - 1, day));
+            if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) {
+                return date;
+            }
+        }
+        return null;
+    }
+
+    return null;
+}
+
+function normalizeRegisterDateValue(value) {
+    const parsed = parseDateValue(value);
+    return parsed ? getFormattedDate(parsed) : '';
+}
+
 function parseExcelDate(excelDate) {
     if (typeof excelDate === 'number') {
         return new Date(Math.round((excelDate - 25569) * 86400 * 1000));
@@ -3757,15 +3909,8 @@ function parseExcelDate(excelDate) {
     }
     const date = new Date(excelDate);
     if (!isNaN(date)) return date;
-    
-    return null;
-}
 
-function getFormattedDate(date) {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+    return null;
 }
 
 
@@ -4953,27 +5098,17 @@ function initXuLyXPPLPage() {
     toggleExportButtons(false);
     xpplExportState = { confirmed:false, filter:null, rows:[] };
   }
-  // ISO -> dd/MM/yyyy
-  function isoToVN(iso) {
-    const m = String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso||'');
-  }
   // Luôn trả dd/MM/yyyy từ #xppl-date dù input hiển thị dạng gì
   function getDateVN() {
     const raw = ($('#xppl-date').val() || '').trim();
     if (!raw) return '';
-    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return isoToVN(raw.slice(0,10));
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
-    const t = new Date(raw);
-    if (!isNaN(t)) {
-      const dd=('0'+t.getDate()).slice(-2), mm=('0'+(t.getMonth()+1)).slice(-2), yy=t.getFullYear();
-      return `${dd}/${mm}/${yy}`;
-    }
-    return raw;
+    const parsed = parseDateValue(raw);
+    return parsed ? getFormattedDate(parsed) : raw;    
   }
 
+  ensureVietnamTime();
   // set ngày mặc định hôm nay (ISO yyyy-mm-dd) cho input type=date
-  const todayISO = new Date().toISOString().slice(0,10);
+  const todayISO = getVietnamIsoDate(getVietnamNowClient());
   $('#xppl-date').val(todayISO);
 
   // ===== 3.2. NẠP OPTIONS CONTRACT/CUSTOMER THEO NGÀY =====
