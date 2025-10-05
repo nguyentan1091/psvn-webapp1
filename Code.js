@@ -412,23 +412,102 @@ function formatTimeForClient(v) {
   return stripLeadingApostrophe(v);
 }
 
-function parseExcelDate_(v) {
-  if (v == null || v === '') return '';
-  var d;
-  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-    d = v;
-  } else if (typeof v === 'number') {
-    d = new Date(Math.round((v - 25569) * 86400 * 1000));
-  } else {
-    var s = String(v).replace(/"/g, '');
-    d = new Date(s);
-    if (isNaN(d)) {
-      var m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (m) d = new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
+function normalizeToUtcDate_(date) {
+  if (Object.prototype.toString.call(date) !== '[object Date]' || isNaN(date)) return null;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function toUtcDateKey_(date) {
+  var normalized = normalizeToUtcDate_(date);
+  if (!normalized) return '';
+  var y = normalized.getUTCFullYear();
+  var m = ('0' + (normalized.getUTCMonth() + 1)).slice(-2);
+  var d = ('0' + normalized.getUTCDate()).slice(-2);
+  return y + '-' + m + '-' + d;
+}
+
+function createUtcDate_(year, month, day) {
+  if (typeof year !== 'number' || !isFinite(year) || typeof month !== 'number' || !isFinite(month) || typeof day !== 'number' || !isFinite(day)) return null;
+  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  var date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return date;
+}
+
+function collectExcelDateCandidates_(value) {
+  var map = {};
+
+  function addCandidate(date, format) {
+    var normalized = normalizeToUtcDate_(date);
+    if (!normalized) return;
+    var key = toUtcDateKey_(normalized);
+    if (!key || map[key]) return;
+    map[key] = { date: normalized, format: format || 'unknown', key: key };
+  }
+
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    addCandidate(value, 'dateObject');
+  } else if (typeof value === 'number' && isFinite(value)) {
+    var millis = Math.round((value - 25569) * 86400 * 1000);
+    addCandidate(new Date(millis), 'serial');
+  }
+
+  if (value != null) {
+    var str = String(value).trim();
+    if (str) {
+      var sanitized = str.replace(/^'+/, '').replace(/"/g, '');
+      var digitParts = sanitized.match(/(\d{1,4})/g);
+
+      if (digitParts && digitParts.length === 3) {
+        var numbers = digitParts.map(function(part) { return parseInt(part, 10); });
+        var lengths = digitParts.map(function(part) { return part.length; });
+
+        function addFromParts(year, month, day, format) {
+          var candidate = createUtcDate_(year, month, day);
+          if (candidate) addCandidate(candidate, format);
+        }
+
+        if (lengths[0] === 4) {
+          addFromParts(numbers[0], numbers[1], numbers[2], 'YMD');
+        } else if (lengths[2] === 4) {
+          addFromParts(numbers[2], numbers[1], numbers[0], 'DMY');
+          addFromParts(numbers[2], numbers[0], numbers[1], 'MDY');
+        } else if (lengths[1] === 4) {
+          addFromParts(numbers[1], numbers[0], numbers[2], 'DMY');
+          addFromParts(numbers[1], numbers[2], numbers[0], 'MDY');
+        } else {
+          addFromParts(numbers[2], numbers[1], numbers[0], 'DMY');
+          addFromParts(numbers[2], numbers[0], numbers[1], 'MDY');
+        }
+      }
+
+      var fallback = new Date(sanitized);
+      if (!isNaN(fallback)) {
+        addCandidate(fallback, 'native');
+      }
     }
   }
-  if (!d || isNaN(d)) return '';
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  return Object.keys(map).map(function(key) { return map[key]; });
+}
+
+function parseExcelDate_(v) {
+  if (v == null || v === '') return '';
+  var candidates = collectExcelDateCandidates_(v);
+  if (!candidates.length) return '';
+
+  var chosen = candidates[0];
+  for (var i = 0; i < candidates.length; i++) {
+    if (candidates[i].format === 'DMY') {
+      chosen = candidates[i];
+      break;
+    }
+  }
+
+  var date = chosen.date;
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
 function parseExcelTime_(v) {
