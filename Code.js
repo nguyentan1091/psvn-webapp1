@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
@@ -104,9 +104,10 @@ const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
 
 // ================= SUPABASE CONFIGURATION =================
-const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
+const SUPABASE_URL = 'https://medlgvtmhujuqdvceaoz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lZGxndnRtaHVqdXFkdmNlYW96Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODg5NzY5NSwiZXhwIjoyMDc0NDczNjk1fQ.h-hVavhpp_NbJ4tiaFTPJBQsdS0SNfpndQeGp-eyFAo';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
+const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
 const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
 const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
 const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
@@ -122,6 +123,55 @@ const SUPABASE_USER_SELECT_FIELDS = [
   'security_code',
   'password_last_updated'
 ];
+
+const VEHICLE_REGISTRATION_SELECT_FIELDS = [
+  'id',
+  'register_date',
+  'contract_no',
+  'truck_plate',
+  'country',
+  'wheel',
+  'trailer_plate',
+  'truck_weight',
+  'pay_load',
+  'container_no1',
+  'container_no2',
+  'driver_name',
+  'id_passport',
+  'phone_number',
+  'destination_est',
+  'transportation_company',
+  'subcontractor',
+  'vehicle_status',
+  'registration_status',
+  'time',
+  'created_at',
+  'updated_at',
+  'created_by'
+];
+
+const VEHICLE_REGISTRATION_COLUMN_MAP = {
+  'ID': 'id',
+  'Register Date': 'register_date',
+  'Contract No': 'contract_no',
+  'Truck Plate': 'truck_plate',
+  'Country': 'country',
+  'Wheel': 'wheel',
+  'Trailer Plate': 'trailer_plate',
+  'Truck weight': 'truck_weight',
+  'Pay load': 'pay_load',
+  'Container No1': 'container_no1',
+  'Container No2': 'container_no2',
+  'Driver Name': 'driver_name',
+  'ID/Passport': 'id_passport',
+  'Phone number': 'phone_number',
+  'Destination EST': 'destination_est',
+  'Transportion Company': 'transportation_company',
+  'Subcontractor': 'subcontractor',
+  'Vehicle Status': 'vehicle_status',
+  'Registration Status': 'registration_status',
+  'Time': 'time'
+};
 
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
@@ -159,6 +209,7 @@ function supabaseRequest_(path, options) {
   }
 
   const url = buildSupabaseUrl_(path);
+  const returnResponse = !!opts.returnResponse;  
   let response;
   try {
     response = UrlFetchApp.fetch(url, request);
@@ -178,11 +229,86 @@ function supabaseRequest_(path, options) {
   }
 
   if (status >= 200 && status < 300) {
+    if (returnResponse) {
+      return {
+        data: data,
+        status: status,
+        headers: response.getAllHeaders(),
+        raw: response
+      };
+    }    
     return data;
   }
 
   const message = data && data.message ? data.message : text;
-  throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
+  const error = new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
+  if (returnResponse) {
+    error.response = response;
+  }
+  throw error;
+}
+
+function toSupabaseDateString_(value) {
+  const normalized = normalizeDate(value);
+  if (!normalized) return null;
+  return Utilities.formatDate(normalized, 'UTC', 'yyyy-MM-dd');
+}
+
+function mapVehicleRegistrationRowToArray_(row, headers) {
+  if (!row) return headers.map(() => '');
+  return headers.map(function (header) {
+    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
+    if (!column) return '';
+    const value = row[column];
+    if (value == null) return '';
+    if (header === 'Register Date') {
+      const dt = parseSupabaseTimestamp_(value);
+      return dt || value;
+    }
+    if (header === 'Time') {
+      const dt = parseSupabaseTimestamp_(value);
+      return dt || value;
+    }
+    return value;
+  });
+}
+
+function buildVehicleRegistrationPayload_(record, options) {
+  const opts = options || {};
+  const payload = {};
+  Object.keys(VEHICLE_REGISTRATION_COLUMN_MAP).forEach(function (header) {
+    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
+    if (!column) return;
+    const value = record[header];
+    if (header === 'Register Date') {
+      const iso = toSupabaseDateString_(value);
+      if (iso) payload[column] = iso;
+      return;
+    }
+    if (header === 'Time') {
+      if (value) payload[column] = value instanceof Date ? value.toISOString() : String(value);
+      return;
+    }
+    if (value === '' || value === null || value === undefined) {
+      if (opts.includeNulls) payload[column] = null;
+      return;
+    }
+    payload[column] = value;
+  });
+  return payload;
+}
+
+function buildSupabaseInFilter_(column, values) {
+  if (!column || !Array.isArray(values) || !values.length) return '';
+  const sanitized = values
+    .map(function (value) {
+      return String(value == null ? '' : value).trim();
+    })
+    .filter(function (value) { return value.length > 0; })
+    .map(function (value) { return value.replace(/"/g, '""'); });
+  if (!sanitized.length) return '';
+  const quoted = sanitized.map(function (value) { return '"' + value + '"'; });
+  return column + '=in.' + encodeURIComponent('(' + quoted.join(',') + ')');
 }
 
 function buildSupabaseUserCacheKey_(username) {
@@ -396,12 +522,16 @@ function normalizeTime(v) {
 function formatDateForClient(v) {
   if (!v && v!==0) return '';
   if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
+  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(v));
+  if (parsed) return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");  
   return stripLeadingApostrophe(v);
 }
 
 function formatTimeForClient(v) {
   if (!v && v!==0) return '';
-  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy HH:mm:ss");
+  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(v));
+  if (parsed) return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "dd/MM/yyyy HH:mm:ss");
   if (typeof v === 'number') {
     var total = Math.round(v*86400);
     var hh = Math.floor(total/3600);
@@ -1127,7 +1257,7 @@ function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
 }
 
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
-  params = params || {};  
+  params = params || {};
   const userSession = validateSession(params.sessionToken);
   const userRole = String(userSession.role || '').toLowerCase();
   const includeSummary = sheetName === DATA_SHEET;
@@ -1143,7 +1273,12 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
       safeScriptCachePutJSON_(cacheKey, result, SERVER_SIDE_CACHE_TTL_SECONDS);
     }
     return result;
-  };  
+  };
+
+  if (sheetName === DATA_SHEET) {
+    const result = processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary);
+    return respondWithCache(result);
+  }  
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const lastRow = sheet.getLastRow();
@@ -1303,10 +1438,11 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     filteredData.sort(function (a, b) {
       return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
     });
-  }
+  }  
 
-
-  const paginatedData = filteredData.slice(params.start, params.start + params.length);
+  const start = Number(params.start || 0);
+  const length = Number(params.length || filteredData.length);
+  const paginatedData = filteredData.slice(start, start + length);
   const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
 
   const result = {
@@ -1316,7 +1452,99 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     data: data,
     summary: summary
   };
-  return respondWithCache(result);  
+  return respondWithCache(result);
+}
+
+function processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary) {
+  const userRole = String(userSession.role || '').toLowerCase();
+
+  const filters = [];
+  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
+  if (dateFilter) {
+    const iso = toSupabaseDateString_(dateFilter);
+    if (iso) filters.push('register_date=eq.' + encodeURIComponent(iso));
+    else return buildEmptyResult_(params.draw, includeSummary);
+  }
+
+  if (params.contractNo) {
+    const contract = String(params.contractNo).replace(/^'+/, '').trim();
+    if (contract) filters.push('contract_no=eq.' + encodeURIComponent(contract));
+  }
+
+  if (userRole === 'user') {
+    const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
+    if (!contractor) return buildEmptyResult_(params.draw, includeSummary);
+    filters.push('transportation_company=eq.' + encodeURIComponent(contractor));
+  } else if (userRole === 'user-supervision') {
+    filters.push('registration_status=eq.' + encodeURIComponent('Approved'));
+  }
+
+  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(',')), 'order=time.desc.nullslast'];
+  Array.prototype.push.apply(queryParams, filters);
+  const query = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParams.join('&');
+
+  const response = supabaseRequest_(query) || [];
+  if (!Array.isArray(response) || !response.length) {
+    return buildEmptyResult_(params.draw, includeSummary);
+  }
+
+  const allData = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+  let filteredData = allData.slice();
+
+  if (params.search && params.search.value) {
+    const searchValue = params.search.value.toLowerCase();
+    filteredData = filteredData.filter(function (row) {
+      return row.some(function (cell) {
+        return String(cell).toLowerCase().includes(searchValue);
+      });
+    });
+  }
+
+  const recordsTotal = allData.length;
+  const recordsFiltered = filteredData.length;
+
+  let summary = null;
+  if (includeSummary) {
+    const statusIdx = headers.indexOf('Registration Status');
+    if (statusIdx !== -1) {
+      let pending = 0;
+      let approved = 0;
+      for (var i = 0; i < filteredData.length; i++) {
+        const status = String(filteredData[i][statusIdx] || '').trim().toLowerCase();
+        if (status === 'pending approval') pending++;
+        else if (status === 'approved') approved++;
+      }
+      summary = { total: filteredData.length, pending: pending, approved: approved };
+    }
+  }
+
+  if (params.order && params.order.length > 0) {
+    const orderInfo = params.order[0];
+    const columnIndex = orderInfo.column;
+    const direction = orderInfo.dir === 'asc' ? 1 : -1;
+    filteredData.sort(function (a, b) {
+      const valA = a[columnIndex];
+      const valB = b[columnIndex];
+      if (valA < valB) return -1 * direction;
+      if (valA > valB) return 1 * direction;
+      return 0;
+    });
+  } else if (defaultSortColumnIndex !== -1) {
+    filteredData.sort(function (a, b) {
+      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
+    });
+  }
+
+  const paginatedData = filteredData.slice(params.start, params.start + params.length);
+  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
+
+  return {
+    draw: parseInt(params.draw, 10),
+    recordsTotal: recordsTotal,
+    recordsFiltered: recordsFiltered,
+    data: data,
+    summary: summary
+  };  
 }
 
 function getRegisteredDataServerSide(params) {
@@ -1328,52 +1556,32 @@ function getRegisteredContractOptions(filter, sessionToken) {
   const role = String(session.role || '').toLowerCase();
   const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
   if (!dateString) return { contracts: [] };
+  const iso = toSupabaseDateString_(dateString);
+  if (!iso) return { contracts: [] };  
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  if (!sheet) return { contracts: [] };
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { contracts: [] };
-
-  const dateIdx = HEADERS_REGISTER.indexOf('Register Date');
-  const contractIdx = HEADERS_REGISTER.indexOf('Contract No');
-  if (dateIdx === -1 || contractIdx === -1) return { contracts: [] };
-
-  const activityIdx = HEADERS_REGISTER.indexOf('Activity Status');
-  const companyIdx = HEADERS_REGISTER.indexOf('Transportion Company');
-  const statusIdx = HEADERS_REGISTER.indexOf('Registration Status');
-
-  let rows = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
+  const queryParts = [
+    'select=' + encodeURIComponent(['contract_no', 'transportation_company', 'registration_status'].join(',')),
+    'register_date=eq.' + encodeURIComponent(iso)
+  ];
 
   if (role === 'user') {
-    if (companyIdx !== -1) {
-      rows = rows.filter(row => row[companyIdx] === session.contractor);
-    }
-    if (activityIdx !== -1) {
-      rows = rows.filter(row => String(row[activityIdx]).toUpperCase() === 'ACTIVE');
-    }
+    const contractor = String(session.contractor == null ? '' : session.contractor).trim();
+    if (!contractor) return { contracts: [] };
+    queryParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (role === 'user-supervision') {
-    if (statusIdx !== -1) {
-      rows = rows.filter(row => String(row[statusIdx] || '').trim().toLowerCase() === 'approved');
-    }
+    queryParts.push('registration_status=eq.' + encodeURIComponent('Approved'));
   }
 
-  const toDateString = value => {
-    if (value instanceof Date) {
-      return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
-    }
-    return String(value == null ? '' : value).replace(/^'+/, '').trim();
-  };
+  const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  if (!Array.isArray(rows)) return { contracts: [] };
 
   const contractsSet = new Set();
-  rows.forEach(row => {
-    if (toDateString(row[dateIdx]) !== dateString) return;
-    const contract = String(row[contractIdx] == null ? '' : row[contractIdx]).replace(/^'+/, '').trim();
+  rows.forEach(function (row) {
+    const contract = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
     if (contract) contractsSet.add(contract);
   });
 
-  const contracts = Array.from(contractsSet).sort();
-  return { contracts: contracts };
+  return { contracts: Array.from(contractsSet).sort() };
 }
 
 function getTotalListDataServerSide(params) {
@@ -1405,29 +1613,27 @@ function getXpplExportOptions(filter, sessionToken) {
   if (!dateKey) return { contracts: [], customersByContract: {} };
 
   const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shV = ss.getSheetByName(DATA_SHEET);       // 'VehicleData'
   const shC = ss.getSheetByName(CONTRACT_SHEET);   // 'ContractData'
-  if (!shV || shV.getLastRow() < 2) return { contracts: [], customersByContract: {} };
 
-  // ---- VehicleData: lấy Contract theo ngày + Approved
-  const lcV      = shV.getLastColumn();
-  const headVRaw = shV.getRange(1, 1, 1, lcV).getValues()[0];
-  const idxDate   = findIdx(headVRaw, ['registerdate','ngàydăngký','date','register']);
-  const idxNo     = findIdx(headVRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const idxStatus = findIdx(headVRaw, ['registrationstatus','status','trạngtháiđăngký','trangthai']);
-  if (idxDate === -1 || idxNo === -1) return { contracts: [], customersByContract: {} };
+  const isoDate = toSupabaseDateString_(dateKey);
+  if (!isoDate) return { contracts: [], customersByContract: {} };
 
-  const rowsV = shV.getRange(2, 1, shV.getLastRow() - 1, lcV).getValues();
-  const setContracts = new Set();
-  for (const r of rowsV) {
-    if (_toDateKey(r[idxDate]) !== dateKey) continue;
-    if (idxStatus !== -1) {
-      const st = s(r[idxStatus]).toLowerCase();
-      if (st !== 'approved') continue;
-    }
-    const cno = s(r[idxNo]);
-    if (cno) setContracts.add(cno);
+  const vehicleRows = supabaseRequest_(
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent(['contract_no', 'register_date', 'registration_status'].join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+      + '&registration_status=eq.' + encodeURIComponent('Approved')
+  ) || [];
+
+  if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
+    return { contracts: [], customersByContract: {} };
   }
+
+  const setContracts = new Set();
+  vehicleRows.forEach(function (row) {
+    const cno = s(row.contract_no);
+    if (cno) setContracts.add(cno);
+ });
   const contracts = Array.from(setContracts).sort();
   if (!contracts.length) return { contracts: [], customersByContract: {} };
 
@@ -1526,80 +1732,50 @@ function getXpplExportData(filter, sessionToken) {
     }
   }
 
-  // 2) Lọc VehicleData
-  const shV = ss.getSheetByName(DATA_SHEET);
-  if (!shV || shV.getLastRow() < 2) return { ok:false, errors:['Không có dữ liệu VehicleData.'] };
-
-  const lcV = shV.getLastColumn();
-  const HV  = shV.getRange(1,1,1,lcV).getValues()[0];
-
-  // chuẩn hóa header + tìm index (có fuzzy)
-  const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
-  const findIdx = (keys) => {
-    const H = HV.map(normalizeHeader);
-    // exact
-    for (const k of keys) {
-      const i = H.indexOf(k);
-      if (i !== -1) return i;
-    }
-    // fuzzy: keys[0] chứa các từ cần có
-    if (keys.length) {
-      const need = keys[0].split(' ').filter(Boolean);
-      for (let i = 0; i < H.length; i++) {
-        const h = H[i];
-        if (need.every(w => h.includes(w))) return i;
-      }
-    }
-    return -1;
-  };
-
-  const iDate   = findIdx(['registerdate','ngàydăngký','date','register']);
-  const iNo2    = findIdx(['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const iStReg  = findIdx(['registrationstatus','status','trạngtháiđăngký','trangthai']);
-
-  const iTruck  = findIdx(['truckplate','truck plate','biểnxe','biensoxe']);
-  const iCountry= findIdx(['country','quốcgia','quocgia']);
-  const iWheel  = findIdx(['wheel','sốtrục','sotruc']);
-  const iTrailer= findIdx(['trailerplate','trailer plate','biểnromooc','bienromooc']);
-  const iDriver = findIdx(['drivername','driver name','tênlái','tenlai']);
-  const iID     = findIdx(['id/passport','idpassport','passport','id']);
-  const iPhone  = findIdx(['phone number','phonenumber','điệnthoại','dienthoai']);
-
-  // CHÚ Ý: bắt mọi biến thể "transportion/transportation/transport company"
-  const iTrans  = findIdx([
-    'transportion company',
-    'transport company',
-    'transportation company',
-    'transportationcompany',
-    'transportioncompany',
-    'transportcompany'
-  ]);
-
-  const iSub    = findIdx(['subcontractor','thầuphụ','thaophu']);
-
-  if (iDate === -1 || iNo2 === -1) {
+  // 2) Lọc dữ liệu từ Supabase vehicle_registration
+  const isoDate = toSupabaseDateString_(dateKey);
+  if (!isoDate) {
     return { ok:false, errors:['Thiếu cột bắt buộc trong VehicleData (Register Date / Contract No).'] };
   }
 
-  const all = shV.getRange(2,1,shV.getLastRow()-1,lcV).getValues();
-  const rows = [];
-  for (const r of all) {
-    if (toDateKey(r[iDate]) !== dateKey) continue;
-    if (s(r[iNo2]) !== contractNo) continue;
-    if (iStReg !== -1 && s(r[iStReg]).toLowerCase() !== 'approved') continue;
+  const vehicleRows = supabaseRequest_(
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent([
+        'truck_plate',
+        'country',
+        'wheel',
+        'trailer_plate',
+        'driver_name',
+        'id_passport',
+        'phone_number',
+        'transportation_company',
+        'subcontractor',
+        'contract_no',
+        'register_date',
+        'registration_status'
+      ].join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+      + '&contract_no=eq.' + encodeURIComponent(contractNo)
+      + '&registration_status=eq.' + encodeURIComponent('Approved')
+  ) || [];
 
-    rows.push({
-      'Truck Plate':            iTruck  !== -1 ? s(r[iTruck])  : '',
-      'Country':                iCountry!== -1 ? s(r[iCountry]): '',
-      'Wheel':                  iWheel  !== -1 ? s(r[iWheel])  : '',
-      'Trailer Plate':          iTrailer!== -1 ? s(r[iTrailer]): '',
-      'Driver Name':            iDriver !== -1 ? s(r[iDriver]) : '',
-      'ID/Passport':            iID     !== -1 ? s(r[iID])     : '',
-      'Phone number':           iPhone  !== -1 ? s(r[iPhone])  : '',
-      'Transportion Company':   iTrans  !== -1 ? s(r[iTrans])  : '',
-      'Subcontractor':          iSub    !== -1 ? s(r[iSub])    : ''
-    });
+  if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
+    return { ok:false, errors:['Không có dòng Approved phù hợp để xuất.'] };
   }
+
+  const rows = vehicleRows.map(function (row) {
+    return {
+      'Truck Plate':          s(row.truck_plate),
+      'Country':              s(row.country),
+      'Wheel':                row.wheel == null ? '' : row.wheel,
+      'Trailer Plate':        s(row.trailer_plate),
+      'Driver Name':          s(row.driver_name),
+      'ID/Passport':          s(row.id_passport),
+      'Phone number':         s(row.phone_number),
+      'Transportion Company': s(row.transportation_company),
+      'Subcontractor':        s(row.subcontractor)
+    };
+  });
 
   if (!rows.length) return { ok:false, errors:['Không có dòng Approved phù hợp để xuất.'] };
 
@@ -2090,62 +2266,41 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
   const userSession = validateSession(sessionToken);
   const role = String(userSession.role || '').toLowerCase();
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(DATA_SHEET);
-
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
-
+    const params = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
     const headers = HEADERS_REGISTER;
-    let rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-    const contractFilter = contractNo
-      ? String(contractNo).replace(/^'+/, '').trim().toLowerCase()
-      : '';    
 
-    // Lọc theo quyền user (nếu là user thường)
-     if (role === 'user') {
-      const compIdx = headers.indexOf('Transportion Company');
-      rows = rows.filter(r => r[compIdx] === userSession.contractor);
-    }
-    if (role === 'user-supervision') {
-      const statusIdx = headers.indexOf('Registration Status');
-      if (statusIdx !== -1) {
-        rows = rows.filter(r => String(r[statusIdx] || '').trim().toLowerCase() === 'approved');
-      }
-    }
-
-    // Lọc theo ngày (định dạng dd/MM/yyyy, bỏ dấu ')
     if (dateString) {
-      const dateIdx = headers.indexOf('Register Date');
-      rows = rows.filter(r => {
-        const v = r[dateIdx];
-        if (!v) return false;
-        let s = (v instanceof Date)
-          ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-          : String(v).replace(/^'/,'').trim();
-        return s === dateString;
+      const iso = toSupabaseDateString_(dateString);
+      if (!iso) return [];
+      params.push('register_date=eq.' + encodeURIComponent(iso));
+    }
+
+    if (contractNo) {
+      const contract = String(contractNo).replace(/^'+/, '').trim();
+      if (contract) params.push('contract_no=eq.' + encodeURIComponent(contract));
+    }
+
+    if (role === 'user') {
+      const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
+      if (!contractor) return [];
+      params.push('transportation_company=eq.' + encodeURIComponent(contractor));
+    } else if (role === 'user-supervision') {
+      params.push('registration_status=eq.' + encodeURIComponent('Approved'));
+    }
+
+    const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
+    if (!Array.isArray(rows) || !rows.length) return [];
+
+    let mapped = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+
+    if (searchQuery && String(searchQuery).trim()) {
+      const q = String(searchQuery).toLowerCase();
+      mapped = mapped.filter(function (r) {
+        return r.some(function (c) { return String(c).toLowerCase().indexOf(q) !== -1; });
       });
     }
 
-    if (contractFilter) {
-      const contractIdx = headers.indexOf('Contract No');
-      if (contractIdx !== -1) {
-        rows = rows.filter(r => {
-          const raw = r[contractIdx];
-          const value = String(raw == null ? '' : raw).replace(/^'+/, '').trim().toLowerCase();
-          return value === contractFilter;
-        });
-      }
-    }
-
-    // Lọc theo từ khóa search (nếu có)
-    if (searchQuery && String(searchQuery).trim()) {
-      const q = String(searchQuery).toLowerCase();
-      rows = rows.filter(r => r.some(c => String(c).toLowerCase().indexOf(q) !== -1));
-    }
-
-    // Trả về mảng object đã format (ngày/thời gian dạng chuỗi chuẩn)
-    return rows.map(r => formatRowForClient_(r, headers));
+    return mapped.map(function (r) { return formatRowForClient_(r, headers); });
   } catch (e) {
     Logger.log(e);
     throw new Error('Cannot retrieve export data: ' + e.message);
@@ -2228,34 +2383,25 @@ function saveData(dataToSave, sessionToken, language) {
   }
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const dataArray = dataToSave.map(obj => {
+    const payloads = dataToSave.map(function (obj) {
       if (userSession.role === 'user') {
         obj['Transportion Company'] = userSession.contractor;
       }
-      coerceNumericRegisterFields_(obj);      
-      obj['Register Date'] = normalizeDate(obj['Register Date']);
-      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
+      coerceNumericRegisterFields_(obj);
+      const normalizedDate = normalizeDate(obj['Register Date']);
+      obj['Register Date'] = normalizedDate || obj['Register Date'];
+      obj['Time'] = new Date();
       obj['Registration Status'] = 'Pending approval';
-      return HEADERS_REGISTER.map(header => obj[header] || "");
+      return buildVehicleRegistrationPayload_(obj);
     });
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(30000)) {
-      throw new Error(pickMessage(
-        'Hệ thống đang bận, vui lòng thử lại sau.',
-        'The system is busy, please try again later.'
-      ));
-    }
 
-    try {
-      const lastRow = sheet.getLastRow();
-      sheet
-        .getRange(lastRow + 1, 1, dataArray.length, HEADERS_REGISTER.length)
-        .setValues(dataArray);
-    } finally {
-      lock.releaseLock();
-    }
-    bumpSheetCacheVersion_(DATA_SHEET);    
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT, {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      payload: payloads
+    });
+
+    bumpSheetCacheVersion_(DATA_SHEET);
     return pickMessage('Dữ liệu đã được lưu thành công!', 'Data saved successfully!');
   } catch (error) {
     Logger.log(error);
@@ -2268,44 +2414,64 @@ function updateData(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const dataRange = sheet.getRange(2, 1, sheet.getLastRow(), HEADERS_REGISTER.length);
-    const allValues = dataRange.getValues();
-    let rowToUpdate = -1;
-    let recordTimeStr = '';
+    const selectFields = encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','));
+    const existingRows = supabaseRequest_(
+      SUPABASE_VEHICLE_REG_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID) + '&select=' + selectFields
+    );
 
-    for (let i = 0; i < allValues.length; i++) {
-      if (allValues[i][0] == rowData.ID) {
-        rowToUpdate = i + 2;
-        recordTimeStr = String(allValues[i][19]).replace("'", "");
-        break;
-      }
+    if (!Array.isArray(existingRows) || !existingRows.length) {
+      throw new Error('Không tìm thấy dòng với ID: ' + rowData.ID);
     }
 
-    if (rowToUpdate === -1) throw new Error('Không tìm thấy dòng với ID: ' + rowData.ID);
+    const existing = existingRows[0];
     
     if (userSession.role === 'user') {
       const timeStatus = checkRegistrationTime();
       if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép chỉnh sửa dữ liệu.');
 
-      const recordHour = parseInt(recordTimeStr.split(':')[0]);
-      
-      if (recordHour >= 8 && recordHour < 16 && timeStatus.period !== 1) {
-        throw new Error('Dữ liệu đăng ký từ 8:00-16:00 chỉ có thể sửa trong khung giờ này.');
+      const recordTime = parseSupabaseTimestamp_(existing.time);
+      const recordHour = recordTime
+        ? parseInt(Utilities.formatDate(recordTime, 'Asia/Ho_Chi_Minh', 'HH'), 10)
+        : NaN;
+
+      const recordCompany = String(existing.transportation_company == null ? '' : existing.transportation_company).trim();
+      if (recordCompany !== String(userSession.contractor || '').trim()) {
+        throw new Error('Bạn không có quyền chỉnh sửa dữ liệu của đơn vị khác.');
       }
-      if (recordHour >= 20 && recordHour < 22 && timeStatus.period !== 2) {
-        throw new Error('Dữ liệu đăng ký từ 20:00-22:00 chỉ có thể sửa trong khung giờ này.');
+
+      if (!isNaN(recordHour)) {
+        if (recordHour >= 8 && recordHour < 16 && timeStatus.period !== 1) {
+          throw new Error('Dữ liệu đăng ký từ 8:00-16:00 chỉ có thể sửa trong khung giờ này.');
+        }
+        if (recordHour >= 20 && recordHour < 22 && timeStatus.period !== 2) {
+          throw new Error('Dữ liệu đăng ký từ 20:00-22:00 chỉ có thể sửa trong khung giờ này.');
+        }
       }
+    }
+
+
+    if (userSession.role === 'user') {
+      rowData['Transportion Company'] = userSession.contractor;
     }
     
     if (rowData['Register Date']) {
-    rowData['Register Date'] = "'" + rowData['Register Date'];
+      const normalizedDate = normalizeDate(rowData['Register Date']);
+      rowData['Register Date'] = normalizedDate || rowData['Register Date'];
     }
-    coerceNumericRegisterFields_(rowData);    
-    rowData['Time'] = "'" + Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss");
-    const dataArray = HEADERS_REGISTER.map(header => rowData[header] || "");
-    sheet.getRange(rowToUpdate, 1, 1, HEADERS_REGISTER.length).setValues([dataArray]);
-    bumpSheetCacheVersion_(DATA_SHEET);    
+
+    coerceNumericRegisterFields_(rowData);
+    rowData['Time'] = new Date();
+
+    const payload = buildVehicleRegistrationPayload_(rowData, { includeNulls: true });
+    delete payload.id;
+
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      payload: payload
+    });
+
+    bumpSheetCacheVersion_(DATA_SHEET);
     return 'Dữ liệu đã được cập nhật thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật dữ liệu: ' + error.message); }
 }
@@ -2318,26 +2484,38 @@ function deleteMultipleData(ids,sessionToken) {
     if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép xóa dữ liệu trong ngày.');
   }
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    const companyColumnValues = sheet.getRange(2, 16, sheet.getLastRow(), 1).getValues().flat();
+    const uniqueIds = Array.from(new Set(ids.map(function (id) { return String(id).trim(); }).filter(Boolean)));
+    if (!uniqueIds.length) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
 
-    let rowsToDelete = [];
-    ids.forEach(id => {
-      const rowIndex = idColumnValues.indexOf(id);
-      if (rowIndex !== -1) {
-          if (userSession.role === 'user' && companyColumnValues[rowIndex] !== userSession.contractor) {
-            throw new Error(`Bạn không có quyền xóa xe có ID: ${id}.`);
-          }
-          rowsToDelete.push(rowIndex + 2);
-      }
+    const select = ['id', 'transportation_company'];
+    const filter = buildSupabaseInFilter_('id', uniqueIds);
+    if (!filter) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
+
+    const existing = supabaseRequest_(
+      SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + encodeURIComponent(select.join(',')) + '&' + filter
+    ) || [];
+
+    if (!Array.isArray(existing) || !existing.length) {
+      throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
+    }
+
+    if (userSession.role === 'user') {
+      const contractor = String(userSession.contractor || '').trim();
+      existing.forEach(function (row) {
+        const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+        if (comp !== contractor) {
+          throw new Error(`Bạn không có quyền xóa xe có ID: ${row.id}.`);
+        }
+      });
+    }
+
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + filter, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
     });
-    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
-    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
-      sheet.deleteRow(rowNum);
-    });
-    bumpSheetCacheVersion_(DATA_SHEET);    
-    return `Đã xóa thành công ${rowsToDelete.length} mục.`;
+
+    bumpSheetCacheVersion_(DATA_SHEET);
+    return `Đã xóa thành công ${existing.length} mục.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa dữ liệu: ' + error.message); }
 }
 
@@ -2346,38 +2524,51 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
   if (!recordsToCheck || recordsToCheck.length === 0) return [];
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const lastRow = sheet.getLastRow();
+    const normalizedRecords = [];
+    const uniqueDates = new Set();
 
-    // Thu thập các bản ghi đã tồn tại trong ngày
-    const existingKeys = new Set();
-    if (lastRow >= 2) {
-      const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
-      allData.forEach(row => {
-        const dateStr = Utilities.formatDate(new Date(row[1]), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
-        const plate = String(row[3] || '').toUpperCase().replace(/\s/g, '');
-        const company = String(row[15] || '').trim().toUpperCase();
-        existingKeys.add(`${dateStr}-${plate}-${company}`);
-      });
-    }
-
-    // Kiểm tra dữ liệu đầu vào (bao gồm cả trùng lặp trong file)
-    const seen = new Set();
-    
-    const duplicates = [];
-    recordsToCheck.forEach(rec => {
+    recordsToCheck.forEach(function (rec) {
       const regDate = normalizeDate(rec['Register Date']);
-      const dateStr = regDate ? Utilities.formatDate(regDate, "Asia/Ho_Chi_Minh", "yyyy-MM-dd") : '';
+      const isoDate = regDate ? Utilities.formatDate(regDate, 'UTC', 'yyyy-MM-dd') : '';
       const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
       const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
-      const key = `${dateStr}-${plate}-${company}`;
+      if (!isoDate || !plate || !company) return;
+      normalizedRecords.push({ date: isoDate, plate: plate, company: company });
+      uniqueDates.add(isoDate);
+    });
+
+    if (!normalizedRecords.length) return [];
+
+    const dateFilter = buildSupabaseInFilter_('register_date', Array.from(uniqueDates));
+    const existingKeys = new Set();
+    if (dateFilter) {
+      const existingRows = supabaseRequest_(
+        SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + encodeURIComponent(['register_date', 'truck_plate', 'transportation_company'].join(',')) + '&' + dateFilter
+      ) || [];
+
+      if (Array.isArray(existingRows)) {
+        existingRows.forEach(function (row) {
+          const dateStr = String(row.register_date || '').trim();
+          const plate = String(row.truck_plate || '').toUpperCase().replace(/\s/g, '');
+          const company = String(row.transportation_company || '').trim().toUpperCase();
+          if (dateStr && plate && company) {
+            existingKeys.add(`${dateStr}-${plate}-${company}`);
+          }
+        });
+      }
+    }
+
+    const seen = new Set();
+    const duplicates = [];
+
+    normalizedRecords.forEach(function (rec) {
+      const key = `${rec.date}-${rec.plate}-${rec.company}`;
 
       if (existingKeys.has(key) || seen.has(key)) {
-        duplicates.push(plate);
+        duplicates.push(rec.plate);
       }
       seen.add(key);
     });
-    
     return duplicates;
   } catch (e) {
     Logger.log(e);
@@ -3107,21 +3298,12 @@ function saveTotalListAppend(rows, sessionToken) {
   return `Đã thêm ${values.length} dòng mới vào Danh sách xe tổng.`;
 }
 
-
-// Helper tạo ID ngắn, chữ hoa (15 ký tự)
-function generateShortId() {
-  return Utilities.getUuid().replace(/-/g, '').slice(0, 15).toUpperCase();
-}
-
 // === THAY TOÀN BỘ addManualVehicle ===
 function addManualVehicle(record, sessionToken, language) {
   const userSession = validateSession(sessionToken);
   const pickMessage = createMessagePicker_(language);
 
   try {
-    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(DATA_SHEET);
-    if (!sheet) throw new Error('Không tìm thấy sheet dữ liệu đăng ký.');
 
     // Chuẩn hóa/điền thêm các field bắt buộc
     const rowObj = Object.assign({}, record);
@@ -3170,24 +3352,25 @@ function addManualVehicle(record, sessionToken, language) {
       ));
     }
 
-    // ID do server tự sinh
-    rowObj['ID'] = generateShortId();
-
     // Lưu ngày dạng text (chỉ thêm 1 dấu ')
     if (rowObj['Register Date']) {
       rowObj['Register Date'] = normalizeDate(rowObj['Register Date']);
     }
 
     // Thời gian tạo (giữ nguyên cách lưu hiện tại)
-    rowObj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
+    rowObj['Time'] = new Date();
 
         // ✅ Bổ sung cột Registration Status
     rowObj['Registration Status'] = 'Pending approval';
 
-    // Ghi theo đúng thứ tự header
-    const values = [HEADERS_REGISTER.map(h => rowObj[h] ?? "")];
-    sheet.getRange(sheet.getLastRow() + 1, 1, 1, HEADERS_REGISTER.length).setValues(values);
-    bumpSheetCacheVersion_(DATA_SHEET);    
+    const payload = buildVehicleRegistrationPayload_(rowObj);
+
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT, {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      payload: [payload]
+    });
+    bumpSheetCacheVersion_(DATA_SHEET);
 
     return pickMessage('Đăng ký xe thành công!', 'Vehicle registered successfully!');
   } catch (e) {
@@ -3233,27 +3416,27 @@ function getXpplSnapshot(payload, sessionToken){
   var cached = _getCache(ck);
   if (cached) return cached;
 
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  if (!sh) throw new Error('Không tìm thấy sheet dữ liệu');
+  var isoDate = toSupabaseDateString_(dateString);
+  if (!isoDate) throw new Error('Thiếu ngày đăng ký hợp lệ');
   var headers = HEADERS_REGISTER;
-  var values = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), headers.length).getValues();
+  var response = supabaseRequest_(
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+  ) || [];
 
-  var idxDate = headers.indexOf('Register Date');
-  var idxCno  = headers.indexOf('Contract No');
-  var idxComp = headers.indexOf('Transportion Company');
-  var idxRS   = headers.indexOf('Registration Status');
+  if (!Array.isArray(response)) throw new Error('Không thể đọc dữ liệu đăng ký.');
+
+  var rowsRaw = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
 
   var rows = [];
   var pending=0, approved=0;
   var per={};
 
-  for (var i=0;i<values.length;i++){
-    var r=values[i];
-    if (_toDateKey(r[idxDate]) !== dateString) continue;
-    if (scope !== 'ALL' && String(r[idxComp]||'').trim() !== scope) continue;
-
-    // (SAU) – dùng helper đã có để đảm bảo DD/MM/YYYY + HH:mm:ss
+  for (var i=0;i<rowsRaw.length;i++){
+    var r=rowsRaw[i];
     var obj = formatRowForClient_(r, headers);
+    if (scope !== 'ALL' && String(obj['Transportion Company']||'').trim() !== scope) continue;
     rows.push(obj);
 
     var st = String(obj['Registration Status']||'');
@@ -3299,7 +3482,7 @@ function getRegistrationsForApproval(payload, sessionToken){
 
 
 function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
-  var userSession = requireAdmin_(sessionToken);
+  requireAdmin_(sessionToken);
   var dateString = filters && filters.dateString;
   var set = {};
   (filters.contracts||[]).forEach(function(c){ set[String(c).trim()] = true; });
@@ -3308,37 +3491,44 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   if (!dateString) throw new Error('Thiếu ngày đăng ký.');
   if (!newStatus || (['Approved','Pending approval'].indexOf(newStatus)===-1)) throw new Error('Trạng thái không hợp lệ.');
 
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  var headers = HEADERS_REGISTER;
-  var values = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), headers.length).getValues();
+  var isoDate = toSupabaseDateString_(dateString);
+  if (!isoDate) throw new Error('Ngày đăng ký không hợp lệ.');
 
-  var idxDate = headers.indexOf('Register Date');
-  var idxCno  = headers.indexOf('Contract No');
-  var idxRS   = headers.indexOf('Registration Status');
-  var idxID   = headers.indexOf('ID');
-  var idxComp = headers.indexOf('Transportion Company');
+  var params = [
+    'select=' + encodeURIComponent(['id','contract_no','registration_status','transportation_company'].join(',')),
+    'register_date=eq.' + encodeURIComponent(isoDate)
+  ];
 
-  var scope = scope = 'ALL';
-  var changed = 0;
-
-  for (var r=0; r<values.length; r++){
-    var row = values[r];
-    if (_toDateKey(row[idxDate]) !== dateString) continue;
-    if (scope !== 'ALL' && String(row[idxComp]||'').trim() !== scope) continue;
-    if (Object.keys(set).length && !set[String(row[idxCno]||'').trim()]) continue;
-    if (idsSelected.length && idsSelected.indexOf(String(row[idxID]||''))===-1) continue;
-    if (row[idxRS] === newStatus) continue;
-    row[idxRS] = newStatus;
-    sh.getRange(r+2, idxRS+1).setValue(newStatus);
-    changed++;
+  if (idsSelected && idsSelected.length) {
+    var idFilter = buildSupabaseInFilter_('id', idsSelected);
+    if (!idFilter) return 'Không có dòng nào được cập nhật.';
+    params.push(idFilter);
   }
 
-  if (changed > 0) {
-    bumpSheetCacheVersion_(DATA_SHEET);
-  }  
+  var rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
+  if (!Array.isArray(rows) || !rows.length) return 'Không có dòng nào được cập nhật.';
 
-  _bust(['SNAP_'+dateString+'_'+scope, 'SNAP_'+dateString+'_ALL']);
-  return 'Đã cập nhật ' + changed + ' dòng.';
+  var changedIds = [];
+  rows.forEach(function (row) {
+    if (Object.keys(set).length && !set[String(row.contract_no || '').trim()]) return;
+    if (String(row.registration_status || '') === newStatus) return;
+    changedIds.push(String(row.id));
+  });
+
+  if (!changedIds.length) return 'Không có dòng nào được cập nhật.';
+
+  var updateFilter = buildSupabaseInFilter_('id', changedIds);
+  if (!updateFilter) return 'Không có dòng nào được cập nhật.';
+
+  supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + updateFilter, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    payload: { registration_status: newStatus }
+  });
+
+  bumpSheetCacheVersion_(DATA_SHEET);
+  _bust(['SNAP_'+dateString+'_ALL']);
+  return 'Đã cập nhật ' + changedIds.length + ' dòng.';
 }
 
 
@@ -3347,31 +3537,28 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
  * params: { dateString?: 'dd/MM/yyyy', search?: string }
  */
 function exportRegisteredVehicles(params) {
-  const sheet = SpreadsheetApp.getActive().getSheetByName('VehicleData'); // đổi tên nếu bạn dùng sheet khác
-  const headers = HEADERS_REGISTER; // mảng header của Registered (đang dùng cho DataTable)
-  const range = sheet.getRange(2, 1, Math.max(0, sheet.getLastRow() - 1), headers.length);
-  let allData = range.getValues();
+  const headers = HEADERS_REGISTER;
+  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
 
-  // --- lọc theo ngày (chấp nhận Date thật hoặc text có/dính dấu ')
   if (params && params.dateString) {
-    const dateIdx = headers.indexOf('Register Date');
-    allData = allData.filter(row => {
-      const v = row[dateIdx];
-      const cmp = (v instanceof Date)
-        ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-        : String(v).replace(/^'/, '');
-      return cmp === params.dateString;
+    const iso = toSupabaseDateString_(params.dateString);
+    if (iso) {
+      queryParams.push('register_date=eq.' + encodeURIComponent(iso));
+    }
+  }
+
+  let response = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParams.join('&')) || [];
+  if (!Array.isArray(response)) response = [];
+
+  let rowsData = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+  if (params && params.search) {
+    const q = String(params.search).toLowerCase();
+    rowsData = rowsData.filter(function (row) {
+      return row.some(function (cell) { return String(cell).toLowerCase().includes(q); });
     });
   }
 
-  // --- lọc theo chuỗi tìm kiếm (áp dụng trên toàn hàng đã bóc dấu ')
-  if (params && params.search) {
-    const q = params.search.toLowerCase();
-    allData = allData.filter(row => row.some(cell => String(cell).replace(/^'/, '').toLowerCase().includes(q)));
-  }
-
-  // --- map & format để client đổ thẳng vào Excel
-  const rows = allData.map(row => formatRowForClient_(row, headers));
+  const rows = rowsData.map(function (row) { return formatRowForClient_(row, headers); });
   return { headers: headers, rows: rows };
 }
 
