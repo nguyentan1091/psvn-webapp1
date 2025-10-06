@@ -2283,7 +2283,7 @@ function validateAndTransformData(dataRows) {
         };
         
         const record = {
-            'ID': generateRandomId(15),
+            'ID': generateRandomId(12),
             'Register Date': row[1] || '', 'Contract No': row[2] || '',
             'Truck Plate': String(row[3] || '').replace(/\s/g, '').toUpperCase(), 'Country': row[4] || '',
             'Wheel': row[5] || '', 'Trailer Plate': String(row[6] || '').replace(/\s/g, '').toUpperCase(),
@@ -3378,7 +3378,7 @@ function handleTotalListFileUpload() {
 
               // Chuẩn hoá record để luôn có đủ key DataTable cần
               totalListPreviewData = (result.data || []).map(r => ({
-                ID: r.ID || (typeof generateRandomId === 'function' ? generateRandomId(15) : String(Date.now())),
+                ID: r.ID || (typeof generateRandomId === 'function' ? generateRandomId(12) : String(Date.now())),
                 'Truck Plate': r['Truck Plate'] || '',
                 Country: r['Country'] || '',
                 Wheel: r['Wheel'] || '',
@@ -3526,7 +3526,7 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
     if (row.length === 0 || row.every(cell => cell === "")) return;
     const plate = String(row[1] || '').replace(/\s/g, '').toUpperCase();
 
-    const activityRaw = String(row[15] || '').trim();
+    const activityRaw = String(row[12] || '').trim();
     const activityUpper = activityRaw.toUpperCase();
     const record = {
       'ID': generateCustomId(),
