@@ -3,7 +3,6 @@
 const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
-const HISTORY_LOGIN_SHEET = 'History-login';
 const CONTRACT_SHEET = 'ContractData';
 const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Company', 'Status'];
 // === XPPL Weighing Station database ===
@@ -108,6 +107,7 @@ const SUPABASE_URL = 'https://medlgvtmhujuqdvceaoz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lZGxndnRtaHVqdXFkdmNlYW96Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODg5NzY5NSwiZXhwIjoyMDc0NDczNjk1fQ.h-hVavhpp_NbJ4tiaFTPJBQsdS0SNfpndQeGp-eyFAo';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
 const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
+const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
 const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
 const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
 const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
@@ -251,7 +251,8 @@ function supabaseRequest_(path, options) {
 function toSupabaseDateString_(value) {
   const normalized = normalizeDate(value);
   if (!normalized) return null;
-  return Utilities.formatDate(normalized, 'UTC', 'yyyy-MM-dd');
+  const timezone = Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh';
+  return Utilities.formatDate(normalized, timezone, 'yyyy-MM-dd');
 }
 
 function mapVehicleRegistrationRowToArray_(row, headers) {
@@ -793,15 +794,59 @@ function requireXpplRole_(sessionToken) {
   return s;
 }
 
-function logLoginAttempt(username, status) {
+function buildLoginHistoryPayload_(username, outcome, context) {
+  const payload = {
+    occurred_at: new Date().toISOString()
+  };
+
+  const normalizedUsername = String(username == null ? '' : username).trim();
+  payload.username = normalizedUsername || null;
+
+  const normalizedOutcome = String(outcome == null ? '' : outcome).trim();
+  payload.outcome = normalizedOutcome || null;
+
+  const ctx = context && typeof context === 'object' ? context : {};
+
+  const ip = ctx.ip == null ? '' : String(ctx.ip).trim();
+  if (ip) {
+    payload.ip = ip;
+  }
+
+  const latitude = Number(ctx.latitude);
+  if (Number.isFinite(latitude)) {
+    payload.latitude = latitude;
+  }
+
+  const longitude = Number(ctx.longitude);
+  if (Number.isFinite(longitude)) {
+    payload.longitude = longitude;
+  }
+
+  const accuracySource = ctx.accuracy_m != null ? ctx.accuracy_m : ctx.accuracy;
+  const accuracy = Number(accuracySource);
+  if (Number.isFinite(accuracy)) {
+    payload.accuracy_m = Math.round(accuracy);
+  }
+
+  const userAgent = ctx.userAgent != null ? ctx.userAgent : ctx.user_agent;
+  if (userAgent != null && userAgent !== '') {
+    const agentString = String(userAgent);
+    payload.user_agent = agentString.length > 1024 ? agentString.slice(0, 1024) : agentString;
+  }
+
+  return payload;
+}
+
+function logLoginAttempt(username, outcome, context) {
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(HISTORY_LOGIN_SHEET);
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Timestamp', 'Username', 'Status']);
-    }
-    sheet.appendRow([new Date(), username, status]);
+    const payload = buildLoginHistoryPayload_(username, outcome, context);
+    supabaseRequest_(SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT, {
+      method: 'POST',
+      payload: payload,
+      headers: { Prefer: 'return=minimal' }
+    });
   } catch (e) {
-    Logger.log('Không thể ghi lịch sử đăng nhập: ' + e.message);
+    Logger.log('Không thể ghi lịch sử đăng nhập (Supabase): ' + e);
   }
 }
 
@@ -829,18 +874,21 @@ function ensureSupervisionAccount_() {
 function checkLogin(credentials) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const username = String(credentials.username == null ? '' : credentials.username).trim();
-  
+
+  const loginContext = credentials && typeof credentials.context === 'object' ? credentials.context : {};
+
   try {
     const lockoutUntil = scriptProperties.getProperty(`lockout_until_${username}`);
     if (lockoutUntil && new Date().getTime() < parseFloat(lockoutUntil)) {
       const timeLeft = Math.ceil((parseFloat(lockoutUntil) - new Date().getTime()) / (60 * 1000));
+      logLoginAttempt(username, 'Locked', loginContext);      
       throw new Error(`Tài khoản của bạn đã bị tạm khóa. Vui lòng thử lại sau ${timeLeft} phút.`);
     }
 
     const userRecord = getSupabaseUserByUsername_(username);
 
     if (!userRecord || String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(credentials.password == null ? '' : credentials.password)) {
-      logLoginAttempt(username, 'Failure');
+      logLoginAttempt(username, 'Failure', loginContext);
       let failedAttempts = parseInt(scriptProperties.getProperty(`failed_attempts_${username}`) || '0') + 1;
       if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
         let lockoutLevel = parseInt(scriptProperties.getProperty(`lockout_level_${username}`) || '0') + 1;
@@ -863,6 +911,7 @@ function checkLogin(credentials) {
 
     if (activeToken) {
       if (tokenExpiry && nowMs < tokenExpiry.getTime()) {
+        logLoginAttempt(username, 'Rejected-ActiveSession', loginContext);        
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
       clearUserSession_(username, activeToken, { skipSupabaseUpdate: true });
@@ -890,6 +939,7 @@ function checkLogin(credentials) {
       });
     } catch (updateError) {
       clearUserSession_(username, activeToken);
+      logLoginAttempt(username, 'Failure-UpdateSession', loginContext);      
       throw updateError;
     }
 
@@ -908,7 +958,7 @@ function checkLogin(credentials) {
       token: newSessionToken
     };
 
-    logLoginAttempt(username, 'Success');
+    logLoginAttempt(username, 'Success', loginContext);
     cacheSession_(userSession);
 
     return userSession;
@@ -2529,7 +2579,7 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
 
     recordsToCheck.forEach(function (rec) {
       const regDate = normalizeDate(rec['Register Date']);
-      const isoDate = regDate ? Utilities.formatDate(regDate, 'UTC', 'yyyy-MM-dd') : '';
+      const isoDate = toSupabaseDateString_(regDate) || '';
       const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
       const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
       if (!isoDate || !plate || !company) return;
