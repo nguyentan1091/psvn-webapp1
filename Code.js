@@ -2829,7 +2829,7 @@ function insertTruckListRows_(rows, session) {
   const skippedExisting = [];
   const skippedInFile = [];
   const seenInFile = new Set();
-  const payloads = [];
+  const groupedPayloads = new Map();
 
   rows.forEach(function (obj) {
     const plate = sanitizeTruckPlate_(obj && obj['Truck Plate']);
@@ -2854,7 +2854,8 @@ function insertTruckListRows_(rows, session) {
       mode: 'insert',
       username: session.username,
       defaultRegisterDate: defaultRegisterDate,
-      defaultTime: defaultTime
+      defaultTime: defaultTime,
+      includeNulls: true
     });
 
     if (!payload.transportation_company && company) {
@@ -2867,29 +2868,49 @@ function insertTruckListRows_(rows, session) {
       payload.time = defaultTime;
     }
 
-    payloads.push(payload);
+    const keys = Object.keys(payload).sort();
+    if (!keys.length) {
+      return;
+    }
+
+    const signature = keys.join('|');
+    if (!groupedPayloads.has(signature)) {
+      groupedPayloads.set(signature, []);
+    }
+    groupedPayloads.get(signature).push(payload);
     existingSet.add(plate);
   });
 
   let inserted = 0;
-  if (payloads.length) {
+  if (groupedPayloads.size) {
     try {
-      const response = supabaseRequest_(SUPABASE_TRUCK_LIST_ENDPOINT, {
-        method: 'POST',
-        payload: payloads,
-        headers: { Prefer: 'return=representation' }
-      });
-      if (!Array.isArray(response)) {
-        throw new Error('Không thể lưu dữ liệu danh sách xe tổng.');
+      for (const [signature, group] of groupedPayloads.entries()) {
+        if (!Array.isArray(group) || !group.length) continue;
+        try {
+          const response = supabaseRequest_(SUPABASE_TRUCK_LIST_ENDPOINT, {
+            method: 'POST',
+            payload: group,
+            headers: { Prefer: 'return=representation' }
+          });
+          if (!Array.isArray(response)) {
+            throw new Error('Không thể lưu dữ liệu danh sách xe tổng.');
+          }
+          inserted += response.length;
+        } catch (err) {
+          const columns = signature ? signature.split('|').join(', ') : '';
+          const message = columns
+            ? err.message + ' (Các cột: ' + columns + ')'
+            : err.message;
+          throw new Error(message);
+        }
       }
-      inserted = response.length;
     } catch (e) {
       throw (e instanceof Error) ? e : new Error(e);
-    }    
+    }
     if (inserted > 0) {
       bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
     }
-  }    
+  }
 
   return {
     inserted: inserted,
