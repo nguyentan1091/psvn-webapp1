@@ -2854,8 +2854,7 @@ function insertTruckListRows_(rows, session) {
       mode: 'insert',
       username: session.username,
       defaultRegisterDate: defaultRegisterDate,
-      defaultTime: defaultTime,
-      includeNulls: true
+      defaultTime: defaultTime
     });
 
     if (!payload.transportation_company && company) {
@@ -2874,17 +2873,6 @@ function insertTruckListRows_(rows, session) {
 
   let inserted = 0;
   if (payloads.length) {
-    const requiredKeys = Array.from(payloads.reduce(function (set, item) {
-      Object.keys(item).forEach(function (key) { set.add(key); });
-      return set;
-    }, new Set()));
-
-    payloads.forEach(function (item) {
-      requiredKeys.forEach(function (key) {
-        if (!(key in item)) item[key] = null;
-      });
-    });
-
     try {
       const response = supabaseRequest_(SUPABASE_TRUCK_LIST_ENDPOINT, {
         method: 'POST',
