@@ -663,9 +663,13 @@ const translations = {
     "col_transport_company": "Đơn vị vận chuyển",
     "col_subcontractor": "Nhà thầu phụ",
     "col_vehicle_status": "Tình trạng xe",
-    "col_activity_status": "Trạng thái hoạt động",    
+    "col_activity_status": "Trạng thái hoạt động",
     "col_registration_status": "Trạng thái đăng ký",
     "col_time": "Thời gian đăng ký",
+    "col_created_at": "Ngày tạo",
+    "col_created_by": "Người tạo",
+    "col_updated_at": "Cập nhật lúc",
+    "col_updated_by": "Người cập nhật",
     "col_creation_date": "Ngày tạo",
     "col_creation_time": "Thời gian tạo",
     "col_username": "Tên đăng nhập",
@@ -962,12 +966,16 @@ const translations = {
     "col_id_passport": "ID/Passport",
     "col_phone_number": "Phone Number",
     "col_destination": "Destination EST",
-    "col_transport_company": "Transport Company",
+    "col_transport_company": "Transportation Company",
     "col_subcontractor": "Subcontractor",
     "col_vehicle_status": "Vehicle Status",
-    "col_activity_status": "Activity Status",    
+    "col_activity_status": "Activity Status",
     "col_registration_status": "Registration Status",
     "col_time": "Registration Time",
+    "col_created_at": "Created At",
+    "col_created_by": "Created By",
+    "col_updated_at": "Updated At",
+    "col_updated_by": "Updated By",
     "col_creation_date": "Creation Date",
     "col_creation_time": "Creation Time",
     "col_username": "Username",
@@ -1965,7 +1973,7 @@ function initRegisterPage() {
   $('#uploadButton').on('click', handleFileUpload);
   $('#saveUploadBtn').on('click', handleSaveUploadedData);
 
-  // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
+  // === NẠP "Đơn vị vận chuyển" từ Supabase ===
   google.script.run
     .withSuccessHandler(list => {
       allowedCompanies = (list || []).filter(Boolean);
@@ -2099,7 +2107,7 @@ function handleManualAdd(e) {
     'ID/Passport'         : driverIdPassport,
     'Phone number'        : phoneNumber,
     'Destination EST'     : destinationEST,
-    'Transportion Company': transportionCompany,
+    'Transportation Company': transportionCompany,
     'Subcontractor'       : subcontractor,
     'Vehicle Status'      : vehicleStatus
   };
@@ -2161,7 +2169,7 @@ function handleFileUpload() {
                     { data: 'ID/Passport', title: t.col_id_passport || 'ID/Passport' },
                     { data: 'Phone number', title: t.col_phone_number || 'Phone number' },
                     { data: 'Destination EST', title: t.col_destination || 'Destination EST' },
-                    { data: 'Transportion Company', title: t.col_transport_company || 'Transportion Company' },
+                    { data: 'Transportion Company', title: t.col_transport_company || 'Transportation Company' },
                     { data: 'Subcontractor', title: t.col_subcontractor || 'Subcontractor' },
                     { data: 'Vehicle Status', title: t.col_vehicle_status || 'Vehicle Status' }
                 ];
@@ -2253,7 +2261,7 @@ function validateAndTransformData(dataRows) {
         'ID/Passport': t.col_id_passport || 'ID/Passport',
         'Phone number': t.col_phone_number || 'Phone number',
         'Destination EST': t.col_destination || 'Destination EST',
-        'Transportion Company': t.col_transport_company || 'Transportion Company',
+        'Transportation Company': t.col_transport_company || 'Transportation Company',
         'Subcontractor': t.col_subcontractor || 'Subcontractor',
         'Vehicle Status': t.col_vehicle_status || 'Vehicle Status'
     };
@@ -2278,11 +2286,11 @@ function validateAndTransformData(dataRows) {
             'Truck weight': row[7] || '', 'Pay load': row[8] || '', 'Container No1': row[9] || '',
             'Container No2': row[10] || '', 'Driver Name': row[11] || '', 'ID/Passport': row[12] || '',
             'Phone number': row[13] || '', 'Destination EST': row[14] || '',
-            'Transportion Company': row[15] || '', 'Subcontractor': row[16] || '',
+            'Transportation Company': row[15] || '', 'Subcontractor': row[16] || '',
             'Vehicle Status': String(row[17] || '').toUpperCase()
         };
 
-        const requiredFields = ['Contract No', 'Truck Plate', 'Country', 'Wheel', 'Truck weight', 'Pay load', 'Driver Name', 'ID/Passport', 'Destination EST', 'Transportion Company', 'Subcontractor', 'Vehicle Status'];
+        const requiredFields = ['Contract No', 'Truck Plate', 'Country', 'Wheel', 'Truck weight', 'Pay load', 'Driver Name', 'ID/Passport', 'Destination EST', 'Transportation Company', 'Subcontractor', 'Vehicle Status'];
         requiredFields.forEach(field => {
             if (!record[field]) {
                 appendError(field, t.validation_required || "- Cột '{field}' không được để trống.", { field: columnNames[field] });
@@ -2338,13 +2346,13 @@ function validateAndTransformData(dataRows) {
         }
         
         if (isRole('user')) {
-            if (record['Transportion Company'] && record['Transportion Company'] !== userSession.contractor) {
-                appendError('Transportion Company', t.validation_contractor_mismatch || '- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).', { contractor: userSession.contractor });
+            if (record['Transportation Company'] && record['Transportation Company'] !== userSession.contractor) {
+                appendError('Transportation Company', t.validation_contractor_mismatch || '- Bạn chỉ có thể đăng ký cho nhà thầu của mình ({contractor}).', { contractor: userSession.contractor });
             }
-            record['Transportion Company'] = userSession.contractor;
+            record['Transportation Company'] = userSession.contractor;
         } else {
-            if (record['Transportion Company'] && !allowedCompanies.includes(record['Transportion Company'])) {
-                appendError('Transportion Company', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Transportion Company'], values: allowedCompanies.join(', ') });
+            if (record['Transportation Company'] && !allowedCompanies.includes(record['Transportation Company'])) {
+                appendError('Transportation Company', t.validation_allowed_values || "- Cột '{field}' chỉ chấp nhận: {values}.", { field: columnNames['Transportation Company'], values: allowedCompanies.join(', ') });
             }
         }
         
@@ -2361,7 +2369,7 @@ function validateAndTransformData(dataRows) {
     const seen = new Map();
     transformedData.forEach((record, index) => {
         if (record.errors) return;
-        const key = `${record['Register Date']}-${record['Truck Plate']}-${record['Transportion Company']}`;
+        const key = `${record['Register Date']}-${record['Truck Plate']}-${record['Transportation Company']}`;
         if (seen.has(key)) {
             const firstIndex = seen.get(key);
             if (!transformedData[firstIndex].errors) transformedData[firstIndex].errors = {};
@@ -2655,7 +2663,7 @@ function initViewPage() {
     { data: 'ID/Passport', title: t.col_id_passport },
     { data: 'Phone number', title: t.col_phone_number },
     { data: 'Destination EST', title: t.col_destination },
-    { data: 'Transportion Company', title: t.col_transport_company },
+    { data: 'Transportation Company', title: t.col_transport_company },
     { data: 'Subcontractor', title: t.col_subcontractor },
     { data: 'Vehicle Status', title: t.col_vehicle_status },
     { data: 'Registration Status', title: t.col_registration_status },
@@ -3002,9 +3010,9 @@ function handleEdit(rowData) {
             <div class="form-group"><label>${t.col_id_passport || 'ID/Passport'}</label><input type="text" id="editIdPassport" class="form-control" value="${rowData['ID/Passport'] || ''}" maxlength="70" required></div>
             <div class="form-group"><label>${t.col_phone_number || 'Phone number'}</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}" ></div>
             <div class="form-group"><label>${t.col_destination || 'Destination EST'}</label><input type="text" id="editDestinationEST" class="form-control" value="${rowData['Destination EST'] || ''}" maxlength="70" required></div>
-            <div class="form-group"><label>${t.col_transport_company || 'Transportion Company'}</label>
+            <div class="form-group"><label>${t.col_transport_company || 'Transportation Company'}</label>
                 <select class="form-select" id="editTransportionCompany" ${isRole('user') ? 'disabled' : ''}>
-                    ${createOptions(allowedCompanies, rowData['Transportion Company'])}
+                    ${createOptions(allowedCompanies, rowData['Transportation Company'])}
                 </select>
             </div>
             <div class="form-group"><label>${t.col_subcontractor || 'Subcontractor'}</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
@@ -3042,7 +3050,7 @@ function handleEdit(rowData) {
             updatedRecord['ID/Passport'] = $('#editIdPassport').val();
             updatedRecord['Phone number'] = $('#editPhoneNumber').val();
             updatedRecord['Destination EST'] = $('#editDestinationEST').val();
-            updatedRecord['Transportion Company'] = $('#editTransportionCompany').val();
+            updatedRecord['Transportation Company'] = $('#editTransportionCompany').val();
             updatedRecord['Subcontractor'] = $('#editSubcontractor').val();
             updatedRecord['Vehicle Status'] = $('#editVehicleStatus').val();
             return updatedRecord;
@@ -3112,12 +3120,16 @@ function initTotalListPage() {
         { data: 'Driver Name', title: t.col_driver_name },
         { data: 'ID/Passport', title: t.col_id_passport },
         { data: 'Phone number', title: t.col_phone_number },
-        { data: 'Transportion Company', title: t.col_transport_company },
+        { data: 'Transportation Company', title: t.col_transport_company },
         { data: 'Subcontractor', title: t.col_subcontractor },
         { data: 'Vehicle Status', title: t.col_vehicle_status },
-        { data: 'Activity Status', title: t.col_activity_status },        
+        { data: 'Activity Status', title: t.col_activity_status },
         { data: 'Register Date', title: t.col_register_date },
-        { data: 'Time', title: t.col_time }
+        { data: 'Time', title: t.col_time },
+        { data: 'Created at', title: t.col_created_at },
+        { data: 'Created by', title: t.col_created_by },
+        { data: 'Updated at', title: t.col_updated_at },
+        { data: 'Updated by', title: t.col_updated_by }
     );
 
     // 3) Sinh lại thead cho DataTables (tránh kế thừa header cũ)
@@ -3355,7 +3367,7 @@ function handleTotalListFileUpload() {
                 'Driver Name': r['Driver Name'] || '',
                 'ID/Passport': r['ID/Passport'] || '',
                 'Phone number': r['Phone number'] || '',
-                'Transportion Company': r['Transportion Company'] || '',
+                'Transportation Company': r['Transportation Company'] || '',
                 'Subcontractor': r['Subcontractor'] || '',
                 'Vehicle Status': (r['Vehicle Status'] || '').toString().toUpperCase(),
                 'Activity Status': r['Activity Status'] || '',                
@@ -3386,7 +3398,7 @@ function handleTotalListFileUpload() {
                 { data: 'Driver Name', title: 'Tên lái xe', defaultContent: '' },
                 { data: 'ID/Passport', title: 'Số hộ chiếu', defaultContent: '' },
                 { data: 'Phone number', title: 'Số điện thoại', defaultContent: '' },
-                { data: 'Transportion Company', title: 'Đơn vị vận chuyển', defaultContent: '' },
+                { data: 'Transportation Company', title: 'Đơn vị vận chuyển', defaultContent: '' },
                 { data: 'Subcontractor', title: 'Nhà thầu phụ', defaultContent: '' },
                 { data: 'Vehicle Status', title: 'Tình trạng xe', defaultContent: '' },
                 { data: 'Activity Status', title: 'Trạng thái hoạt động', defaultContent: '' },                
@@ -3506,7 +3518,7 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
       'Driver Name': row[9] || '',
       'ID/Passport': row[10] || '',
       'Phone number': row[11] || '',
-      'Transportion Company': row[12] || '',
+      'Transportation Company': row[12] || '',
       'Subcontractor': row[13] || '',
       'Vehicle Status': String(row[14] || '').toUpperCase(),
       'Activity Status': activityRaw,      
@@ -3665,7 +3677,7 @@ function handleEditTotalListVehicle(rowData) {
             <div class="form-group"><label>Số điện thoại</label><input type="number" id="editPhoneNumber" class="form-control" value="${rowData['Phone number'] || ''}"></div>
             <div class="form-group"><label>Đơn vị vận chuyển</label>
                 <select class="form-select" id="editTransportionCompany">
-                    ${createOptions(allowedCompanies, rowData['Transportion Company'])}
+                    ${createOptions(allowedCompanies, rowData['Transportation Company'])}
                 </select>
             </div>
             <div class="form-group"><label>Nhà thầu phụ</label><input type="text" id="editSubcontractor" class="form-control" value="${rowData['Subcontractor'] || ''}" maxlength="70" required></div>
@@ -3706,7 +3718,7 @@ function handleEditTotalListVehicle(rowData) {
             updatedRecord['Driver Name'] = $('#editDriverName').val();
             updatedRecord['ID/Passport'] = $('#editIdPassport').val();
             updatedRecord['Phone number'] = $('#editPhoneNumber').val();
-            updatedRecord['Transportion Company'] = $('#editTransportionCompany').val();
+            updatedRecord['Transportation Company'] = $('#editTransportionCompany').val();
             updatedRecord['Subcontractor'] = $('#editSubcontractor').val();
             updatedRecord['Vehicle Status'] = $('#editVehicleStatus').val();
             updatedRecord['Activity Status'] = $('#editActivityStatus').val();            
@@ -4262,7 +4274,7 @@ function initContractPage() {
     const payload = {
       'Contract No': $('#ct-contractNo').val().trim(),
       'Customer Name': $('#ct-customerName').val().trim(),														  
-      'Transportion Company': $('#ct-company').val().trim(),
+      'Transportation Company': $('#ct-company').val().trim(),
       'Status': $('#ct-status').val().trim()
     };
     showLoading(t.contract_loading_saving || 'Đang lưu...');
@@ -4276,7 +4288,7 @@ function initContractPage() {
       .withFailureHandler(showError)
       .upsertContract(payload, userSession.token);
   });
-// Nạp dropdown "Transportion Company" từ Users (admin mới thấy form)
+// Nạp dropdown "Transportation Company" từ Users (admin mới thấy form)
     google.script.run
       .withSuccessHandler(list => {
         const $sel = $('#ct-company').empty();
@@ -4305,7 +4317,7 @@ function buildContractTable(isAdmin) {
     { data: 'ID', title: 'ID' },
     { data: 'Contract No', title: 'Contract No' },
     { data: 'Customer Name', title: 'Customer Name' },           // <-- THÊM
-    { data: 'Transportion Company', title: 'Transportion Company' },
+    { data: 'Transportation Company', title: 'Transportation Company' },
     { data: 'Status', title: 'Status' },
   ];
 
@@ -4346,7 +4358,7 @@ function buildContractTable(isAdmin) {
     if (!row) return;
 
     const companyOptions = (window.__ctCompanyList || []).map(v =>
-      `<option value="${esc(v)}" ${v === (row['Transportion Company']||'') ? 'selected':''}>${esc(v)}</option>`
+      `<option value="${esc(v)}" ${v === (row['Transportation Company']||'') ? 'selected':''}>${esc(v)}</option>`
     ).join('');
 
     const statusList = ['Active','Completed'];
@@ -4367,7 +4379,7 @@ function buildContractTable(isAdmin) {
           <div class="mb-2"><label class="form-label">Customer Name</label>
             <input id="sw-ct-cust" class="form-control form-control-sm" value="${esc(row['Customer Name']||'')}">
           </div>
-         <div class="mb-2"><label class="form-label">Transportion Company</label>
+         <div class="mb-2"><label class="form-label">Transportation Company</label>
             <select id="sw-ct-company" class="form-control form-control-sm">${companyOptions}</select>
           </div>
           <div class="mb-2"><label class="form-label">Status</label>
@@ -4380,7 +4392,7 @@ function buildContractTable(isAdmin) {
         ID: row['ID'],
         'Contract No': $('#sw-ct-no').val().trim(),
         'Customer Name': $('#sw-ct-cust').val().trim(),
-		'Transportion Company': $('#sw-ct-company').val(),
+		    'Transportation Company': $('#sw-ct-company').val(),
         'Status': $('#sw-ct-status').val()
       })
     }).then(res => {
@@ -5110,7 +5122,7 @@ function initXuLyXPPLPage() {
       <th>Driver name</th>
       <th>ID/Passport</th>
       <th>Phone number</th>
-      <th>Transportion Company</th>
+      <th>Transportation Company</th>
       <th>Subcontractor</th>
     </tr>`;
   let tbody = '';
@@ -5124,7 +5136,7 @@ function initXuLyXPPLPage() {
       <td>${r['Driver Name']||''}</td>
       <td>${r['ID/Passport']||''}</td>
       <td>${r['Phone number']||''}</td>
-      <td>${r['Transportion Company']||''}</td>
+      <td>${r['Transportation Company']||''}</td>
       <td>${r['Subcontractor']||''}</td>
     </tr>`; });
 
@@ -5219,7 +5231,7 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
       { title: 'Contract No', data: 'Contract No' },
       { title: 'Truck Plate', data: 'Truck Plate' },
       { title: 'Trailer Plate', data: 'Trailer Plate' },
-      { title: 'Transportion Company', data: 'Transportion Company' },
+      { title: 'Transportation Company', data: 'Transportation Company' },
       { title: 'Registration Status', data: 'Registration Status',
         render: v => {
           const t=(v||'');
