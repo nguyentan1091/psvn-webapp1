@@ -3529,7 +3529,10 @@ function handleTotalListFileUpload() {
           // Lấy danh sách biển số đang có trong Danh sách tổng để đánh dấu trùng
           google.script.run
             .withSuccessHandler(existingList => {
-              const existingPlates = new Set(Array.isArray(existingList) ? existingList : []);
+              const existingPlates = new Set(
+                (Array.isArray(existingList) ? existingList : [])
+                  .map(plate => String(plate || '').replace(/\s/g, '').toUpperCase())
+              );
 
               // Bạn đã có hàm validateAndTransformTotalListData(rows, existingPlates)
               const result = validateAndTransformTotalListData(jsonData.slice(1), existingPlates);
@@ -3677,53 +3680,91 @@ function generateCustomId() {
 
 function validateAndTransformTotalListData(dataRows, existingPlates) {
   const transformedData = [];
-  const allErrors = [];
-  const duplicateList = [];
+  const duplicateSet = new Set();
+  const seenInFile = new Set();
 
-  dataRows.forEach((row, index) => {
-    if (row.length === 0 || row.every(cell => cell === "")) return;
-    const plate = String(row[1] || '').replace(/\s/g, '').toUpperCase();
+  const normalizedExisting = existingPlates instanceof Set
+    ? existingPlates
+    : new Set(Array.isArray(existingPlates) ? existingPlates : []);
 
-    const activityRaw = String(row[12] || '').trim();
+  const getCell = (row, index) => {
+    if (!Array.isArray(row)) return '';
+    return row[index] != null ? row[index] : '';
+  };
+
+  const normalizePlate = value => String(value || '').replace(/\s/g, '').toUpperCase();
+
+  dataRows.forEach(row => {
+    if (!Array.isArray(row)) return;
+    if (!row.length || row.every(cell => cell === '' || cell == null)) return;
+
+    const plate = normalizePlate(getCell(row, 1));
+    if (!plate) return;
+
+    const activityRaw = String(getCell(row, 15) || '').trim();
     const activityUpper = activityRaw.toUpperCase();
+
+    const duplicateInFile = seenInFile.has(plate);
+    if (!duplicateInFile) {
+      seenInFile.add(plate);
+    }
+
+    const duplicateInExisting = normalizedExisting.has(plate);
+    const isDuplicate = duplicateInFile || duplicateInExisting;
+    if (isDuplicate) {
+      duplicateSet.add(plate);
+    }
+
     const record = {
       'ID': generateCustomId(),
       'Truck Plate': plate,
-      'Country': row[2] || '',
-      'Wheel': row[3] || '',
-      'Trailer Plate': String(row[4] || '').replace(/\s/g, '').toUpperCase(),
-      'Truck weight': row[5] || '',
-      'Pay load': row[6] || '',
-      'Container No1': row[7] || '',
-      'Container No2': row[8] || '',
-      'Driver Name': row[9] || '',
-      'ID/Passport': row[10] || '',
-      'Phone number': row[11] || '',
-      'Transportion Company': row[12] || '',
-      'Subcontractor': row[13] || '',
-      'Vehicle Status': String(row[14] || '').toUpperCase(),
-      'Activity Status': activityRaw,      
-      _duplicate: existingPlates.has(plate)  // đánh dấu nếu trùng
+      'Country': getCell(row, 2) || '',
+      'Wheel': getCell(row, 3) || '',
+      'Trailer Plate': normalizePlate(getCell(row, 4)),
+      'Truck weight': getCell(row, 5) || '',
+      'Pay load': getCell(row, 6) || '',
+      'Container No1': getCell(row, 7) || '',
+      'Container No2': getCell(row, 8) || '',
+      'Driver Name': getCell(row, 9) || '',
+      'ID/Passport': getCell(row, 10) || '',
+      'Phone number': getCell(row, 11) || '',
+      'Transportion Company': getCell(row, 12) || '',
+      'Subcontractor': getCell(row, 13) || '',
+      'Vehicle Status': String(getCell(row, 14) || '').toUpperCase(),
+      'Activity Status': activityRaw,
+      'Register Date': getCell(row, 16) || '',
+      'Time': getCell(row, 17) || '',
+      _duplicate: isDuplicate
     };
 
     const errors = {};
+    if (!plate) {
+      errors['Truck Plate'] = "- Cột 'Truck Plate' không được để trống.";
+    }
     if (!activityRaw) {
       errors['Activity Status'] = "- Cột 'Activity Status' không được để trống.";
     } else if (!['ACTIVE', 'BANNED'].includes(activityUpper)) {
       errors['Activity Status'] = "- Cột 'Activity Status' chỉ chấp nhận: Active, Banned.";
     }
 
+    if (seenInFile.has(plate)) {
+      record._duplicate = true;
+      duplicateList.push(plate);
+    } else {
+      seenInFile.add(plate);
+      if (record._duplicate) {
+        duplicateList.push(plate);
+      }
+    }
+
     if (Object.keys(errors).length) {
       record.errors = errors;
-    }
-    if (record._duplicate) {
-      duplicateList.push(plate);
     }
 
     transformedData.push(record);
   });
 
-  return { data: transformedData, duplicates: duplicateList };
+  return { data: transformedData, duplicates: Array.from(duplicateSet) };
 }
 
 
