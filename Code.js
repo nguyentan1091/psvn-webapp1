@@ -2,10 +2,9 @@
 // CẤU HÌNH GOOGLE SHEETS
 const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
 const DATA_SHEET = 'VehicleData';
-const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 const HISTORY_LOGIN_SHEET = 'History-login';
 const CONTRACT_SHEET = 'ContractData';
-const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Company', 'Status'];
+const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportation Company', 'Status'];
 // === XPPL Weighing Station database ===
 const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
 const XPPL_DB_SHEET = 'XPPL-Database';
@@ -84,7 +83,7 @@ const XPPL_TABLE_COLUMNS = [
   'Driver Name',           // F
   'ID/Passport',           // G
   'Phone number',          // H
-  'Transportion Company',  // I
+  'Transportation Company',  // I
   'Subcontractor'          // J
 ];
 
@@ -106,6 +105,7 @@ const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
 const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
+const SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT = '/rest/v1/truck_list_total';
 
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
@@ -263,6 +263,197 @@ function formatSupabaseDateTime_(value) {
   } catch (e) {
     return dt.toISOString();
   }
+}
+
+function getAppTimeZone_() {
+  try {
+    const tz = Session.getScriptTimeZone();
+    return tz || 'Asia/Ho_Chi_Minh';
+  } catch (e) {
+    return 'Asia/Ho_Chi_Minh';
+  }
+}
+
+function parseContentRangeCount_(response) {
+  if (!response || typeof response.getHeaders !== 'function') return null;
+  const headers = response.getHeaders();
+  const value = headers['Content-Range'] || headers['content-range'];
+  if (!value) return null;
+  const match = /\/(\d+)$/.exec(String(value));
+  if (!match) return null;
+  const total = Number(match[1]);
+  return isNaN(total) ? null : total;
+}
+
+function pad2_(num) {
+  return String(num).padStart(2, '0');
+}
+
+function normalizeTruckPlate_(value) {
+  if (value == null) return '';
+  return String(value).replace(/\s+/g, '').toUpperCase();
+}
+
+function sanitizeString_(value) {
+  if (value == null) return '';
+  return String(value);
+}
+
+function parseDdMmYyyy_(value) {
+  if (!value && value !== 0) return null;
+  if (value instanceof Date && !isNaN(value)) {
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate()
+    };
+  }
+  const str = String(value).trim().replace(/^'+/, '');
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(str);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (!day || !month || !year) return null;
+  return { day: day, month: month, year: year };
+}
+
+function parseTimeString_(value) {
+  if (!value && value !== 0) return null;
+  if (value instanceof Date && !isNaN(value)) {
+    return {
+      hour: value.getHours(),
+      minute: value.getMinutes(),
+      second: value.getSeconds()
+    };
+  }
+  const str = String(value).trim().replace(/^'+/, '');
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(str);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = match[3] != null ? Number(match[3]) : 0;
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  return { hour: hour, minute: minute, second: second };
+}
+
+function buildDateStringFromParts_(parts) {
+  if (!parts) return null;
+  const { year, month, day } = parts;
+  if (!year || !month || !day) return null;
+  return `${year}-${pad2_(month)}-${pad2_(day)}`;
+}
+
+function convertLocalDateTimeToUtcIso_(dateParts, timeParts, timezone) {
+  if (!dateParts && !timeParts) return null;
+  const tz = timezone || getAppTimeZone_();
+  const now = new Date();
+  const year = dateParts ? dateParts.year : now.getFullYear();
+  const month = dateParts ? dateParts.month : now.getMonth() + 1;
+  const day = dateParts ? dateParts.day : now.getDate();
+  const hour = timeParts ? timeParts.hour : now.getHours();
+  const minute = timeParts ? timeParts.minute : now.getMinutes();
+  const second = timeParts ? timeParts.second : now.getSeconds();
+
+  const offsetTarget = Utilities.formatDate(new Date(Date.UTC(year, month - 1, day, hour, minute, second)), tz, 'Z');
+  const offsetFormatted = offsetTarget ? `${offsetTarget.slice(0, 3)}:${offsetTarget.slice(3)}` : '+00:00';
+  const localIso = `${year}-${pad2_(month)}-${pad2_(day)}T${pad2_(hour)}:${pad2_(minute)}:${pad2_(second)}${offsetFormatted}`;
+  const dt = new Date(localIso);
+  if (isNaN(dt.getTime())) return null;
+  return dt.toISOString();
+}
+
+function formatRegisterDateFromSupabase_(value, timezone) {
+  if (!value) return '';
+  const tz = timezone || getAppTimeZone_();
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, tz, 'dd/MM/yyyy');
+  }
+  const str = String(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const dt = new Date(year, month, day);
+    if (!isNaN(dt.getTime())) {
+      return Utilities.formatDate(dt, tz, 'dd/MM/yyyy');
+    }
+  }
+  const parsed = parseSupabaseTimestamp_(value);
+  if (parsed) {
+    return Utilities.formatDate(parsed, tz, 'dd/MM/yyyy');
+  }
+  return str;
+}
+
+function formatTimestampForDisplay_(value, timezone) {
+  const tz = timezone || getAppTimeZone_();
+  const dt = parseSupabaseTimestamp_(value);
+  if (!dt) return '';
+  return Utilities.formatDate(dt, tz, 'dd/MM/yyyy HH:mm:ss');
+}
+
+function mapTruckListRowToClient_(row, timezone) {
+  const tz = timezone || getAppTimeZone_();
+  const out = {};
+  out['ID'] = sanitizeString_(row.id || row.ID || '');
+  out['Truck Plate'] = sanitizeString_(row.truck_plate || '');
+  out['Country'] = sanitizeString_(row.country || '');
+  out['Wheel'] = sanitizeString_(row.wheel || '');
+  out['Trailer Plate'] = sanitizeString_(row.trailer_plate || '');
+  out['Truck weight'] = sanitizeString_(row.truck_weight || '');
+  out['Pay load'] = sanitizeString_(row.payload || '');
+  out['Container No1'] = sanitizeString_(row.container_no1 || '');
+  out['Container No2'] = sanitizeString_(row.container_no2 || '');
+  out['Driver Name'] = sanitizeString_(row.driver_name || '');
+  out['ID/Passport'] = sanitizeString_(row.id_passport || '');
+  out['Phone number'] = sanitizeString_(row.phone_number || '');
+  out['Transportation Company'] = sanitizeString_(row.transportation_company || '');
+  out['Subcontractor'] = sanitizeString_(row.subcontractor || '');
+  out['Vehicle Status'] = sanitizeString_(row.vehicle_status || '');
+  out['Activity Status'] = sanitizeString_(row.activity_status || '');
+  out['Register Date'] = formatRegisterDateFromSupabase_(row.register_date, tz);
+  out['Time'] = formatTimestampForDisplay_(row.time, tz);
+  out['Created at'] = formatTimestampForDisplay_(row.created_at, tz);
+  out['Created by'] = sanitizeString_(row.created_by || '');
+  out['Updated at'] = formatTimestampForDisplay_(row.updated_at, tz);
+  out['Updated by'] = sanitizeString_(row.updated_by || '');
+  return out;
+}
+
+function chunkArray_(arr, size) {
+  const out = [];
+  if (!Array.isArray(arr) || size <= 0) return out;
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
+function fetchTruckListRowsByPlates_(plates, columns) {
+  if (!Array.isArray(plates) || !plates.length) return [];
+  const unique = Array.from(new Set(plates.map(normalizeTruckPlate_).filter(Boolean)));
+  if (!unique.length) return [];
+  const selectCols = Array.isArray(columns) && columns.length ? columns : TRUCK_LIST_TOTAL_SELECT_COLUMNS;
+  const selectParam = 'select=' + encodeURIComponent(selectCols.join(','));
+  const chunkSize = 50; // giữ query gọn
+  const results = [];
+
+  chunkArray_(unique, chunkSize).forEach(chunk => {
+    if (!chunk.length) return;
+    const valueList = chunk
+      .map(v => '"' + v.replace(/"/g, '\\"') + '"')
+      .join(',');
+    const filter = 'truck_plate=in.(' + valueList + ')';
+    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + selectParam + '&' + filter;
+    const data = supabaseRequest_(query);
+    if (Array.isArray(data) && data.length) {
+      results.push.apply(results, data);
+    }
+  });
+
+  return results;
 }
 
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
@@ -428,14 +619,38 @@ const HEADERS_REGISTER = [
   'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel',
   'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2',
   'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST',
-  'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
+  'Transportation Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
 ];
 const NUMERIC_REGISTER_FIELDS = ['Wheel', 'Truck weight', 'Pay load'];
 const HEADERS_TOTAL_LIST = [
   'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
   'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
-  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
-  'Activity Status', 'Register Date', 'Time'
+  'Phone number', 'Transportation Company', 'Subcontractor', 'Vehicle Status',
+  'Activity Status', 'Register Date', 'Time', 'Created at', 'Created by',
+  'Updated at', 'Updated by'
+];
+
+const TRUCK_LIST_TOTAL_CLIENT_COLUMNS = [
+  'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
+  'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
+  'Phone number', 'Transportation Company', 'Subcontractor', 'Vehicle Status',
+  'Activity Status', 'Register Date', 'Time', 'Created at', 'Created by',
+  'Updated at', 'Updated by'
+];
+
+const TRUCK_LIST_TOTAL_SELECT_COLUMNS = [
+  'id', 'truck_plate', 'country', 'wheel', 'trailer_plate', 'truck_weight',
+  'payload', 'container_no1', 'container_no2', 'driver_name', 'id_passport',
+  'phone_number', 'transportation_company', 'subcontractor', 'vehicle_status',
+  'activity_status', 'register_date', 'time', 'created_at', 'created_by',
+  'updated_at', 'updated_by'
+];
+
+const TRUCK_LIST_TOTAL_SEARCH_COLUMNS = [
+  'truck_plate', 'country', 'wheel', 'trailer_plate', 'truck_weight',
+  'payload', 'container_no1', 'container_no2', 'driver_name', 'id_passport',
+  'phone_number', 'transportation_company', 'subcontractor', 'vehicle_status',
+  'activity_status', 'register_date', 'created_by', 'updated_by'
 ];
 
 function coerceNumericRegisterFields_(record) {
@@ -946,7 +1161,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
 
   const idxRegisterDate = headers.indexOf('Register Date');
   const idxContract = headers.indexOf('Contract No');
-  const idxCompany = headers.indexOf('Transportion Company');
+  const idxCompany = headers.indexOf('Transportation Company');
   const idxActivity = headers.indexOf('Activity Status');
   const idxStatus = headers.indexOf('Registration Status');
 
@@ -1130,7 +1345,7 @@ function getRegisteredContractOptions(filter, sessionToken) {
   if (dateIdx === -1 || contractIdx === -1) return { contracts: [] };
 
   const activityIdx = HEADERS_REGISTER.indexOf('Activity Status');
-  const companyIdx = HEADERS_REGISTER.indexOf('Transportion Company');
+  const companyIdx = HEADERS_REGISTER.indexOf('Transportation Company');
   const statusIdx = HEADERS_REGISTER.indexOf('Registration Status');
 
   let rows = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
@@ -1167,7 +1382,86 @@ function getRegisteredContractOptions(filter, sessionToken) {
 }
 
 function getTotalListDataServerSide(params) {
-  return processServerSide(params, TRUCK_LIST_TOTAL_SHEET, HEADERS_TOTAL_LIST, HEADERS_TOTAL_LIST.indexOf('Register Date'));
+  params = params || {};
+  const session = validateSession(params.sessionToken);
+  const tz = getAppTimeZone_();
+  const role = String(session.role || '').toLowerCase();
+
+  const length = Math.max(0, Number(params.length || 50));
+  const start = Math.max(0, Number(params.start || 0));
+  const draw = Number(params.draw || 1);
+  const searchValue = params.search && params.search.value
+    ? String(params.search.value).trim()
+    : '';
+
+  const preferHeaders = { Prefer: 'count=exact' };
+  const baseFilters = [];
+  if (role === 'user') {
+    const contractor = String(session.contractor || '').trim();
+    if (contractor) {
+      baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
+    }
+    baseFilters.push('activity_status=eq.ACTIVE');
+  }
+
+  let orderColumn = 'register_date';
+  let orderDirection = 'desc';
+  const orderInfo = Array.isArray(params.order) && params.order.length ? params.order[0] : null;
+  if (orderInfo && orderInfo.column != null) {
+    const rawIndex = Number(orderInfo.column);
+    const adjustedIndex = role === 'admin' ? rawIndex - 2 : rawIndex;
+    if (adjustedIndex >= 0 && adjustedIndex < TRUCK_LIST_TOTAL_CLIENT_COLUMNS.length) {
+      const supaColumn = TRUCK_LIST_TOTAL_SELECT_COLUMNS[adjustedIndex];
+      if (supaColumn) {
+        orderColumn = supaColumn;
+        orderDirection = String(orderInfo.dir || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+      }
+    }
+  }
+
+  const queryParts = [];
+  queryParts.push('select=' + encodeURIComponent(TRUCK_LIST_TOTAL_SELECT_COLUMNS.join(',')));
+  baseFilters.forEach(part => queryParts.push(part));
+  queryParts.push('order=' + encodeURIComponent(orderColumn + '.' + orderDirection));
+  queryParts.push('limit=' + length);
+  queryParts.push('offset=' + start);
+
+  if (searchValue) {
+    const sanitized = searchValue.replace(/%/g, '\\%').replace(/,/g, '\\,');
+    const orParts = TRUCK_LIST_TOTAL_SEARCH_COLUMNS.map(col => `${col}.ilike.*${sanitized}*`);
+    if (orParts.length) {
+      queryParts.push('or=' + encodeURIComponent('(' + orParts.join(',') + ')'));
+    }
+  }
+
+  const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&');
+  const response = supabaseRequest_(query, { headers: preferHeaders, returnResponse: true });
+  const dataArray = Array.isArray(response.data) ? response.data : [];
+  const filteredCount = parseContentRangeCount_(response.response) ?? dataArray.length;
+
+  let totalCount = filteredCount;
+  if (searchValue) {
+    const totalParts = [];
+    totalParts.push('select=id');
+    baseFilters.forEach(part => totalParts.push(part));
+    totalParts.push('limit=1');
+    const totalQuery = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalParts.join('&');
+    const totalResponse = supabaseRequest_(totalQuery, { headers: preferHeaders, returnResponse: true });
+    const totalFromHeader = parseContentRangeCount_(totalResponse.response);
+    if (totalFromHeader != null) {
+      totalCount = totalFromHeader;
+    } else if (Array.isArray(totalResponse.data)) {
+      totalCount = totalResponse.data.length;
+    }
+  }
+
+  const rows = dataArray.map(row => mapTruckListRowToClient_(row, tz));
+  return {
+    draw: draw,
+    recordsTotal: totalCount,
+    recordsFiltered: filteredCount,
+    data: rows
+  };
 }
 
 /** =========================
@@ -1386,7 +1680,7 @@ function getXpplExportData(filter, sessionToken) {
       'Driver Name':            iDriver !== -1 ? s(r[iDriver]) : '',
       'ID/Passport':            iID     !== -1 ? s(r[iID])     : '',
       'Phone number':           iPhone  !== -1 ? s(r[iPhone])  : '',
-      'Transportion Company':   iTrans  !== -1 ? s(r[iTrans])  : '',
+      'Transportation Company':   iTrans  !== -1 ? s(r[iTrans])  : '',
       'Subcontractor':          iSub    !== -1 ? s(r[iSub])    : ''
     });
   }
@@ -1487,7 +1781,7 @@ function _exportXpplToTemplate_(sheetId, filter, rows) {
     o['Driver Name'] || '',
     o['ID/Passport'] || '',
     o['Phone number'] || '',
-    o['Transportion Company'] || '',
+    o['Transportation Company'] || '',
     o['Subcontractor'] || ''
   ]));
 
@@ -1748,8 +2042,29 @@ const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu.
 const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
 
 function checkVehiclesAgainstTotalList(vehicles) {
-  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (totalListSheet.getLastRow() < 2) {
+  if (!Array.isArray(vehicles) || !vehicles.length) {
+    return { isValid: true };
+  }
+
+  const plateSet = new Set();
+  const companyByPlate = new Map();
+
+  vehicles.forEach(vehicle => {
+    const plate = normalizeTruckPlate_(vehicle && vehicle['Truck Plate']);
+    if (!plate) return;
+    const company = String(vehicle['Transportation Company'] == null ? '' : vehicle['Transportation Company']).trim();
+    plateSet.add(plate);
+    if (!companyByPlate.has(plate)) {
+      companyByPlate.set(plate, company);
+    }
+  });
+
+  if (!plateSet.size) {
+    return { isValid: true };
+  }
+
+  const rows = fetchTruckListRowsByPlates_(Array.from(plateSet), ['truck_plate', 'transportation_company']);
+  if (!rows || !rows.length) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -1757,19 +2072,13 @@ function checkVehiclesAgainstTotalList(vehicles) {
     };
   }
 
-  const totalListData = totalListSheet.getRange(
-    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
-  ).getValues();
-
-  const truckPlateIndex = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
-  const companyIndex    = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
-
-  // Map: PLATE -> Company (normalize biển số: uppercase & bỏ khoảng trắng)
-  const totalListMap = new Map();
-  totalListData.forEach(row => {
-    const plate = row[truckPlateIndex];
-    if (plate) {
-      totalListMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[companyIndex]);
+  const existingMap = new Map();
+  rows.forEach(row => {
+    const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
+    if (!plate) return;
+    const company = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+    if (!existingMap.has(plate)) {
+      existingMap.set(plate, company);
     }
   });
 
@@ -1778,33 +2087,27 @@ function checkVehiclesAgainstTotalList(vehicles) {
   const seenNew = new Set();
   const seenMismatch = new Set();
 
-  for (const vehicle of vehicles) {
-    const plateRaw = vehicle['Truck Plate'] || '';
-    const plate    = String(plateRaw).toUpperCase().replace(/\s/g, '');
-    const company  = vehicle['Transportion Company'];
-
-    if (!plate) continue;
-
-    if (!totalListMap.has(plate)) {
+  plateSet.forEach(plate => {
+    if (!existingMap.has(plate)) {
       if (!seenNew.has(plate)) {
         seenNew.add(plate);
         newPlates.push(plate);
       }
-      continue;
+      return;
     }
-
-    const registeredCompany = totalListMap.get(plate);
-    if (registeredCompany !== company) {
+    const registeredCompany = existingMap.get(plate);
+    const requestedCompany = companyByPlate.get(plate) || '';
+    if (registeredCompany !== requestedCompany) {
       if (!seenMismatch.has(plate)) {
         seenMismatch.add(plate);
         mismatchPlates.push(plate);
       }
     }
-  }
+  });
 
   // Ưu tiên báo "Xe mới" nếu có
   if (newPlates.length > 0) {
-    const message = `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`;    
+    const message = `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`;
     return {
       isValid: false,
       message: message,
@@ -1814,7 +2117,7 @@ function checkVehiclesAgainstTotalList(vehicles) {
 
   // Nếu có xe trùng đơn vị khác → trả về danh sách biển số
   if (mismatchPlates.length > 0) {
-    const message = `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`;    
+    const message = `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`;
     return {
       isValid: false,
       message: message,
@@ -1829,8 +2132,17 @@ function checkVehiclesAgainstTotalList(vehicles) {
 // LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
 // =================================================================
 function checkVehicleActivityStatus(vehicles) {
-  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (totalListSheet.getLastRow() < 2) {
+  if (!Array.isArray(vehicles) || !vehicles.length) {
+    return { isValid: true };
+  }
+
+  const plates = Array.from(new Set(vehicles.map(v => normalizeTruckPlate_(v && v['Truck Plate'])).filter(Boolean)));
+  if (!plates.length) {
+    return { isValid: true };
+  }
+
+  const rows = fetchTruckListRowsByPlates_(plates, ['truck_plate', 'activity_status']);
+  if (!rows || !rows.length) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -1838,33 +2150,26 @@ function checkVehicleActivityStatus(vehicles) {
     };
   }
 
-  const totalListData = totalListSheet.getRange(
-    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
-  ).getValues();
-
-  const plateIdx    = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
-  const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
-
   const activityMap = new Map();
-  totalListData.forEach(row => {
-    const plate = row[plateIdx];
-    if (plate) {
-      activityMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[activityIdx]);
+  rows.forEach(row => {
+    const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
+    if (!plate) return;
+    const status = String(row.activity_status == null ? '' : row.activity_status).trim();
+    if (!activityMap.has(plate)) {
+      activityMap.set(plate, status);
     }
   });
 
   const bannedPlates = [];
-  vehicles.forEach(v => {
-    const plate = String(v['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-    if (!plate) return;
+  plates.forEach(plate => {
     const status = activityMap.get(plate);
-    if (status && String(status).toLowerCase() === 'banned') {
+    if (status && status.toUpperCase() === 'BANNED') {
       bannedPlates.push(plate);
     }
   });
 
   if (bannedPlates.length > 0) {
-   const message = `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`;    
+    const message = `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`;    
     return {
       isValid: false,
       message: message,
@@ -1894,7 +2199,7 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
 
     // Lọc theo quyền user (nếu là user thường)
      if (role === 'user') {
-      const compIdx = headers.indexOf('Transportion Company');
+      const compIdx = headers.indexOf('Transportation Company');
       rows = rows.filter(r => r[compIdx] === userSession.contractor);
     }
     if (role === 'user-supervision') {
@@ -1985,7 +2290,7 @@ function saveData(dataToSave, sessionToken, language) {
     dataToSave.forEach(rec => {
       const cno = String(rec['Contract No'] || '').trim();
       const comp = String(
-        (userSession.role === 'user' ? userSession.contractor : rec['Transportion Company']) || ''
+        (userSession.role === 'user' ? userSession.contractor : rec['Transportation Company']) || ''
       ).trim().toUpperCase();
 
       if (!cno || !comp || !activeMap.has(comp) || !activeMap.get(comp).has(cno)) {
@@ -2004,7 +2309,7 @@ function saveData(dataToSave, sessionToken, language) {
   const dupCheckRecords = dataToSave.map(r => {
     const obj = Object.assign({}, r);
     if (userSession.role === 'user') {
-      obj['Transportion Company'] = userSession.contractor;
+      obj['Transportation Company'] = userSession.contractor;
     }
     return obj;
   });
@@ -2021,7 +2326,7 @@ function saveData(dataToSave, sessionToken, language) {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
     const dataArray = dataToSave.map(obj => {
       if (userSession.role === 'user') {
-        obj['Transportion Company'] = userSession.contractor;
+        obj['Transportation Company'] = userSession.contractor;
       }
       coerceNumericRegisterFields_(obj);      
       obj['Register Date'] = normalizeDate(obj['Register Date']);
@@ -2159,7 +2464,7 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
       const regDate = normalizeDate(rec['Register Date']);
       const dateStr = regDate ? Utilities.formatDate(regDate, "Asia/Ho_Chi_Minh", "yyyy-MM-dd") : '';
       const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-      const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
+      const company = String(rec['Transportation Company'] || '').trim().toUpperCase();
       const key = `${dateStr}-${plate}-${company}`;
 
       if (existingKeys.has(key) || seen.has(key)) {
@@ -2182,32 +2487,33 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
 function getTotalListSummary(sessionToken) {
   const userSession = validateSession(sessionToken);
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    const lastRow = sheet.getLastRow();
-    
-    if (lastRow < 2) {
-      return { total: 0, active: 0, banned: 0 };
+    const role = String(userSession.role || '').toLowerCase();
+    const baseFilters = [];
+    if (role === 'user') {
+      const contractor = String(userSession.contractor || '').trim();
+      if (contractor) {
+        baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
+      }
+      baseFilters.push('activity_status=eq.ACTIVE');
     }
 
-    const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_TOTAL_LIST.length).getValues();
-    
-    let filteredData = allData;
-    if (userSession.role === 'user') {
-      const companyIndex = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
-      const activityIndex = HEADERS_TOTAL_LIST.indexOf('Activity Status');
-      filteredData = allData.filter(row => row[companyIndex] === userSession.contractor &&
-        String(row[activityIndex]).toUpperCase() === 'ACTIVE');
+    const queryParts = ['select=activity_status,count=id', 'group=activity_status'];
+    baseFilters.forEach(part => queryParts.push(part));
+    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&');
+    const data = supabaseRequest_(query);
+    const summary = { total: 0, active: 0, banned: 0 };
+
+    if (Array.isArray(data)) {
+      data.forEach(row => {
+        const status = String(row.activity_status == null ? '' : row.activity_status).trim().toUpperCase();
+        const countValue = row.count != null ? Number(row.count) : (row.count_id != null ? Number(row.count_id) : 0);
+        const count = isNaN(countValue) ? 0 : countValue;
+        summary.total += count;
+        if (status === 'ACTIVE') summary.active += count;
+        else if (status === 'BANNED') summary.banned += count;
+      });
     }
 
-    const summary = { total: filteredData.length, active: 0, banned: 0 };
-    const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
-
-    filteredData.forEach(row => {
-      const act = String(row[activityIdx]).toUpperCase();
-      if (act === 'ACTIVE') summary.active++;
-      else if (act === 'BANNED') summary.banned++;
-    });
-    
     return summary;
   } catch (e) {
     Logger.log(e);
@@ -2221,65 +2527,55 @@ function saveTotalTruckData(dataToSave, sessionToken) {
   if (userSession.role !== 'admin') throw new Error('Chỉ có admin mới được thực hiện chức năng này.');
   if (!dataToSave || dataToSave.length === 0) throw new Error('Không có dữ liệu để lưu.');
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
-
-    // Chuẩn hóa biển số để so sánh
-    const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
-
-    // Lấy tất cả biển số hiện có
-    const plateIdx = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
-    const companyIdx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
-
-    let existingPlates = {};
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1 && plateIdx > 0) {
-      const plates = sheet.getRange(2, plateIdx, lastRow - 1, 1).getValues().flat();
-      plates.forEach(p => { const k = norm(p); if (k) existingPlates[k] = true; });
-    }
-
-    // Kiểm tra trùng lặp trong file và với dữ liệu hiện có
-    const inFileSeen = {};
+    const existingSet = new Set(getExistingTruckPlates(sessionToken));
+    const inFileSeen = new Set();
     const skippedInFile = [];
     const skippedExisting = [];
     const rowsToAppend = [];
 
     dataToSave.forEach(obj => {
-      const plate = norm(obj['Truck Plate']);
-      const company = obj['Transportion Company'] || '';
+      const plate = normalizeTruckPlate_(obj['Truck Plate']);
+      const company = obj['Transportation Company'] || '';
       if (!plate) return;
 
-      if (inFileSeen[plate]) {
+      if (inFileSeen.has(plate)) {
         skippedInFile.push({ plate: plate, company: company });
         return;
       }
-      inFileSeen[plate] = true;
+      inFileSeen.add(plate);
 
-      if (existingPlates[plate]) {
+      if (existingSet.has(plate)) {
         skippedExisting.push({ plate: plate, company: company });
         return;
       }
 
       // Bổ sung ngày/giờ và map theo header
-      obj['Register Date'] = normalizeDate(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "dd/MM/yyyy"));
-      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
-      rowsToAppend.push(HEADERS_TOTAL_LIST.map(h => obj[h] || ""));
+      rowsToAppend.push({
+        'Truck Plate': plate,
+        'Country': obj['Country'] || '',
+        'Wheel': obj['Wheel'] || '',
+        'Trailer Plate': normalizeTruckPlate_(obj['Trailer Plate']),
+        'Truck weight': obj['Truck weight'] || '',
+        'Pay load': obj['Pay load'] || '',
+        'Container No1': obj['Container No1'] || '',
+        'Container No2': obj['Container No2'] || '',
+        'Driver Name': obj['Driver Name'] || '',
+        'ID/Passport': obj['ID/Passport'] || '',
+        'Phone number': obj['Phone number'] || '',
+        'Transportation Company': company,
+        'Subcontractor': obj['Subcontractor'] || '',
+        'Vehicle Status': obj['Vehicle Status'] || '',
+        'Activity Status': obj['Activity Status'] || ''
+      });
     });
 
     // Append thay vì replace
     let inserted = 0;
     if (rowsToAppend.length > 0) {
-      const startRow = (lastRow || 1) + 1;
-      sheet.getRange(startRow, 1, rowsToAppend.length, HEADERS_TOTAL_LIST.length).setValues(rowsToAppend);
+      saveTotalListAppend(rowsToAppend, sessionToken);
       inserted = rowsToAppend.length;
     }
 
-    if (inserted > 0) {
-      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
-    }    
-
-    // Trả chi tiết để client hiển thị
     return {
       status: 'ok',
       inserted: inserted,
@@ -2288,7 +2584,7 @@ function saveTotalTruckData(dataToSave, sessionToken) {
     };
   } catch (error) {
     Logger.log(error);
-    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + error.message);
+    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + (error && error.message ? error.message : error));
   }
 }
 
@@ -2296,31 +2592,22 @@ function deleteTotalListVehicles(ids, sessionToken) {
   const session = validateSession(sessionToken);
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
   if (!ids || ids.length === 0) throw new Error('Cần cung cấp ID để xóa.');
-  
+
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    let rowsToDelete = [];
-
-    ids.forEach(id => {
-      const rowIndex = idColumnValues.indexOf(id);
-      if (rowIndex !== -1) {
-        rowsToDelete.push(rowIndex + 2);
-      }
+    const sanitizedIds = Array.from(new Set(ids.map(id => String(id || '').trim()).filter(Boolean)));
+    if (!sanitizedIds.length) throw new Error('Cần cung cấp ID hợp lệ để xóa.');
+    const filterValue = sanitizedIds
+      .map(v => '"' + v.replace(/"/g, '\\"') + '"')
+      .join(',');
+    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?id=in.(' + filterValue + ')';
+    const response = supabaseRequest_(query, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=representation' }
     });
-
-    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
-    
-    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
-      sheet.deleteRow(rowNum);
-    });
-
-    if (rowsToDelete.length > 0) {
-      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
-    }    
-
-    return `Đã xóa thành công ${rowsToDelete.length} xe.`;
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + error.message); }
+    const affected = Array.isArray(response) ? response.length : 0;
+    if (affected === 0) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
+    return `Đã xóa thành công ${affected} xe.`;
+  } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + (error && error.message ? error.message : error)); }
 }
 
 function updateTotalListVehicle(rowData, sessionToken) {
@@ -2329,25 +2616,46 @@ function updateTotalListVehicle(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    let rowToUpdate = -1;
-
-    const rowIndex = idColumnValues.indexOf(rowData.ID);
-    if (rowIndex !== -1) {
-        rowToUpdate = rowIndex + 2;
-    }
-
-    if (rowToUpdate === -1) throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
-
     const now = new Date();
-    rowData['Register Date'] = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
-    rowData['Time'] = "'" + Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "HH:mm:ss");
-    const dataArray = HEADERS_TOTAL_LIST.map(header => rowData[header] || "");
-    sheet.getRange(rowToUpdate, 1, 1, HEADERS_TOTAL_LIST.length).setValues([dataArray]);
-    bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);    
+    const dateParts = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+    const timeParts = { hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds() };
+    const tz = getAppTimeZone_();
+
+    const payload = {
+      truck_plate: normalizeTruckPlate_(rowData['Truck Plate']),
+      country: sanitizeString_(rowData['Country']),
+      wheel: sanitizeString_(rowData['Wheel']),
+      trailer_plate: normalizeTruckPlate_(rowData['Trailer Plate']),
+      truck_weight: sanitizeString_(rowData['Truck weight']),
+      payload: sanitizeString_(rowData['Pay load']),
+      container_no1: sanitizeString_(rowData['Container No1']),
+      container_no2: sanitizeString_(rowData['Container No2']),
+      driver_name: sanitizeString_(rowData['Driver Name']),
+      id_passport: sanitizeString_(rowData['ID/Passport']),
+      phone_number: sanitizeString_(rowData['Phone number']),
+      transportation_company: sanitizeString_(rowData['Transportation Company']),
+      subcontractor: sanitizeString_(rowData['Subcontractor']),
+      vehicle_status: sanitizeString_(rowData['Vehicle Status']),
+      activity_status: sanitizeString_(rowData['Activity Status']),
+      register_date: buildDateStringFromParts_(dateParts),
+      time: convertLocalDateTimeToUtcIso_(dateParts, timeParts, tz),
+      updated_by: sanitizeString_(session.username || '')
+    };
+
+    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID);
+    const response = supabaseRequest_(query, {
+      method: 'PATCH',
+      payload: payload,
+      headers: { Prefer: 'return=representation' }
+    });
+    if (!Array.isArray(response) || response.length === 0) {
+      throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
+    }
     return 'Cập nhật thông tin xe thành công!';
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật thông tin xe: ' + error.message); }
+  } catch (error) {
+    Logger.log(error);
+    throw new Error('Lỗi khi cập nhật thông tin xe: ' + (error && error.message ? error.message : error));
+  }
 }
 
 // --- Helpers an toàn cho CacheService ---
@@ -2655,13 +2963,13 @@ function getContractDataServerSide(params) {
     'ID': r[0] || '',
     'Contract No': r[1] || '',
     'Customer Name': r[2] || '',
-    'Transportion Company': r[3] || '',
+    'Transportation Company': r[3] || '',
     'Status': r[4] || ''
   }));
 
   // User chỉ nhìn thấy theo đơn vị mình
   if (session.role !== 'admin') {
-    data = data.filter(x => String(x['Transportion Company'] || '') === String(session.contractor || ''));
+    data = data.filter(x => String(x['Transportation Company'] || '') === String(session.contractor || ''));
   }
 
   // Search toàn cục
@@ -2673,7 +2981,7 @@ function getContractDataServerSide(params) {
   // Order
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
-    const columns = ['ID','Contract No','Customer Name','Transportion Company','Status']; // đúng thứ tự trả về cho DataTable
+    const columns = ['ID','Contract No','Customer Name','Transportation Company','Status']; // đúng thứ tự trả về cho DataTable
     const key = columns[order.column >= columns.length ? columns.length-1 : order.column];
     const dir = (order.dir || 'asc').toLowerCase();
     filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true}))
@@ -2698,7 +3006,7 @@ function upsertContract(contract, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
 
   const { ID, 'Contract No': contractNo, 'Customer Name': customerName,
-          'Transportion Company': tc, 'Status': status } = contract;
+          'Transportation Company': tc, 'Status': status } = contract;
 		  
   const sh = ensureContractSheet_();
   const last = sh.getLastRow();
@@ -2738,7 +3046,7 @@ function deleteContracts(ids, sessionToken) {
   return `Đã xoá ${rowsToDelete.length} hợp đồng.`;
 }
 
-//Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
+//Lấy danh sách Contractor từ Supabase (dropdown “Transportation Company” ở trang Hợp đồng)
 function getContractorOptions() {
   try {
     const data = supabaseRequest_(
@@ -2759,22 +3067,22 @@ function getContractorOptions() {
 
 
 
-//Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
+//Lấy danh sách "Đơn vị vận chuyển" từ Supabase Truck List Total
 function getTransportCompanies() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (!sh) return [];
-  const n = sh.getLastRow();
-  if (n < 2) return [];
-  const idx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
-  if (idx <= 0) return [];
-  const vals = sh.getRange(2, idx, n - 1, 1).getValues().flat();
-  const set = new Set();
-  vals.forEach(v => {
-    const s = String(v || '').trim();
-    if (s) set.add(s);
-  });
-  return Array.from(set).sort();
+  try {
+    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=transportation_company&transportation_company=not.is.null&limit=10000';
+    const data = supabaseRequest_(query);
+    if (!Array.isArray(data)) return [];
+    const set = new Set();
+    data.forEach(row => {
+      const value = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+      if (value) set.add(value);
+    });
+    return Array.from(set).sort();
+  } catch (e) {
+    Logger.log('getTransportCompanies error: ' + e);
+    return [];
+  }
 }
 
 //Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
@@ -2808,17 +3116,24 @@ function getActiveContractNos(sessionToken) {
 // ====== GS: Trả về danh sách biển số đang có để đánh dấu trùng ======
 function getExistingTruckPlates(sessionToken) {
   const session = validateSession(sessionToken);
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
+  void session; // chỉ để đảm bảo validateSession được gọi
+  const limit = 1000;
+  let offset = 0;
+  const collected = [];
 
-  const plateCol = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
-  const lastRow  = sheet.getLastRow();
-  if (plateCol <= 0 || lastRow < 2) return [];
+  while (true) {
+    const query = `${SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT}?select=truck_plate&truck_plate=not.is.null&order=truck_plate.asc&limit=${limit}&offset=${offset}`;
+    const data = supabaseRequest_(query);
+    if (!Array.isArray(data) || data.length === 0) break;
+    data.forEach(row => {
+      const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
+      if (plate) collected.push(plate);
+    });
+    if (data.length < limit) break;
+    offset += limit;
+  }
 
-  const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
-  const values = sheet.getRange(2, plateCol, lastRow - 1, 1).getValues().flat();
-  return values.map(norm).filter(Boolean);
+  return Array.from(new Set(collected));
 }
 
 
@@ -2829,53 +3144,53 @@ function saveTotalListAppend(rows, sessionToken) {
 
   if (!rows || !rows.length) return 'Không có dữ liệu để lưu.';
 
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  if (!sh) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
+  const now = new Date();
+  const defaultDateParts = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+  const tz = getAppTimeZone_();
 
-  const header = HEADERS_TOTAL_LIST;
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, header.length).setValues([header]);
-  }
+  const payloads = rows.map(obj => {
+    const plate = normalizeTruckPlate_(obj['Truck Plate']);
+    const trailer = normalizeTruckPlate_(obj['Trailer Plate']);
+    const registerParts = parseDdMmYyyy_(obj['Register Date']) || defaultDateParts;
+    const registerDate = buildDateStringFromParts_(registerParts) || buildDateStringFromParts_(defaultDateParts);
+    const timeParts = parseTimeString_(obj['Time']);
+    const timeIso = convertLocalDateTimeToUtcIso_(registerParts, timeParts, tz) || new Date().toISOString();
 
-  // Format ngày/giờ
-  const pad = n => ('0' + n).slice(-2);
-  const formatDateText = d =>
-    `'${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; // thêm dấu '
-  const formatTimeText = d =>
-    `'${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; // thêm dấu '
-
-  const normPlate = s => String(s || '').replace(/\s/g, '').toUpperCase();
-
-  const values = rows.map(obj => {
-    const dNow = new Date();
-    const regDate = obj['Register Date']
-      ? `${obj['Register Date']}`
-      : formatDateText(dNow);
-    const regTime = obj['Time']
-      ? `${obj['Time']}`
-      : formatTimeText(dNow);
-
-    return header.map(h => {
-      switch (h) {
-        case 'Truck Plate':
-        case 'Trailer Plate':
-          return normPlate(obj[h]);
-        case 'Register Date':
-          return regDate;
-        case 'Time':
-          return regTime;
-        default:
-          return obj[h] == null ? '' : String(obj[h]);
-      }
-    });
+    return {
+      truck_plate: plate,
+      country: sanitizeString_(obj['Country']),
+      wheel: sanitizeString_(obj['Wheel']),
+      trailer_plate: trailer,
+      truck_weight: sanitizeString_(obj['Truck weight']),
+      payload: sanitizeString_(obj['Pay load']),
+      container_no1: sanitizeString_(obj['Container No1']),
+      container_no2: sanitizeString_(obj['Container No2']),
+      driver_name: sanitizeString_(obj['Driver Name']),
+      id_passport: sanitizeString_(obj['ID/Passport']),
+      phone_number: sanitizeString_(obj['Phone number']),
+      transportation_company: sanitizeString_(obj['Transportation Company']),
+      subcontractor: sanitizeString_(obj['Subcontractor']),
+      vehicle_status: sanitizeString_(obj['Vehicle Status']),
+      activity_status: sanitizeString_(obj['Activity Status']),
+      register_date: registerDate,
+      time: timeIso,
+      created_by: sanitizeString_(session.username || ''),
+      updated_by: sanitizeString_(session.username || '')
+    };
   });
 
-  const startRow = sh.getLastRow() + 1;
-  sh.getRange(startRow, 1, values.length, header.length).setValues(values);
-  bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);  
+  try {
+    supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT, {
+      method: 'POST',
+      payload: payloads,
+      headers: { Prefer: 'return=representation' }
+    });
+  } catch (e) {
+    Logger.log('saveTotalListAppend error: ' + e);
+    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + (e && e.message ? e.message : e));
+  }
 
-  return `Đã thêm ${values.length} dòng mới vào Danh sách xe tổng.`;
+  return `Đã thêm ${payloads.length} dòng mới vào Danh sách xe tổng.`;
 }
 
 
@@ -2899,7 +3214,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: khóa Contractor cho user thường
     if (userSession.role === 'user') {
-      rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
+      rowObj['Transportation Company'] = userSession.contractor || rowObj['Transportation Company'];
     }
 
     coerceNumericRegisterFields_(rowObj);
@@ -2912,7 +3227,7 @@ function addManualVehicle(record, sessionToken, language) {
     // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
     const precheck = checkVehiclesAgainstTotalList([{
       'Truck Plate'         : String(rowObj['Truck Plate'] || '').toUpperCase().replace(/\s/g, ''),
-      'Transportion Company': rowObj['Transportion Company']
+      'Transportation Company': rowObj['Transportation Company']
     }]);
     if (!precheck.isValid) {
       throw new Error(pickMessage(precheck.message, precheck.messageEn));
@@ -2920,7 +3235,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: kiểm tra Contract No thuộc đúng Contractor & Active
     const contractNo = String(rowObj['Contract No'] || '').trim();
-    const company    = String(rowObj['Transportion Company'] || '').trim();
+    const company    = String(rowObj['Transportation Company'] || '').trim();
     if (!isContractActiveForCompany_(contractNo, company)) {
       throw new Error(pickMessage(
         'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).',
@@ -2932,7 +3247,7 @@ function addManualVehicle(record, sessionToken, language) {
     const dup = checkForExistingRegistrations([{
       'Register Date'       : rowObj['Register Date'],
       'Truck Plate'         : rowObj['Truck Plate'],
-      'Transportion Company': rowObj['Transportion Company']
+      'Transportation Company': rowObj['Transportation Company']
     }], sessionToken);
     if (dup && dup.length > 0) {
       throw new Error(pickMessage(
@@ -3011,7 +3326,7 @@ function getXpplSnapshot(payload, sessionToken){
 
   var idxDate = headers.indexOf('Register Date');
   var idxCno  = headers.indexOf('Contract No');
-  var idxComp = headers.indexOf('Transportion Company');
+  var idxComp = headers.indexOf('Transportation Company');
   var idxRS   = headers.indexOf('Registration Status');
 
   var rows = [];
@@ -3087,7 +3402,7 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   var idxCno  = headers.indexOf('Contract No');
   var idxRS   = headers.indexOf('Registration Status');
   var idxID   = headers.indexOf('ID');
-  var idxComp = headers.indexOf('Transportion Company');
+  var idxComp = headers.indexOf('Transportation Company');
 
   var scope = scope = 'ALL';
   var changed = 0;
@@ -3193,7 +3508,7 @@ function exportXpplToTemplateDownload(filter, sessionToken) {
       r['Driver Name']||'',
       r['ID/Passport']||'',
       r['Phone number']||'',
-      r['Transportion Company']||'',
+      r['Transportation Company']||'',
       r['Subcontractor']||''
     ]);
     if (aoa.length) sh.getRange(r0, c0, aoa.length, 10).setValues(aoa);
@@ -3321,20 +3636,7 @@ function getXpplWeighingData(filter, sessionToken) {
 // ===== WEIGHING RESULT HELPERS =====
 function matchTransportionCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
-  const main = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  const totalLast = totalSh.getLastRow();
-  const totalHead = totalLast > 0 ? totalSh.getRange(1,1,1,totalSh.getLastColumn()).getValues()[0] : [];
-  const idxPlateTL = totalHead.indexOf('Truck Plate');
-  const idxCompTL = totalHead.indexOf('Transportion Company');
   const plateMap = new Map();
-  if (idxPlateTL > -1 && idxCompTL > -1 && totalLast > 1) {
-    const vals = totalSh.getRange(2,1,totalLast-1,totalSh.getLastColumn()).getValues();
-    vals.forEach(r => {
-      const plate = String(r[idxPlateTL]||'').replace(/\s/g,'').toUpperCase();
-      if (plate) plateMap.set(plate, String(r[idxCompTL]||'').trim());
-    });
-  }
 
   const ss = SpreadsheetApp.openById(XPPL_DB_ID);
   const sh = ss.getSheetByName(XPPL_DB_SHEET);
@@ -3351,9 +3653,31 @@ function matchTransportionCompanies(filter, sessionToken) {
 
   const f = filter || {};
   const from = _toDateKey(f.dateFrom);
-  const to = _toDateKey(f.dateTo);  
+  const to = _toDateKey(f.dateTo);
 
   const data = sh.getRange(2,1,lr-1,headers.length).getValues();
+
+  const platesNeeded = new Set();
+  data.forEach(row => {
+    const dk = _toDateKey(row[idxDateOut]);
+    if (from && dk < from) return;
+    if (to && dk > to) return;
+    const plate = normalizeTruckPlate_(row[idxTruck]);
+    if (plate) platesNeeded.add(plate);
+  });
+
+  if (platesNeeded.size) {
+    const rows = fetchTruckListRowsByPlates_(Array.from(platesNeeded), ['truck_plate', 'transportation_company']);
+    rows.forEach(row => {
+      const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
+      if (!plate) return;
+      const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+      if (!plateMap.has(plate)) {
+        plateMap.set(plate, comp || 'Unknown');
+      }
+    });
+  }
+
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const now = new Date();
   const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -3365,7 +3689,8 @@ function matchTransportionCompanies(filter, sessionToken) {
     const dk = _toDateKey(r[idxDateOut]);
     if (from && dk < from) return;
     if (to && dk > to) return;
-    const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
+    const plate = normalizeTruckPlate_(r[idxTruck]);
+    if (!plate) return;
     const compName = sanitizeXpplText_(plateMap.get(plate) || 'Unknown');
     r[idxComp] = compName;
     r[idxDate] = dateValue;
@@ -3386,7 +3711,7 @@ function matchTransportionCompanies(filter, sessionToken) {
       block.push(cur.values);
     } else {
       sh.getRange(start,1,block.length,headers.length).setValues(block);
-      applyXpplDbFormats_(sh, start, block.length);      
+      applyXpplDbFormats_(sh, start, block.length);
       start = cur.row;
       block = [cur.values];
     }
