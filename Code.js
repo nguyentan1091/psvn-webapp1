@@ -3,8 +3,6 @@
 const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
-const CONTRACT_SHEET = 'ContractData';
-const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportion Company', 'Status'];
 // === XPPL Weighing Station database ===
 const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
 const XPPL_DB_SHEET = 'XPPL-Database';
@@ -108,6 +106,18 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
 const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
 const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
+const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
+const CONTRACT_DATA_SELECT_FIELDS = [
+  'id',
+  'contract_no',
+  'customer_name',
+  'transportation_company',
+  'status',
+  'created_at',
+  'created_by',
+  'updated_at',
+  'updated_by'
+];
 const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
 const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
 const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
@@ -246,6 +256,23 @@ function supabaseRequest_(path, options) {
     error.response = response;
   }
   throw error;
+}
+
+function fetchContractDataRows_(selectFields, filterParams) {
+  const fields = Array.isArray(selectFields) && selectFields.length
+    ? selectFields.join(',')
+    : '*';
+  let query = SUPABASE_CONTRACT_DATA_ENDPOINT + '?select=' + encodeURIComponent(fields);
+  if (Array.isArray(filterParams) && filterParams.length) {
+    query += '&' + filterParams.join('&');
+  }
+  try {
+    const rows = supabaseRequest_(query);
+    return Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    Logger.log('fetchContractDataRows_ error: ' + e);
+    return [];
+  }
 }
 
 function toSupabaseDateString_(value) {
@@ -1222,44 +1249,37 @@ function getCustomersByContracts(contracts, sessionToken) {
 
   if (!contracts || !contracts.length) return {};
 
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(typeof CONTRACT_SHEET === 'string' ? CONTRACT_SHEET : 'ContractData');
-  if (!sh) return {};
+  const sanitized = contracts
+    .map(function (value) {
+      return String(value == null ? '' : value).replace(/^'+/, '').trim();
+    })
+    .filter(function (value) { return value.length > 0; });
 
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return {};
+  if (!sanitized.length) return {};
 
-  const lastCol = sh.getLastColumn();
-  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  const filters = [];
+  const inFilter = buildSupabaseInFilter_('contract_no', sanitized);
+  if (inFilter) filters.push(inFilter);
 
-  // helper: tìm index cột theo nhiều tên khả dĩ
-  function findIdx(hs, names) {
-    const low = hs.map(h => String(h || '').trim().toLowerCase());
-    for (const n of names) {
-      const i = low.indexOf(String(n).trim().toLowerCase());
-      if (i !== -1) return i;
-    }
-    return -1;
-  }
+  const rows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], filters);
+  if (!rows.length) return {};
 
-  const idxNo  = findIdx(headers, ['Contract No','Contract no','Số HĐ','Số hợp đồng','So HD','So hop dong']);
-  const idxCus = findIdx(headers, ['Customer Name','Customer','CustomerCode','Customer code','Khách hàng']);
-  if (idxNo === -1 || idxCus === -1) return {};
+  const allowed = new Set(sanitized);
+  const grouped = {};
+  rows.forEach(function (row) {
+    const no = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    if (!no || !allowed.has(no)) return;
+    const cus = String(row.customer_name == null ? '' : row.customer_name).replace(/^'+/, '').trim();
+    if (!cus) return;
+    if (!grouped[no]) grouped[no] = new Set();
+    grouped[no].add(cus);
+  });
 
-  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
-
-  const allow = new Set(contracts.map(s => String(s || '').replace(/^'/,'').trim()));
-  const out = {};
-  for (const r of values) {
-    const no  = String(r[idxNo]  || '').replace(/^'/,'').trim();
-    const cus = String(r[idxCus] || '').replace(/^'/,'').trim();
-    if (!out[no]) out[no] = new Set();
-    out[no].add(cus);
-  }
-  // Set -> Array đã sort
-  const outArr = {};
-  for (const k in out) outArr[k] = Array.from(out[k]).sort();
-  return outArr;
+  const result = {};
+  Object.keys(grouped).forEach(function (contract) {
+    result[contract] = Array.from(grouped[contract]).sort();
+  });
+  return result;
 }
 
 function buildEmptyResult_(draw, includeSummary) {
@@ -1648,22 +1668,10 @@ function getXpplExportOptions(filter, sessionToken) {
   if (typeof validateSession === 'function') validateSession(sessionToken);
 
   const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
-  const normH = x => s(x).toLowerCase().replace(/\s+/g, '');
-  const findIdx = (headers, variants) => {
-    const H = headers.map(normH);
-    for (const v of variants) {
-      const i = H.indexOf(v);
-      if (i !== -1) return i;
-    }
-    return -1;
-  };
 
   const dateIn = s(filter && filter.dateString);
   const dateKey = _toDateKey(dateIn);
   if (!dateKey) return { contracts: [], customersByContract: {} };
-
-  const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shC = ss.getSheetByName(CONTRACT_SHEET);   // 'ContractData'
 
   const isoDate = toSupabaseDateString_(dateKey);
   if (!isoDate) return { contracts: [], customersByContract: {} };
@@ -1691,30 +1699,25 @@ function getXpplExportOptions(filter, sessionToken) {
   const customersByContract = {};
   for (const c of contracts) customersByContract[c] = [];
 
-  if (shC && shC.getLastRow() > 1) {
-    const lcC      = shC.getLastColumn();
-    const headCRaw = shC.getRange(1, 1, 1, lcC).getValues()[0];
-    const idxCNo     = findIdx(headCRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const idxCus     = findIdx(headCRaw, ['customername','customer','kháchhàng','khachhang']);
-    const idxCStatus = findIdx(headCRaw, ['status','trạngthái','trangthai']);
+  const filters = [];
+  const inFilter = buildSupabaseInFilter_('contract_no', contracts);
+  if (inFilter) filters.push(inFilter);
 
-    if (idxCNo !== -1 && idxCus !== -1) {
-      const rowsC = shC.getRange(2, 1, shC.getLastRow() - 1, lcC).getValues();
-      for (const r of rowsC) {
-        const cno = s(r[idxCNo]);
-        if (!(cno in customersByContract)) continue;
-        if (idxCStatus !== -1) {
-          const st = s(r[idxCStatus]).toLowerCase();
-          if (st && st !== 'active') continue;
-        }
-        const cus = s(r[idxCus]);
-        if (cus && customersByContract[cno].indexOf(cus) === -1) {
-          customersByContract[cno].push(cus);
-        }
-      }
-      Object.keys(customersByContract).forEach(no => customersByContract[no].sort());
+  const contractRows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], filters);
+  contractRows.forEach(function (row) {
+    const cno = s(row.contract_no);
+    if (!(cno in customersByContract)) return;
+    const status = s(row.status).toLowerCase();
+    if (status && status !== 'active') return;
+    const cus = s(row.customer_name);
+    if (!cus) return;
+    if (customersByContract[cno].indexOf(cus) === -1) {
+      customersByContract[cno].push(cus);
     }
-  }
+  });
+  Object.keys(customersByContract).forEach(function (no) {
+    customersByContract[no].sort();
+  });
 
   return { contracts, customersByContract };
 }
@@ -1741,8 +1744,7 @@ function getXpplExportData(filter, sessionToken) {
   if (inputErr.length) return { ok:false, errors: inputErr };
 
   // open SS + normalize date
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const tz = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || 'Asia/Ho_Chi_Minh';
+  const tz = (Session.getScriptTimeZone && Session.getScriptTimeZone()) || 'Asia/Ho_Chi_Minh';
   const toDateKey = (v) => {
     if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
     let str = String(v||'').trim().replace(/^'+/, '');
@@ -1754,32 +1756,19 @@ function getXpplExportData(filter, sessionToken) {
   };
   const dateKey = toDateKey(dateIn);
 
-  // 1) Xác thực Contract–Customer (nếu có sheet ContractData)
-  const shC = ss.getSheetByName(CONTRACT_SHEET);
-  if (shC && shC.getLastRow() > 1) {
-    const lc = shC.getLastColumn();
-    const H  = shC.getRange(1,1,1,lc).getValues()[0];
-    const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
-    const findIndex = (hdr, keys) => {
-      const HH = hdr.map(normalizeHeader);
-      for (const k of keys) { const i = HH.indexOf(k); if (i !== -1) return i; }
-      return -1;
-    };
-    const iNo  = findIndex(H, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const iCus = findIndex(H, ['customername','customer','kháchhàng','khachhang']);
-    const iStt = findIndex(H, ['status','trạngthái','trangthai']);
-
-    if (iNo !== -1 && iCus !== -1) {
-      const ok = shC.getRange(2,1,shC.getLastRow()-1,lc).getValues().some(r => {
-        if (s(r[iNo]) !== contractNo || s(r[iCus]) !== customerName) return false;
-        if (iStt === -1) return true;
-        const st = s(r[iStt]).toLowerCase();
-        return st === '' || st === 'active';
-      });
-      if (!ok) {
-        return { ok:false, errors:['Customer Name không khớp với Contract No (hoặc hợp đồng không Active).'] };
-      }
-    }
+  // 1) Xác thực Contract–Customer trong Supabase contract_data
+  const contractFilters = [];
+  const inFilter = buildSupabaseInFilter_('contract_no', [contractNo]);
+  if (inFilter) contractFilters.push(inFilter);
+  const contractRows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], contractFilters);
+  const isValidContract = contractRows.some(function (row) {
+    if (s(row.contract_no) !== contractNo) return false;
+    if (s(row.customer_name) !== customerName) return false;
+    const status = s(row.status).toLowerCase();
+    return status === '' || status === 'active';
+  });
+  if (!isValidContract) {
+    return { ok:false, errors:['Customer Name không khớp với Contract No (hoặc hợp đồng không Active).'] };
   }
 
   // 2) Lọc dữ liệu từ Supabase vehicle_registration
@@ -3069,20 +3058,22 @@ function getUserSession(sessionToken) {
 
 // Trả về Map: company (UPPER) -> Set(contractNo) chỉ chứa hợp đồng Active
 function buildActiveContractMap_() {
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, CONTRACT_HEADERS.length).getValues();
-  const IDX_NO = 1, IDX_COMP = 3, IDX_STATUS = 4;
+  const rows = fetchContractDataRows_(
+    ['contract_no', 'transportation_company', 'status']
+  );
 
   const map = new Map();
-  for (const r of rows) {
-    const no     = String(r[IDX_NO]   || '').trim();
-    const comp   = String(r[IDX_COMP] || '').trim().toUpperCase();
-    const status = String(r[IDX_STATUS] || '').trim().toLowerCase();
-    if (!no || !comp || status !== 'active') continue;
+  rows.forEach(function (row) {
+    const status = String(row.status == null ? '' : row.status).trim().toLowerCase();
+    if (status !== 'active') return;
+    const no = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    const comp = String(row.transportation_company == null ? '' : row.transportation_company)
+      .trim()
+      .toUpperCase();
+    if (!no || !comp) return;
     if (!map.has(comp)) map.set(comp, new Set());
     map.get(comp).add(no);
-  }
+  });
   return map;
 }
 
@@ -3095,65 +3086,74 @@ function isContractActiveForCompany_(contractNo, company) {
   return m.has(comp) && m.get(comp).has(cno);
 }
 
-
-//Page hop dong van chuyen
-function ensureContractSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sh = ss.getSheetByName(CONTRACT_SHEET);
-  if (!sh) {
-    sh = ss.insertSheet(CONTRACT_SHEET);
-    sh.getRange(1, 1, 1, CONTRACT_HEADERS.length).setValues([CONTRACT_HEADERS]);
-  }
-  return sh;
-}
-
-function genContractId_() {
-  const tz = Session.getScriptTimeZone();
-  const ddmm = Utilities.formatDate(new Date(), tz, 'dd/MM');
-  const rand = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
-  return `C${ddmm}${rand}`;
-}
-
 function getContractDataServerSide(params) {
   const session = validateSession(params.sessionToken);
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, CONTRACT_HEADERS.length).getValues();
+  const role = String(session.role == null ? '' : session.role).toLowerCase();
+  const isAdmin = role === 'admin';
 
-  // map -> object
-  let data = rows.map(r => ({
-    'ID': r[0] || '',
-    'Contract No': r[1] || '',
-    'Customer Name': r[2] || '',
-    'Transportion Company': r[3] || '',
-    'Status': r[4] || ''
-  }));
+  const rows = fetchContractDataRows_(CONTRACT_DATA_SELECT_FIELDS);
 
-  // User chỉ nhìn thấy theo đơn vị mình
-  if (session.role !== 'admin') {
-    data = data.filter(x => String(x['Transportion Company'] || '') === String(session.contractor || ''));
+  let data = rows.map(function (row) {
+    const createdAt = parseSupabaseTimestamp_(row.created_at);
+    const createdAtDisplay = formatSupabaseDateTime_(row.created_at);
+    const createdAtSort = createdAt ? createdAt.toISOString() : '';
+    return {
+      'ID': String(row.id == null ? '' : row.id).trim(),
+      'Contract No': String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim(),
+      'Customer Name': String(row.customer_name == null ? '' : row.customer_name).trim(),
+      'Transportion Company': String(row.transportation_company == null ? '' : row.transportation_company).trim(),
+      'Status': String(row.status == null ? '' : row.status).trim(),
+      'Created At': createdAtDisplay,
+      'Created At Sort': createdAtSort,
+      'Created By': String(row.created_by == null ? '' : row.created_by).trim()
+    };
+  });
+
+  if (!isAdmin) {
+    const contractor = String(session.contractor == null ? '' : session.contractor).trim();
+    if (contractor) {
+      data = data.filter(function (item) {
+        return String(item['Transportion Company'] || '') === contractor;
+      });
+    } else {
+      data = [];
+    }
   }
 
-  // Search toàn cục
   const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
+  const searchKeys = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];  
   let filtered = q
-    ? data.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(q)))
+    ? data.filter(function (item) {
+        return searchKeys.some(function (key) {
+          return String(item[key] == null ? '' : item[key]).toLowerCase().includes(q);
+        });
+      })
     : data;
 
-  // Order
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
-    const columns = ['ID','Contract No','Customer Name','Transportion Company','Status']; // đúng thứ tự trả về cho DataTable
-    const key = columns[order.column >= columns.length ? columns.length-1 : order.column];
-    const dir = (order.dir || 'asc').toLowerCase();
-    filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true}))
-      * (dir === 'desc' ? -1 : 1));
+    const dataColumns = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];
+    let idx = Number(order.column);
+    if (isNaN(idx)) idx = 0;
+    idx -= 2; // Bỏ qua 2 cột Select & Action
+    if (idx < 0) idx = 0;
+    if (idx >= dataColumns.length) idx = dataColumns.length - 1;
+    const key = dataColumns[idx];
+    const sortKey = key === 'Created At' ? 'Created At Sort' : key;
+    const dir = (order.dir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+    filtered = filtered.slice().sort(function (a, b) {
+      const valA = String(a[sortKey] == null ? '' : a[sortKey]);
+      const valB = String(b[sortKey] == null ? '' : b[sortKey]);
+      return valA.localeCompare(valB, undefined, { numeric: true }) * dir;
+    });
   }
 
-  // Paging
   const start = Number(params.start || 0);
   const length = Number(params.length || 50);
-  const page = filtered.slice(start, start + length);
+  const page = filtered.slice(start, start + length).map(function (item) {
+    const { ['Created At Sort']: _discard, ...rest } = item;
+    return rest;
+  });
 
   return {
     draw: Number(params.draw || 1),
@@ -3169,21 +3169,40 @@ function upsertContract(contract, sessionToken) {
 
   const { ID, 'Contract No': contractNo, 'Customer Name': customerName,
           'Transportion Company': tc, 'Status': status } = contract;
-		  
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const ids = last < 2 ? [] : sh.getRange(2, 1, last - 1, 1).getValues().flat();
+
+  const payload = {
+    contract_no: String(contractNo == null ? '' : contractNo).trim(),
+    customer_name: String(customerName == null ? '' : customerName).trim(),
+    transportation_company: String(tc == null ? '' : tc).trim(),
+    status: String(status == null ? '' : status).trim()
+  };
+
+  if (!payload.contract_no) {
+    throw new Error('Thiếu Contract No.');
+  }
 
   if (ID) {
-    const idx = ids.indexOf(ID);
-    if (idx === -1) throw new Error('Không tìm thấy ID để cập nhật.');
-    sh.getRange(idx + 2, 2, 1, 4).setValues([[contractNo, customerName, tc, status]]); // 4 cột
+    const query = SUPABASE_CONTRACT_DATA_ENDPOINT + '?id=eq.' + encodeURIComponent(String(ID).trim());
+    const result = supabaseRequest_(query, {
+      method: 'PATCH',
+      payload: payload,
+      headers: { Prefer: 'return=representation' }
+    });
+    if (!Array.isArray(result) || !result.length) {
+      throw new Error('Không tìm thấy ID để cập nhật.');
+    }
     return 'Đã cập nhật hợp đồng.';
-  } else {
-    const newId = genContractId_();
-    sh.appendRow([newId, contractNo, customerName, tc, status]);
-    return 'Đã tạo hợp đồng mới.';
   }
+
+  const insertResult = supabaseRequest_(SUPABASE_CONTRACT_DATA_ENDPOINT, {
+    method: 'POST',
+    payload: payload,
+    headers: { Prefer: 'return=representation' }
+  });
+  if (!Array.isArray(insertResult) || !insertResult.length) {
+    throw new Error('Không thể tạo hợp đồng mới.');
+  }
+  return 'Đã tạo hợp đồng mới.';
 }
 
 
@@ -3192,20 +3211,23 @@ function deleteContracts(ids, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
 
   if (!Array.isArray(ids) || !ids.length) return 'Không có mục nào để xoá.';
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  if (last < 2) return 'Không có dữ liệu.';
 
-  const allIds = sh.getRange(2,1,last-1,1).getValues().flat();
-  const rowsToDelete = [];
-  ids.forEach(id => {
-    const idx = allIds.indexOf(id);
-    if (idx !== -1) rowsToDelete.push(idx + 2); // sheet index
+  const sanitized = ids
+    .map(function (id) { return String(id == null ? '' : id).trim(); })
+    .filter(function (id) { return id.length > 0; });
+
+  if (!sanitized.length) return 'Không có mục nào để xoá.';
+
+  const filter = buildSupabaseInFilter_('id', sanitized);
+  if (!filter) return 'Không có mục nào để xoá.';
+
+  const result = supabaseRequest_(SUPABASE_CONTRACT_DATA_ENDPOINT + '?' + filter, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=representation' }
   });
 
-  // xoá từ dưới lên
-  rowsToDelete.sort((a,b)=>b-a).forEach(r => sh.deleteRow(r));
-  return `Đã xoá ${rowsToDelete.length} hợp đồng.`;
+  const count = Array.isArray(result) ? result.length : 0;
+  return `Đã xoá ${count} hợp đồng.`;
 }
 
 //Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
@@ -3250,27 +3272,28 @@ function getTransportCompanies() {
 //Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
 function getActiveContractNos(sessionToken) {
   const session = validateSession(sessionToken);
-  const sh = ensureContractSheet_();
-  const n  = sh.getLastRow();
-  if (n < 2) return [];
-  const data = sh.getRange(2, 1, n - 1, CONTRACT_HEADERS.length).getValues();
+  const role = String(session.role == null ? '' : session.role).toLowerCase();
+  const contractor = String(session.contractor == null ? '' : session.contractor).trim();
 
-  const IDX_NO = 1, IDX_COMP = 3, IDX_STATUS = 4;
-  const out = [];
+  if (role !== 'admin' && !contractor) return [];
+
+  const rows = fetchContractDataRows_(['contract_no', 'transportation_company', 'status']);
+  if (!rows.length) return [];
+
   const seen = new Set();
+  rows.forEach(function (row) {
+    const status = String(row.status == null ? '' : row.status).trim().toLowerCase();
+    if (status !== 'active') return;  
 
-  for (const r of data) {
-    const status = String(r[IDX_STATUS] || '').trim().toLowerCase();
-    if (status !== 'active') continue;
+    const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+    if (role !== 'admin' && contractor && comp !== contractor) return;
 
-    if (session.role !== 'admin') {
-      if (String(r[IDX_COMP] || '') !== String(session.contractor || '')) continue;
-    }
+    const contractNo = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    if (!contractNo || seen.has(contractNo)) return;
+    seen.add(contractNo);
+  });
 
-    const no = String(r[IDX_NO] || '').trim();
-    if (no && !seen.has(no)) { seen.add(no); out.push(no); }
-  }
-  return out.sort();
+  return Array.from(seen).sort();
 }
 
 
@@ -3685,19 +3708,18 @@ function saveXpplWeighingData(rows, sessionToken) {
   const user = requireXpplRole_(sessionToken);
   if (!rows || !rows.length) throw new Error('Không có dữ liệu.');
 
-  // build valid Contract-Customer set from ContractData
-  const ssMain = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shCon = ssMain.getSheetByName(CONTRACT_SHEET);
-  const lc = shCon.getLastColumn();
-  const head = shCon.getRange(1,1,1,lc).getValues()[0];
-  const idxCNo = head.indexOf('Contract No');
-  const idxCus = head.indexOf('Customer Name');
+  // build valid Contract-Customer set from contract_data in Supabase
+  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
+  const contractNos = Array.from(new Set((rows || []).map(r => normalize(r['ContractNo'])))).filter(Boolean);
   const validSet = new Set();
-  if (idxCNo !== -1 && idxCus !== -1) {
-    const data = shCon.getRange(2,1,Math.max(0, shCon.getLastRow()-1), lc).getValues();
-    data.forEach(r => {
-      const key = String(r[idxCus]).trim() + '|' + String(r[idxCNo]).trim();
-      validSet.add(key);
+  if (contractNos.length) {
+    const filters = [];
+    const inFilter = buildSupabaseInFilter_('contract_no', contractNos);
+    if (inFilter) filters.push(inFilter);
+    const contractRows = fetchContractDataRows_(['contract_no', 'customer_name'], filters);
+    contractRows.forEach(function (row) {
+      const key = normalize(row.customer_name) + '|' + normalize(row.contract_no);
+      if (key !== '|') validSet.add(key);
     });
   }
 
