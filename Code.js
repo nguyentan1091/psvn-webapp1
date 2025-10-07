@@ -130,7 +130,7 @@ const TRUCK_LIST_SELECT_FIELDS = [
   'container_no1',
   'container_no2',
   'driver_name',
-  'id_pasport',
+  'id_passport',
   'phone_number',
   'transportation_company',
   'subcontractor',
@@ -218,7 +218,7 @@ const TRUCK_LIST_COLUMN_MAP = {
   'Container No1': 'container_no1',
   'Container No2': 'container_no2',
   'Driver Name': 'driver_name',
-  'ID/Passport': 'id_pasport',
+  'ID/Passport': 'id_passport',
   'Phone number': 'phone_number',
   'Transportion Company': 'transportation_company',
   'Subcontractor': 'subcontractor',
@@ -741,7 +741,7 @@ function buildTruckListPayload_(record, options) {
   assign('container_no1', record && record['Container No1']);
   assign('container_no2', record && record['Container No2']);
   assign('driver_name', record && record['Driver Name']);
-  assign('id_pasport', record && record['ID/Passport']);
+  assign('id_passport', record && record['ID/Passport']);
   assign('phone_number', record && record['Phone number']);
   assign('transportation_company', record && record['Transportion Company']);
   assign('subcontractor', record && record['Subcontractor']);
@@ -2854,7 +2854,8 @@ function insertTruckListRows_(rows, session) {
       mode: 'insert',
       username: session.username,
       defaultRegisterDate: defaultRegisterDate,
-      defaultTime: defaultTime
+      defaultTime: defaultTime,
+      includeNulls: true
     });
 
     if (!payload.transportation_company && company) {
@@ -2873,6 +2874,17 @@ function insertTruckListRows_(rows, session) {
 
   let inserted = 0;
   if (payloads.length) {
+    const requiredKeys = Array.from(payloads.reduce(function (set, item) {
+      Object.keys(item).forEach(function (key) { set.add(key); });
+      return set;
+    }, new Set()));
+
+    payloads.forEach(function (item) {
+      requiredKeys.forEach(function (key) {
+        if (!(key in item)) item[key] = null;
+      });
+    });
+
     try {
       const response = supabaseRequest_(SUPABASE_TRUCK_LIST_ENDPOINT, {
         method: 'POST',
