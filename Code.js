@@ -3177,6 +3177,15 @@ function upsertContract(contract, sessionToken) {
     status: String(status == null ? '' : status).trim()
   };
 
+  const username = String(session.username == null ? '' : session.username).trim();
+  if (username) {
+    if (ID) {
+      payload.updated_by = username;
+    } else {
+      payload.created_by = username;
+    }
+  }
+
   if (!payload.contract_no) {
     throw new Error('Thiếu Contract No.');
   }
