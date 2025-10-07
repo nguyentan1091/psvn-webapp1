@@ -668,9 +668,13 @@ const translations = {
     "col_transport_company": "Đơn vị vận chuyển",
     "col_subcontractor": "Nhà thầu phụ",
     "col_vehicle_status": "Tình trạng xe",
-    "col_activity_status": "Trạng thái hoạt động",    
+    "col_activity_status": "Trạng thái hoạt động",
     "col_registration_status": "Trạng thái đăng ký",
     "col_time": "Thời gian đăng ký",
+    "col_created_at": "Ngày tạo (hệ thống)",
+    "col_created_by": "Người tạo",
+    "col_updated_at": "Ngày cập nhật (hệ thống)",
+    "col_updated_by": "Người cập nhật",
     "col_creation_date": "Ngày tạo",
     "col_creation_time": "Thời gian tạo",
     "col_username": "Tên đăng nhập",
@@ -971,9 +975,13 @@ const translations = {
     "col_transport_company": "Transport Company",
     "col_subcontractor": "Subcontractor",
     "col_vehicle_status": "Vehicle Status",
-    "col_activity_status": "Activity Status",    
+    "col_activity_status": "Activity Status",
     "col_registration_status": "Registration Status",
     "col_time": "Registration Time",
+    "col_created_at": "Created At",
+    "col_created_by": "Created By",
+    "col_updated_at": "Updated At",
+    "col_updated_by": "Updated By",
     "col_creation_date": "Creation Date",
     "col_creation_time": "Creation Time",
     "col_username": "Username",
@@ -2120,7 +2128,7 @@ function initRegisterPage() {
     $('#uploadButton').off('click').on('click', handleFileUpload);
     $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
 
-    // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
+    // === NẠP "Đơn vị vận chuyển" từ Supabase truck_list_total ===
     google.script.run
       .withSuccessHandler(list => {
         allowedCompanies = (list || []).filter(Boolean);
@@ -3296,9 +3304,13 @@ function initTotalListPage() {
         { data: 'Transportion Company', title: t.col_transport_company },
         { data: 'Subcontractor', title: t.col_subcontractor },
         { data: 'Vehicle Status', title: t.col_vehicle_status },
-        { data: 'Activity Status', title: t.col_activity_status },        
+        { data: 'Activity Status', title: t.col_activity_status },
         { data: 'Register Date', title: t.col_register_date },
-        { data: 'Time', title: t.col_time }
+        { data: 'Time', title: t.col_time },
+        { data: 'Created at', title: t.col_created_at },
+        { data: 'Created by', title: t.col_created_by },
+        { data: 'Updated at', title: t.col_updated_at },
+        { data: 'Updated by', title: t.col_updated_by }
     );
 
     // 3) Sinh lại thead cho DataTables (tránh kế thừa header cũ)
