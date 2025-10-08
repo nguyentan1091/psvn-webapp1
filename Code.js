@@ -1,19 +1,17 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const DATA_SHEET = 'VehicleData';
-const HISTORY_LOGIN_SHEET = 'History-login';
-const CONTRACT_SHEET = 'ContractData';
-const CONTRACT_HEADERS = ['ID', 'Contract No', 'Customer Name', 'Transportation Company', 'Status'];
+const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 // === XPPL Weighing Station database ===
 const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
 const XPPL_DB_SHEET = 'XPPL-Database';
 const XPPL_DB_HEADERS = [
-  'ID','No.','W.ID','Weighing Type','Ticket ID','Truck No','Date In','Time In','Date Out','Time Out',
-  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','Customer Name','CargoLot No',
-  'Cargo Company','Cargo Name','PackUnit','PackQtt','Driver Name','ID/Passport','Contract No','Invoice No',
-  'Co No','Order No','Plant','OVS_DMT','Trailer No','Truck Country','Truck Type','WS. Code','Note',
-  'CreateUser','Transportation Company','Changed Date','Changed Time','Username'
+  'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
+  'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
+  'DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo',
+  'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode',
+  'Note','CreateUser','Transportation Company','Changed Date','Changed Time','Username'
 ];
 // === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
 // ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
@@ -23,7 +21,7 @@ const XPPL_DB_COLUMN_TYPES = {
   'No.': 'text',
   'W.ID': 'text',
   'Weighing Type': 'text',
-  'Ticket ID': 'text',
+  'TicketID': 'text',
   'Truck No': 'text',
   'Date In': 'date',
   'Time In': 'time',
@@ -34,24 +32,25 @@ const XPPL_DB_COLUMN_TYPES = {
   'Net Weight': 'text',
   'Product Name': 'text',
   'CoalSource': 'text',
+  'ProductionCode': 'text',  
   'Customer Name': 'text',
-  'CargoLot No': 'text',
-  'Cargo Company': 'text',
-  'Cargo Name': 'text',  
+  'DriverName': 'text',
+  'Id/Passport': 'text',
+  'CargoLotNo': 'text',
+  'CargoName': 'text',
+  'CargoCompany': 'text',
   'PackUnit': 'text',
   'PackQtt': 'text',
-  'Driver Name': 'text',
-  'ID/Passport': 'text',
-  'Contract No': 'text',
-  'Invoice No': 'text',
-  'Co No': 'text',
-  'Order No': 'text',
-  'Plant': 'text',  
+  'OrderNo': 'text',
+  'ContractNo': 'text',
+  'InvoiceNo': 'text',
+  'CoNo': 'text',
   'OVS_DMT': 'text',
+  'Plant': 'text',  
   'Trailer No': 'text',
   'Truck Country': 'text',
   'Truck Type': 'text',
-  'WS. Code': 'text',
+  'WeighStationCode': 'text',
   'Note': 'text',
   'CreateUser': 'text',
   'Transportation Company': 'text',
@@ -83,7 +82,7 @@ const XPPL_TABLE_COLUMNS = [
   'Driver Name',           // F
   'ID/Passport',           // G
   'Phone number',          // H
-  'Transportation Company',  // I
+  'Transportion Company',  // I
   'Subcontractor'          // J
 ];
 
@@ -102,10 +101,87 @@ const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
 
 // ================= SUPABASE CONFIGURATION =================
-const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
+const SUPABASE_URL = 'https://medlgvtmhujuqdvceaoz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lZGxndnRtaHVqdXFkdmNlYW96Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODg5NzY5NSwiZXhwIjoyMDc0NDczNjk1fQ.h-hVavhpp_NbJ4tiaFTPJBQsdS0SNfpndQeGp-eyFAo';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
-const SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT = '/rest/v1/truck_list_total';
+const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
+const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
+const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
+const CONTRACT_DATA_SELECT_FIELDS = [
+  'id',
+  'contract_no',
+  'customer_name',
+  'transportation_company',
+  'status',
+  'created_at',
+  'created_by',
+  'updated_at',
+  'updated_by'
+];
+const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
+const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
+const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
+const SUPABASE_USER_MISS_CACHE_TTL_SECONDS = 45;
+const SUPABASE_USER_SELECT_FIELDS = [
+  'username',
+  'password_hash',
+  'role',
+  'contractor',
+  'customer_name',
+  'active_session_token',
+  'session_token_expiry',
+  'security_code',
+  'password_last_updated'
+];
+
+const VEHICLE_REGISTRATION_SELECT_FIELDS = [
+  'id',
+  'register_date',
+  'contract_no',
+  'truck_plate',
+  'country',
+  'wheel',
+  'trailer_plate',
+  'truck_weight',
+  'pay_load',
+  'container_no1',
+  'container_no2',
+  'driver_name',
+  'id_passport',
+  'phone_number',
+  'destination_est',
+  'transportation_company',
+  'subcontractor',
+  'vehicle_status',
+  'registration_status',
+  'time',
+  'created_at',
+  'updated_at',
+  'created_by'
+];
+
+const VEHICLE_REGISTRATION_COLUMN_MAP = {
+  'ID': 'id',
+  'Register Date': 'register_date',
+  'Contract No': 'contract_no',
+  'Truck Plate': 'truck_plate',
+  'Country': 'country',
+  'Wheel': 'wheel',
+  'Trailer Plate': 'trailer_plate',
+  'Truck weight': 'truck_weight',
+  'Pay load': 'pay_load',
+  'Container No1': 'container_no1',
+  'Container No2': 'container_no2',
+  'Driver Name': 'driver_name',
+  'ID/Passport': 'id_passport',
+  'Phone number': 'phone_number',
+  'Destination EST': 'destination_est',
+  'Transportion Company': 'transportation_company',
+  'Subcontractor': 'subcontractor',
+  'Vehicle Status': 'vehicle_status',
+  'Registration Status': 'registration_status',
+  'Time': 'time'
+};
 
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
@@ -143,6 +219,7 @@ function supabaseRequest_(path, options) {
   }
 
   const url = buildSupabaseUrl_(path);
+  const returnResponse = !!opts.returnResponse;  
   let response;
   try {
     response = UrlFetchApp.fetch(url, request);
@@ -162,61 +239,216 @@ function supabaseRequest_(path, options) {
   }
 
   if (status >= 200 && status < 300) {
+    if (returnResponse) {
+      return {
+        data: data,
+        status: status,
+        headers: response.getAllHeaders(),
+        raw: response
+      };
+    }    
     return data;
   }
 
   const message = data && data.message ? data.message : text;
-  throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
+  const error = new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
+  if (returnResponse) {
+    error.response = response;
+  }
+  throw error;
 }
 
-function getSupabaseUserByUsername_(username) {
-  if (!username) return null;
-  const query = '?select=*&username=eq.' + encodeURIComponent(username) + '&limit=1';
+function fetchContractDataRows_(selectFields, filterParams) {
+  const fields = Array.isArray(selectFields) && selectFields.length
+    ? selectFields.join(',')
+    : '*';
+  let query = SUPABASE_CONTRACT_DATA_ENDPOINT + '?select=' + encodeURIComponent(fields);
+  if (Array.isArray(filterParams) && filterParams.length) {
+    query += '&' + filterParams.join('&');
+  }
+  try {
+    const rows = supabaseRequest_(query);
+    return Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    Logger.log('fetchContractDataRows_ error: ' + e);
+    return [];
+  }
+}
+
+function toSupabaseDateString_(value) {
+  const normalized = normalizeDate(value);
+  if (!normalized) return null;
+  const timezone = Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh';
+  return Utilities.formatDate(normalized, timezone, 'yyyy-MM-dd');
+}
+
+function mapVehicleRegistrationRowToArray_(row, headers) {
+  if (!row) return headers.map(() => '');
+  return headers.map(function (header) {
+    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
+    if (!column) return '';
+    const value = row[column];
+    if (value == null) return '';
+    if (header === 'Register Date') {
+      const dt = parseSupabaseTimestamp_(value);
+      return dt || value;
+    }
+    if (header === 'Time') {
+      const dt = parseSupabaseTimestamp_(value);
+      return dt || value;
+    }
+    return value;
+  });
+}
+
+function buildVehicleRegistrationPayload_(record, options) {
+  const opts = options || {};
+  const payload = {};
+  Object.keys(VEHICLE_REGISTRATION_COLUMN_MAP).forEach(function (header) {
+    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
+    if (!column) return;
+    const value = record[header];
+    if (header === 'Register Date') {
+      const iso = toSupabaseDateString_(value);
+      if (iso) payload[column] = iso;
+      return;
+    }
+    if (header === 'Time') {
+      if (value) payload[column] = value instanceof Date ? value.toISOString() : String(value);
+      return;
+    }
+    if (value === '' || value === null || value === undefined) {
+      if (opts.includeNulls) payload[column] = null;
+      return;
+    }
+    payload[column] = value;
+  });
+  return payload;
+}
+
+function buildSupabaseInFilter_(column, values) {
+  if (!column || !Array.isArray(values) || !values.length) return '';
+  const sanitized = values
+    .map(function (value) {
+      return String(value == null ? '' : value).trim();
+    })
+    .filter(function (value) { return value.length > 0; })
+    .map(function (value) { return value.replace(/"/g, '""'); });
+  if (!sanitized.length) return '';
+  const quoted = sanitized.map(function (value) { return '"' + value + '"'; });
+  return column + '=in.' + encodeURIComponent('(' + quoted.join(',') + ')');
+}
+
+function buildSupabaseUserCacheKey_(username) {
+  const normalized = String(username == null ? '' : username).trim().toLowerCase();
+  return normalized ? SUPABASE_USER_CACHE_PREFIX + normalized : '';
+}
+
+function buildSupabaseUserMissCacheKey_(username) {
+  const normalized = String(username == null ? '' : username).trim().toLowerCase();
+  return normalized ? SUPABASE_USER_MISS_CACHE_PREFIX + normalized : '';
+}
+
+function cacheSupabaseUserRecord_(username, record) {
+  const key = buildSupabaseUserCacheKey_(username);
+  if (!key || !record || typeof record !== 'object') return;
+  if (!Object.prototype.hasOwnProperty.call(record, 'password_hash')) return;
+  safeScriptCachePutJSON_(key, record, SUPABASE_USER_CACHE_TTL_SECONDS);
+  removeSupabaseUserMissCache_(username);
+}
+
+function removeSupabaseUserCache_(username) {
+  const key = buildSupabaseUserCacheKey_(username);
+  if (!key) return;
+  safeScriptCacheRemove_(key);
+  removeSupabaseUserMissCache_(username);
+}
+
+function getSupabaseUserByUsername_(username, options) {
+  const normalized = String(username == null ? '' : username).trim();
+  if (!normalized) return null;
+
+  const opts = options || {};
+  const cacheKey = buildSupabaseUserCacheKey_(normalized);
+  const missKey = buildSupabaseUserMissCacheKey_(normalized);
+  if (!opts.forceRefresh && missKey) {
+    const missHit = safeScriptCacheGetJSON_(missKey);
+    if (missHit) return null;
+  }
+  if (!opts.forceRefresh && cacheKey) {
+    const cached = safeScriptCacheGetJSON_(cacheKey);
+    if (cached) return cached;
+  }
+
+  const selectClause = encodeURIComponent(SUPABASE_USER_SELECT_FIELDS.join(','));
+  const query = '?select=' + selectClause + '&username=eq.' + encodeURIComponent(normalized) + '&limit=1';
   const data = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT + query);
   if (Array.isArray(data) && data.length > 0) {
-    return data[0];
+    const record = data[0];
+    cacheSupabaseUserRecord_(normalized, record);
+    return record;
+  }
+  if (cacheKey) {
+    safeScriptCacheRemove_(cacheKey);
+  }
+  if (missKey) {
+    safeScriptCachePutJSON_(missKey, 1, SUPABASE_USER_MISS_CACHE_TTL_SECONDS);
   }
   return null;
 }
 
-function updateSupabaseUserByUsername_(username, payload) {
-  if (!username) throw new Error('Username is required');
-  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
-  const result = supabaseRequest_(query, {
+function updateSupabaseUserByUsername_(username, payload, options) {
+  const normalized = String(username == null ? '' : username).trim();
+  if (!normalized) throw new Error('Username is required');
+  const opts = options || {};
+  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(normalized);
+  removeSupabaseUserCache_(normalized);
+  const requestOptions = {
     method: 'PATCH',
     payload: payload,
-    headers: { Prefer: 'return=representation' }
-  });
+    headers: Object.assign(
+      { Prefer: opts.returnMinimal ? 'return=minimal' : 'return=representation' },
+      opts.headers || {}
+    )
+  };
+  const result = supabaseRequest_(query, requestOptions);
+  if (opts.returnMinimal) {
+    if (opts.cacheRecord && typeof opts.cacheRecord === 'object') {
+      cacheSupabaseUserRecord_(normalized, opts.cacheRecord);
+      return opts.cacheRecord;
+    }
+    return null;
+  }
   if (Array.isArray(result) && result.length > 0) {
-    return result[0];
+    const record = result[0];
+    cacheSupabaseUserRecord_(normalized, record);
+    return record;
   }
   return null;
 }
 
 function insertSupabaseUser_(payload) {
-  return supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT, {
+  const result = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT, {
     method: 'POST',
     payload: payload,
     headers: { Prefer: 'return=representation' }
   });
+  if (Array.isArray(result) && result.length > 0 && result[0].username) {
+    cacheSupabaseUserRecord_(result[0].username, result[0]);
+  }
+  return result;  
 }
 
 function deleteSupabaseUserByUsername_(username) {
-  if (!username) throw new Error('Username is required');
-  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(username);
+  const normalized = String(username == null ? '' : username).trim();
+  if (!normalized) throw new Error('Username is required');
+  const query = SUPABASE_APP_USERS_ENDPOINT + '?username=eq.' + encodeURIComponent(normalized);
+  removeSupabaseUserCache_(normalized);
   supabaseRequest_(query, { method: 'DELETE' });
 }
 
-function clearUserSession_(username, token) {
-  if (!username) return;
-  try {
-    updateSupabaseUserByUsername_(username, {
-      active_session_token: null,
-      session_token_expiry: null
-    });
-  } catch (e) {
-    Logger.log('clearUserSession_ error: ' + e);
-  }
+function clearUserSession_(username, token, options) {
+  const opts = options || {};
   if (token) {
     try {
       removeSessionFromCache_(token);
@@ -224,19 +456,37 @@ function clearUserSession_(username, token) {
       Logger.log('clearUserSession_ cache error: ' + cacheError);
     }
   }
+  if (!username || opts.skipSupabaseUpdate) return;
+  try {
+    updateSupabaseUserByUsername_(username, {
+      active_session_token: null,
+      session_token_expiry: null
+    }, { returnMinimal: true });
+  } catch (e) {
+    Logger.log('clearUserSession_ error: ' + e);
+  }  
 }
 
 function clearUserSessionByToken_(token) {
   if (!token) return;
   try {
     const query = SUPABASE_APP_USERS_ENDPOINT + '?active_session_token=eq.' + encodeURIComponent(token);
-    supabaseRequest_(query, {
+    const result = supabaseRequest_(query, {
       method: 'PATCH',
       payload: {
         active_session_token: null,
         session_token_expiry: null
-      }
+      },
+      headers: { Prefer: 'return=representation' }
     });
+    if (Array.isArray(result)) {
+      result.forEach(function (row) {
+        if (row && row.username) {
+          removeSupabaseUserCache_(row.username);
+          cacheSupabaseUserRecord_(row.username, row);
+        }
+      });
+    }    
   } catch (e) {
     Logger.log('clearUserSessionByToken_ error: ' + e);
   }
@@ -263,197 +513,6 @@ function formatSupabaseDateTime_(value) {
   } catch (e) {
     return dt.toISOString();
   }
-}
-
-function getAppTimeZone_() {
-  try {
-    const tz = Session.getScriptTimeZone();
-    return tz || 'Asia/Ho_Chi_Minh';
-  } catch (e) {
-    return 'Asia/Ho_Chi_Minh';
-  }
-}
-
-function parseContentRangeCount_(response) {
-  if (!response || typeof response.getHeaders !== 'function') return null;
-  const headers = response.getHeaders();
-  const value = headers['Content-Range'] || headers['content-range'];
-  if (!value) return null;
-  const match = /\/(\d+)$/.exec(String(value));
-  if (!match) return null;
-  const total = Number(match[1]);
-  return isNaN(total) ? null : total;
-}
-
-function pad2_(num) {
-  return String(num).padStart(2, '0');
-}
-
-function normalizeTruckPlate_(value) {
-  if (value == null) return '';
-  return String(value).replace(/\s+/g, '').toUpperCase();
-}
-
-function sanitizeString_(value) {
-  if (value == null) return '';
-  return String(value);
-}
-
-function parseDdMmYyyy_(value) {
-  if (!value && value !== 0) return null;
-  if (value instanceof Date && !isNaN(value)) {
-    return {
-      year: value.getFullYear(),
-      month: value.getMonth() + 1,
-      day: value.getDate()
-    };
-  }
-  const str = String(value).trim().replace(/^'+/, '');
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(str);
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  if (!day || !month || !year) return null;
-  return { day: day, month: month, year: year };
-}
-
-function parseTimeString_(value) {
-  if (!value && value !== 0) return null;
-  if (value instanceof Date && !isNaN(value)) {
-    return {
-      hour: value.getHours(),
-      minute: value.getMinutes(),
-      second: value.getSeconds()
-    };
-  }
-  const str = String(value).trim().replace(/^'+/, '');
-  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(str);
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  const second = match[3] != null ? Number(match[3]) : 0;
-  if (hour > 23 || minute > 59 || second > 59) return null;
-  return { hour: hour, minute: minute, second: second };
-}
-
-function buildDateStringFromParts_(parts) {
-  if (!parts) return null;
-  const { year, month, day } = parts;
-  if (!year || !month || !day) return null;
-  return `${year}-${pad2_(month)}-${pad2_(day)}`;
-}
-
-function convertLocalDateTimeToUtcIso_(dateParts, timeParts, timezone) {
-  if (!dateParts && !timeParts) return null;
-  const tz = timezone || getAppTimeZone_();
-  const now = new Date();
-  const year = dateParts ? dateParts.year : now.getFullYear();
-  const month = dateParts ? dateParts.month : now.getMonth() + 1;
-  const day = dateParts ? dateParts.day : now.getDate();
-  const hour = timeParts ? timeParts.hour : now.getHours();
-  const minute = timeParts ? timeParts.minute : now.getMinutes();
-  const second = timeParts ? timeParts.second : now.getSeconds();
-
-  const offsetTarget = Utilities.formatDate(new Date(Date.UTC(year, month - 1, day, hour, minute, second)), tz, 'Z');
-  const offsetFormatted = offsetTarget ? `${offsetTarget.slice(0, 3)}:${offsetTarget.slice(3)}` : '+00:00';
-  const localIso = `${year}-${pad2_(month)}-${pad2_(day)}T${pad2_(hour)}:${pad2_(minute)}:${pad2_(second)}${offsetFormatted}`;
-  const dt = new Date(localIso);
-  if (isNaN(dt.getTime())) return null;
-  return dt.toISOString();
-}
-
-function formatRegisterDateFromSupabase_(value, timezone) {
-  if (!value) return '';
-  const tz = timezone || getAppTimeZone_();
-  if (value instanceof Date) {
-    return Utilities.formatDate(value, tz, 'dd/MM/yyyy');
-  }
-  const str = String(value);
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
-  if (match) {
-    const year = Number(match[1]);
-    const month = Number(match[2]) - 1;
-    const day = Number(match[3]);
-    const dt = new Date(year, month, day);
-    if (!isNaN(dt.getTime())) {
-      return Utilities.formatDate(dt, tz, 'dd/MM/yyyy');
-    }
-  }
-  const parsed = parseSupabaseTimestamp_(value);
-  if (parsed) {
-    return Utilities.formatDate(parsed, tz, 'dd/MM/yyyy');
-  }
-  return str;
-}
-
-function formatTimestampForDisplay_(value, timezone) {
-  const tz = timezone || getAppTimeZone_();
-  const dt = parseSupabaseTimestamp_(value);
-  if (!dt) return '';
-  return Utilities.formatDate(dt, tz, 'dd/MM/yyyy HH:mm:ss');
-}
-
-function mapTruckListRowToClient_(row, timezone) {
-  const tz = timezone || getAppTimeZone_();
-  const out = {};
-  out['ID'] = sanitizeString_(row.id || row.ID || '');
-  out['Truck Plate'] = sanitizeString_(row.truck_plate || '');
-  out['Country'] = sanitizeString_(row.country || '');
-  out['Wheel'] = sanitizeString_(row.wheel || '');
-  out['Trailer Plate'] = sanitizeString_(row.trailer_plate || '');
-  out['Truck weight'] = sanitizeString_(row.truck_weight || '');
-  out['Pay load'] = sanitizeString_(row.payload || '');
-  out['Container No1'] = sanitizeString_(row.container_no1 || '');
-  out['Container No2'] = sanitizeString_(row.container_no2 || '');
-  out['Driver Name'] = sanitizeString_(row.driver_name || '');
-  out['ID/Passport'] = sanitizeString_(row.id_passport || '');
-  out['Phone number'] = sanitizeString_(row.phone_number || '');
-  out['Transportation Company'] = sanitizeString_(row.transportation_company || '');
-  out['Subcontractor'] = sanitizeString_(row.subcontractor || '');
-  out['Vehicle Status'] = sanitizeString_(row.vehicle_status || '');
-  out['Activity Status'] = sanitizeString_(row.activity_status || '');
-  out['Register Date'] = formatRegisterDateFromSupabase_(row.register_date, tz);
-  out['Time'] = formatTimestampForDisplay_(row.time, tz);
-  out['Created at'] = formatTimestampForDisplay_(row.created_at, tz);
-  out['Created by'] = sanitizeString_(row.created_by || '');
-  out['Updated at'] = formatTimestampForDisplay_(row.updated_at, tz);
-  out['Updated by'] = sanitizeString_(row.updated_by || '');
-  return out;
-}
-
-function chunkArray_(arr, size) {
-  const out = [];
-  if (!Array.isArray(arr) || size <= 0) return out;
-  for (let i = 0; i < arr.length; i += size) {
-    out.push(arr.slice(i, i + size));
-  }
-  return out;
-}
-
-function fetchTruckListRowsByPlates_(plates, columns) {
-  if (!Array.isArray(plates) || !plates.length) return [];
-  const unique = Array.from(new Set(plates.map(normalizeTruckPlate_).filter(Boolean)));
-  if (!unique.length) return [];
-  const selectCols = Array.isArray(columns) && columns.length ? columns : TRUCK_LIST_TOTAL_SELECT_COLUMNS;
-  const selectParam = 'select=' + encodeURIComponent(selectCols.join(','));
-  const chunkSize = 50; // giữ query gọn
-  const results = [];
-
-  chunkArray_(unique, chunkSize).forEach(chunk => {
-    if (!chunk.length) return;
-    const valueList = chunk
-      .map(v => '"' + v.replace(/"/g, '\\"') + '"')
-      .join(',');
-    const filter = 'truck_plate=in.(' + valueList + ')';
-    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + selectParam + '&' + filter;
-    const data = supabaseRequest_(query);
-    if (Array.isArray(data) && data.length) {
-      results.push.apply(results, data);
-    }
-  });
-
-  return results;
 }
 
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
@@ -491,12 +550,16 @@ function normalizeTime(v) {
 function formatDateForClient(v) {
   if (!v && v!==0) return '';
   if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
+  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(v));
+  if (parsed) return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");  
   return stripLeadingApostrophe(v);
 }
 
 function formatTimeForClient(v) {
   if (!v && v!==0) return '';
-  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy HH:mm:ss");
+  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(v));
+  if (parsed) return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "dd/MM/yyyy HH:mm:ss");
   if (typeof v === 'number') {
     var total = Math.round(v*86400);
     var hh = Math.floor(total/3600);
@@ -507,23 +570,102 @@ function formatTimeForClient(v) {
   return stripLeadingApostrophe(v);
 }
 
-function parseExcelDate_(v) {
-  if (v == null || v === '') return '';
-  var d;
-  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-    d = v;
-  } else if (typeof v === 'number') {
-    d = new Date(Math.round((v - 25569) * 86400 * 1000));
-  } else {
-    var s = String(v).replace(/"/g, '');
-    d = new Date(s);
-    if (isNaN(d)) {
-      var m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (m) d = new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
+function normalizeToUtcDate_(date) {
+  if (Object.prototype.toString.call(date) !== '[object Date]' || isNaN(date)) return null;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function toUtcDateKey_(date) {
+  var normalized = normalizeToUtcDate_(date);
+  if (!normalized) return '';
+  var y = normalized.getUTCFullYear();
+  var m = ('0' + (normalized.getUTCMonth() + 1)).slice(-2);
+  var d = ('0' + normalized.getUTCDate()).slice(-2);
+  return y + '-' + m + '-' + d;
+}
+
+function createUtcDate_(year, month, day) {
+  if (typeof year !== 'number' || !isFinite(year) || typeof month !== 'number' || !isFinite(month) || typeof day !== 'number' || !isFinite(day)) return null;
+  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  var date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return date;
+}
+
+function collectExcelDateCandidates_(value) {
+  var map = {};
+
+  function addCandidate(date, format) {
+    var normalized = normalizeToUtcDate_(date);
+    if (!normalized) return;
+    var key = toUtcDateKey_(normalized);
+    if (!key || map[key]) return;
+    map[key] = { date: normalized, format: format || 'unknown', key: key };
+  }
+
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    addCandidate(value, 'dateObject');
+  } else if (typeof value === 'number' && isFinite(value)) {
+    var millis = Math.round((value - 25569) * 86400 * 1000);
+    addCandidate(new Date(millis), 'serial');
+  }
+
+  if (value != null) {
+    var str = String(value).trim();
+    if (str) {
+      var sanitized = str.replace(/^'+/, '').replace(/"/g, '');
+      var digitParts = sanitized.match(/(\d{1,4})/g);
+
+      if (digitParts && digitParts.length === 3) {
+        var numbers = digitParts.map(function(part) { return parseInt(part, 10); });
+        var lengths = digitParts.map(function(part) { return part.length; });
+
+        function addFromParts(year, month, day, format) {
+          var candidate = createUtcDate_(year, month, day);
+          if (candidate) addCandidate(candidate, format);
+        }
+
+        if (lengths[0] === 4) {
+          addFromParts(numbers[0], numbers[1], numbers[2], 'YMD');
+        } else if (lengths[2] === 4) {
+          addFromParts(numbers[2], numbers[1], numbers[0], 'DMY');
+          addFromParts(numbers[2], numbers[0], numbers[1], 'MDY');
+        } else if (lengths[1] === 4) {
+          addFromParts(numbers[1], numbers[0], numbers[2], 'DMY');
+          addFromParts(numbers[1], numbers[2], numbers[0], 'MDY');
+        } else {
+          addFromParts(numbers[2], numbers[1], numbers[0], 'DMY');
+          addFromParts(numbers[2], numbers[0], numbers[1], 'MDY');
+        }
+      }
+
+      var fallback = new Date(sanitized);
+      if (!isNaN(fallback)) {
+        addCandidate(fallback, 'native');
+      }
     }
   }
-  if (!d || isNaN(d)) return '';
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  return Object.keys(map).map(function(key) { return map[key]; });
+}
+
+function parseExcelDate_(v) {
+  if (v == null || v === '') return '';
+  var candidates = collectExcelDateCandidates_(v);
+  if (!candidates.length) return '';
+
+  var chosen = candidates[0];
+  for (var i = 0; i < candidates.length; i++) {
+    if (candidates[i].format === 'DMY') {
+      chosen = candidates[i];
+      break;
+    }
+  }
+
+  var date = chosen.date;
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
 function parseExcelTime_(v) {
@@ -619,38 +761,14 @@ const HEADERS_REGISTER = [
   'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel',
   'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2',
   'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST',
-  'Transportation Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
+  'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
 ];
 const NUMERIC_REGISTER_FIELDS = ['Wheel', 'Truck weight', 'Pay load'];
 const HEADERS_TOTAL_LIST = [
   'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
   'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
-  'Phone number', 'Transportation Company', 'Subcontractor', 'Vehicle Status',
-  'Activity Status', 'Register Date', 'Time', 'Created at', 'Created by',
-  'Updated at', 'Updated by'
-];
-
-const TRUCK_LIST_TOTAL_CLIENT_COLUMNS = [
-  'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
-  'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
-  'Phone number', 'Transportation Company', 'Subcontractor', 'Vehicle Status',
-  'Activity Status', 'Register Date', 'Time', 'Created at', 'Created by',
-  'Updated at', 'Updated by'
-];
-
-const TRUCK_LIST_TOTAL_SELECT_COLUMNS = [
-  'id', 'truck_plate', 'country', 'wheel', 'trailer_plate', 'truck_weight',
-  'payload', 'container_no1', 'container_no2', 'driver_name', 'id_passport',
-  'phone_number', 'transportation_company', 'subcontractor', 'vehicle_status',
-  'activity_status', 'register_date', 'time', 'created_at', 'created_by',
-  'updated_at', 'updated_by'
-];
-
-const TRUCK_LIST_TOTAL_SEARCH_COLUMNS = [
-  'truck_plate', 'country', 'wheel', 'trailer_plate', 'truck_weight',
-  'payload', 'container_no1', 'container_no2', 'driver_name', 'id_passport',
-  'phone_number', 'transportation_company', 'subcontractor', 'vehicle_status',
-  'activity_status', 'register_date', 'created_by', 'updated_by'
+  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
+  'Activity Status', 'Register Date', 'Time'
 ];
 
 function coerceNumericRegisterFields_(record) {
@@ -703,15 +821,59 @@ function requireXpplRole_(sessionToken) {
   return s;
 }
 
-function logLoginAttempt(username, status) {
+function buildLoginHistoryPayload_(username, outcome, context) {
+  const payload = {
+    occurred_at: new Date().toISOString()
+  };
+
+  const normalizedUsername = String(username == null ? '' : username).trim();
+  payload.username = normalizedUsername || null;
+
+  const normalizedOutcome = String(outcome == null ? '' : outcome).trim();
+  payload.outcome = normalizedOutcome || null;
+
+  const ctx = context && typeof context === 'object' ? context : {};
+
+  const ip = ctx.ip == null ? '' : String(ctx.ip).trim();
+  if (ip) {
+    payload.ip = ip;
+  }
+
+  const latitude = Number(ctx.latitude);
+  if (Number.isFinite(latitude)) {
+    payload.latitude = latitude;
+  }
+
+  const longitude = Number(ctx.longitude);
+  if (Number.isFinite(longitude)) {
+    payload.longitude = longitude;
+  }
+
+  const accuracySource = ctx.accuracy_m != null ? ctx.accuracy_m : ctx.accuracy;
+  const accuracy = Number(accuracySource);
+  if (Number.isFinite(accuracy)) {
+    payload.accuracy_m = Math.round(accuracy);
+  }
+
+  const userAgent = ctx.userAgent != null ? ctx.userAgent : ctx.user_agent;
+  if (userAgent != null && userAgent !== '') {
+    const agentString = String(userAgent);
+    payload.user_agent = agentString.length > 1024 ? agentString.slice(0, 1024) : agentString;
+  }
+
+  return payload;
+}
+
+function logLoginAttempt(username, outcome, context) {
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(HISTORY_LOGIN_SHEET);
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Timestamp', 'Username', 'Status']);
-    }
-    sheet.appendRow([new Date(), username, status]);
+    const payload = buildLoginHistoryPayload_(username, outcome, context);
+    supabaseRequest_(SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT, {
+      method: 'POST',
+      payload: payload,
+      headers: { Prefer: 'return=minimal' }
+    });
   } catch (e) {
-    Logger.log('Không thể ghi lịch sử đăng nhập: ' + e.message);
+    Logger.log('Không thể ghi lịch sử đăng nhập (Supabase): ' + e);
   }
 }
 
@@ -739,18 +901,21 @@ function ensureSupervisionAccount_() {
 function checkLogin(credentials) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const username = String(credentials.username == null ? '' : credentials.username).trim();
-  
+
+  const loginContext = credentials && typeof credentials.context === 'object' ? credentials.context : {};
+
   try {
     const lockoutUntil = scriptProperties.getProperty(`lockout_until_${username}`);
     if (lockoutUntil && new Date().getTime() < parseFloat(lockoutUntil)) {
       const timeLeft = Math.ceil((parseFloat(lockoutUntil) - new Date().getTime()) / (60 * 1000));
+      logLoginAttempt(username, 'Locked', loginContext);      
       throw new Error(`Tài khoản của bạn đã bị tạm khóa. Vui lòng thử lại sau ${timeLeft} phút.`);
     }
 
     const userRecord = getSupabaseUserByUsername_(username);
 
     if (!userRecord || String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(credentials.password == null ? '' : credentials.password)) {
-      logLoginAttempt(username, 'Failure');
+      logLoginAttempt(username, 'Failure', loginContext);
       let failedAttempts = parseInt(scriptProperties.getProperty(`failed_attempts_${username}`) || '0') + 1;
       if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
         let lockoutLevel = parseInt(scriptProperties.getProperty(`lockout_level_${username}`) || '0') + 1;
@@ -773,9 +938,10 @@ function checkLogin(credentials) {
 
     if (activeToken) {
       if (tokenExpiry && nowMs < tokenExpiry.getTime()) {
+        logLoginAttempt(username, 'Rejected-ActiveSession', loginContext);        
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
-      clearUserSession_(username, activeToken);
+      clearUserSession_(username, activeToken, { skipSupabaseUpdate: true });
     }
 
     const customerName = String(userRecord.customer_name == null ? '' : userRecord.customer_name).trim();
@@ -787,10 +953,22 @@ function checkLogin(credentials) {
     const newSessionToken = Utilities.getUuid();
     const tokenExpiryDate = new Date(nowMs + SESSION_TIMEOUT_SECONDS * 1000);
 
-    updateSupabaseUserByUsername_(username, {
+    const updatePayload = {
       active_session_token: newSessionToken,
       session_token_expiry: tokenExpiryDate.toISOString()
-    });
+    };
+
+    const cachedRecord = Object.assign({}, userRecord, updatePayload);
+    try {
+      updateSupabaseUserByUsername_(username, updatePayload, {
+        returnMinimal: true,
+        cacheRecord: cachedRecord
+      });
+    } catch (updateError) {
+      clearUserSession_(username, activeToken);
+      logLoginAttempt(username, 'Failure-UpdateSession', loginContext);      
+      throw updateError;
+    }
 
     const userRole = userRecord.role;
     const canonicalUsername = String(userRecord.username == null ? '' : userRecord.username).trim();
@@ -807,7 +985,7 @@ function checkLogin(credentials) {
       token: newSessionToken
     };
 
-    logLoginAttempt(username, 'Success');
+    logLoginAttempt(username, 'Success', loginContext);
     cacheSession_(userSession);
 
     return userSession;
@@ -866,10 +1044,14 @@ function changePassword(passwords, sessionToken) {
       throw new Error('Mật khẩu hiện tại không đúng.');
     }
 
-    updateSupabaseUserByUsername_(session.username, {
+    const updatedRecord = Object.assign({}, userRecord, {
       password_hash: newPassword,
       password_last_updated: new Date().toISOString()
     });
+    updateSupabaseUserByUsername_(session.username, {
+      password_hash: newPassword,
+      password_last_updated: updatedRecord.password_last_updated
+    }, { returnMinimal: true, cacheRecord: updatedRecord });
 
     return 'Đổi mật khẩu thành công!';
   } catch (e) { Logger.log(e); throw new Error('Lỗi khi đổi mật khẩu: ' + e.message); }
@@ -885,10 +1067,14 @@ function resetPassword(data) {
       throw new Error('Mã bảo mật không chính xác.');
     }
 
-    updateSupabaseUserByUsername_(username, {
+    const updatedRecord = Object.assign({}, userRecord, {
       password_hash: newPassword,
       password_last_updated: new Date().toISOString()
     });
+    updateSupabaseUserByUsername_(username, {
+      password_hash: newPassword,
+      password_last_updated: updatedRecord.password_last_updated
+    }, { returnMinimal: true, cacheRecord: updatedRecord });    
     clearUserSession_(username, String(userRecord.active_session_token || ''));
 
     return 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.';
@@ -946,10 +1132,14 @@ function adminResetPassword(username, sessionToken) {
     if (!userRecord) throw new Error('Không tìm thấy người dùng.');
 
     const newPassword = Math.random().toString(36).slice(-8);
-    updateSupabaseUserByUsername_(username, {
+    const updatedRecord = Object.assign({}, userRecord, {
       password_hash: newPassword,
       password_last_updated: new Date().toISOString()
     });
+    updateSupabaseUserByUsername_(username, {
+      password_hash: newPassword,
+      password_last_updated: updatedRecord.password_last_updated
+    }, { returnMinimal: true, cacheRecord: updatedRecord });    
     clearUserSession_(username, String(userRecord.active_session_token || ''));
 
     return `Mật khẩu mới cho ${username} là: ${newPassword}`;
@@ -1033,6 +1223,18 @@ function checkRegistrationTime() {
   return status;
 }
 
+function getVietnamCurrentTime() {
+  const timezone = 'Asia/Ho_Chi_Minh';
+  const now = new Date();
+  return {
+    epochMillis: now.getTime(),
+    isoDate: Utilities.formatDate(now, timezone, 'yyyy-MM-dd'),
+    dateString: Utilities.formatDate(now, timezone, 'dd/MM/yyyy'),
+    timeString: Utilities.formatDate(now, timezone, 'HH:mm:ss')
+  };
+}
+
+
 // =================================================================
 // XỬ LÝ DỮ LIỆU PHÍA MÁY CHỦ (SERVER-SIDE)
 // =================================================================
@@ -1047,44 +1249,37 @@ function getCustomersByContracts(contracts, sessionToken) {
 
   if (!contracts || !contracts.length) return {};
 
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(typeof CONTRACT_SHEET === 'string' ? CONTRACT_SHEET : 'ContractData');
-  if (!sh) return {};
+  const sanitized = contracts
+    .map(function (value) {
+      return String(value == null ? '' : value).replace(/^'+/, '').trim();
+    })
+    .filter(function (value) { return value.length > 0; });
 
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return {};
+  if (!sanitized.length) return {};
 
-  const lastCol = sh.getLastColumn();
-  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  const filters = [];
+  const inFilter = buildSupabaseInFilter_('contract_no', sanitized);
+  if (inFilter) filters.push(inFilter);
 
-  // helper: tìm index cột theo nhiều tên khả dĩ
-  function findIdx(hs, names) {
-    const low = hs.map(h => String(h || '').trim().toLowerCase());
-    for (const n of names) {
-      const i = low.indexOf(String(n).trim().toLowerCase());
-      if (i !== -1) return i;
-    }
-    return -1;
-  }
+  const rows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], filters);
+  if (!rows.length) return {};
 
-  const idxNo  = findIdx(headers, ['Contract No','Contract no','Số HĐ','Số hợp đồng','So HD','So hop dong']);
-  const idxCus = findIdx(headers, ['Customer Name','Customer','CustomerCode','Customer code','Khách hàng']);
-  if (idxNo === -1 || idxCus === -1) return {};
+  const allowed = new Set(sanitized);
+  const grouped = {};
+  rows.forEach(function (row) {
+    const no = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    if (!no || !allowed.has(no)) return;
+    const cus = String(row.customer_name == null ? '' : row.customer_name).replace(/^'+/, '').trim();
+    if (!cus) return;
+    if (!grouped[no]) grouped[no] = new Set();
+    grouped[no].add(cus);
+  });
 
-  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
-
-  const allow = new Set(contracts.map(s => String(s || '').replace(/^'/,'').trim()));
-  const out = {};
-  for (const r of values) {
-    const no  = String(r[idxNo]  || '').replace(/^'/,'').trim();
-    const cus = String(r[idxCus] || '').replace(/^'/,'').trim();
-    if (!out[no]) out[no] = new Set();
-    out[no].add(cus);
-  }
-  // Set -> Array đã sort
-  const outArr = {};
-  for (const k in out) outArr[k] = Array.from(out[k]).sort();
-  return outArr;
+  const result = {};
+  Object.keys(grouped).forEach(function (contract) {
+    result[contract] = Array.from(grouped[contract]).sort();
+  });
+  return result;
 }
 
 function buildEmptyResult_(draw, includeSummary) {
@@ -1132,7 +1327,7 @@ function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
 }
 
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
-  params = params || {};  
+  params = params || {};
   const userSession = validateSession(params.sessionToken);
   const userRole = String(userSession.role || '').toLowerCase();
   const includeSummary = sheetName === DATA_SHEET;
@@ -1148,7 +1343,12 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
       safeScriptCachePutJSON_(cacheKey, result, SERVER_SIDE_CACHE_TTL_SECONDS);
     }
     return result;
-  };  
+  };
+
+  if (sheetName === DATA_SHEET) {
+    const result = processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary);
+    return respondWithCache(result);
+  }  
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   const lastRow = sheet.getLastRow();
@@ -1161,7 +1361,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
 
   const idxRegisterDate = headers.indexOf('Register Date');
   const idxContract = headers.indexOf('Contract No');
-  const idxCompany = headers.indexOf('Transportation Company');
+  const idxCompany = headers.indexOf('Transportion Company');
   const idxActivity = headers.indexOf('Activity Status');
   const idxStatus = headers.indexOf('Registration Status');
 
@@ -1308,10 +1508,11 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     filteredData.sort(function (a, b) {
       return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
     });
-  }
+  }  
 
-
-  const paginatedData = filteredData.slice(params.start, params.start + params.length);
+  const start = Number(params.start || 0);
+  const length = Number(params.length || filteredData.length);
+  const paginatedData = filteredData.slice(start, start + length);
   const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
 
   const result = {
@@ -1321,7 +1522,99 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     data: data,
     summary: summary
   };
-  return respondWithCache(result);  
+  return respondWithCache(result);
+}
+
+function processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary) {
+  const userRole = String(userSession.role || '').toLowerCase();
+
+  const filters = [];
+  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
+  if (dateFilter) {
+    const iso = toSupabaseDateString_(dateFilter);
+    if (iso) filters.push('register_date=eq.' + encodeURIComponent(iso));
+    else return buildEmptyResult_(params.draw, includeSummary);
+  }
+
+  if (params.contractNo) {
+    const contract = String(params.contractNo).replace(/^'+/, '').trim();
+    if (contract) filters.push('contract_no=eq.' + encodeURIComponent(contract));
+  }
+
+  if (userRole === 'user') {
+    const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
+    if (!contractor) return buildEmptyResult_(params.draw, includeSummary);
+    filters.push('transportation_company=eq.' + encodeURIComponent(contractor));
+  } else if (userRole === 'user-supervision') {
+    filters.push('registration_status=eq.' + encodeURIComponent('Approved'));
+  }
+
+  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(',')), 'order=time.desc.nullslast'];
+  Array.prototype.push.apply(queryParams, filters);
+  const query = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParams.join('&');
+
+  const response = supabaseRequest_(query) || [];
+  if (!Array.isArray(response) || !response.length) {
+    return buildEmptyResult_(params.draw, includeSummary);
+  }
+
+  const allData = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+  let filteredData = allData.slice();
+
+  if (params.search && params.search.value) {
+    const searchValue = params.search.value.toLowerCase();
+    filteredData = filteredData.filter(function (row) {
+      return row.some(function (cell) {
+        return String(cell).toLowerCase().includes(searchValue);
+      });
+    });
+  }
+
+  const recordsTotal = allData.length;
+  const recordsFiltered = filteredData.length;
+
+  let summary = null;
+  if (includeSummary) {
+    const statusIdx = headers.indexOf('Registration Status');
+    if (statusIdx !== -1) {
+      let pending = 0;
+      let approved = 0;
+      for (var i = 0; i < filteredData.length; i++) {
+        const status = String(filteredData[i][statusIdx] || '').trim().toLowerCase();
+        if (status === 'pending approval') pending++;
+        else if (status === 'approved') approved++;
+      }
+      summary = { total: filteredData.length, pending: pending, approved: approved };
+    }
+  }
+
+  if (params.order && params.order.length > 0) {
+    const orderInfo = params.order[0];
+    const columnIndex = orderInfo.column;
+    const direction = orderInfo.dir === 'asc' ? 1 : -1;
+    filteredData.sort(function (a, b) {
+      const valA = a[columnIndex];
+      const valB = b[columnIndex];
+      if (valA < valB) return -1 * direction;
+      if (valA > valB) return 1 * direction;
+      return 0;
+    });
+  } else if (defaultSortColumnIndex !== -1) {
+    filteredData.sort(function (a, b) {
+      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
+    });
+  }
+
+  const paginatedData = filteredData.slice(params.start, params.start + params.length);
+  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
+
+  return {
+    draw: parseInt(params.draw, 10),
+    recordsTotal: recordsTotal,
+    recordsFiltered: recordsFiltered,
+    data: data,
+    summary: summary
+  };  
 }
 
 function getRegisteredDataServerSide(params) {
@@ -1333,135 +1626,36 @@ function getRegisteredContractOptions(filter, sessionToken) {
   const role = String(session.role || '').toLowerCase();
   const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
   if (!dateString) return { contracts: [] };
+  const iso = toSupabaseDateString_(dateString);
+  if (!iso) return { contracts: [] };  
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  if (!sheet) return { contracts: [] };
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { contracts: [] };
-
-  const dateIdx = HEADERS_REGISTER.indexOf('Register Date');
-  const contractIdx = HEADERS_REGISTER.indexOf('Contract No');
-  if (dateIdx === -1 || contractIdx === -1) return { contracts: [] };
-
-  const activityIdx = HEADERS_REGISTER.indexOf('Activity Status');
-  const companyIdx = HEADERS_REGISTER.indexOf('Transportation Company');
-  const statusIdx = HEADERS_REGISTER.indexOf('Registration Status');
-
-  let rows = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
+  const queryParts = [
+    'select=' + encodeURIComponent(['contract_no', 'transportation_company', 'registration_status'].join(',')),
+    'register_date=eq.' + encodeURIComponent(iso)
+  ];
 
   if (role === 'user') {
-    if (companyIdx !== -1) {
-      rows = rows.filter(row => row[companyIdx] === session.contractor);
-    }
-    if (activityIdx !== -1) {
-      rows = rows.filter(row => String(row[activityIdx]).toUpperCase() === 'ACTIVE');
-    }
+    const contractor = String(session.contractor == null ? '' : session.contractor).trim();
+    if (!contractor) return { contracts: [] };
+    queryParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (role === 'user-supervision') {
-    if (statusIdx !== -1) {
-      rows = rows.filter(row => String(row[statusIdx] || '').trim().toLowerCase() === 'approved');
-    }
+    queryParts.push('registration_status=eq.' + encodeURIComponent('Approved'));
   }
 
-  const toDateString = value => {
-    if (value instanceof Date) {
-      return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
-    }
-    return String(value == null ? '' : value).replace(/^'+/, '').trim();
-  };
+  const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  if (!Array.isArray(rows)) return { contracts: [] };
 
   const contractsSet = new Set();
-  rows.forEach(row => {
-    if (toDateString(row[dateIdx]) !== dateString) return;
-    const contract = String(row[contractIdx] == null ? '' : row[contractIdx]).replace(/^'+/, '').trim();
+  rows.forEach(function (row) {
+    const contract = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
     if (contract) contractsSet.add(contract);
   });
 
-  const contracts = Array.from(contractsSet).sort();
-  return { contracts: contracts };
+  return { contracts: Array.from(contractsSet).sort() };
 }
 
 function getTotalListDataServerSide(params) {
-  params = params || {};
-  const session = validateSession(params.sessionToken);
-  const tz = getAppTimeZone_();
-  const role = String(session.role || '').toLowerCase();
-
-  const length = Math.max(0, Number(params.length || 50));
-  const start = Math.max(0, Number(params.start || 0));
-  const draw = Number(params.draw || 1);
-  const searchValue = params.search && params.search.value
-    ? String(params.search.value).trim()
-    : '';
-
-  const preferHeaders = { Prefer: 'count=exact' };
-  const baseFilters = [];
-  if (role === 'user') {
-    const contractor = String(session.contractor || '').trim();
-    if (contractor) {
-      baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
-    }
-    baseFilters.push('activity_status=eq.ACTIVE');
-  }
-
-  let orderColumn = 'register_date';
-  let orderDirection = 'desc';
-  const orderInfo = Array.isArray(params.order) && params.order.length ? params.order[0] : null;
-  if (orderInfo && orderInfo.column != null) {
-    const rawIndex = Number(orderInfo.column);
-    const adjustedIndex = role === 'admin' ? rawIndex - 2 : rawIndex;
-    if (adjustedIndex >= 0 && adjustedIndex < TRUCK_LIST_TOTAL_CLIENT_COLUMNS.length) {
-      const supaColumn = TRUCK_LIST_TOTAL_SELECT_COLUMNS[adjustedIndex];
-      if (supaColumn) {
-        orderColumn = supaColumn;
-        orderDirection = String(orderInfo.dir || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
-      }
-    }
-  }
-
-  const queryParts = [];
-  queryParts.push('select=' + encodeURIComponent(TRUCK_LIST_TOTAL_SELECT_COLUMNS.join(',')));
-  baseFilters.forEach(part => queryParts.push(part));
-  queryParts.push('order=' + encodeURIComponent(orderColumn + '.' + orderDirection));
-  queryParts.push('limit=' + length);
-  queryParts.push('offset=' + start);
-
-  if (searchValue) {
-    const sanitized = searchValue.replace(/%/g, '\\%').replace(/,/g, '\\,');
-    const orParts = TRUCK_LIST_TOTAL_SEARCH_COLUMNS.map(col => `${col}.ilike.*${sanitized}*`);
-    if (orParts.length) {
-      queryParts.push('or=' + encodeURIComponent('(' + orParts.join(',') + ')'));
-    }
-  }
-
-  const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&');
-  const response = supabaseRequest_(query, { headers: preferHeaders, returnResponse: true });
-  const dataArray = Array.isArray(response.data) ? response.data : [];
-  const filteredCount = parseContentRangeCount_(response.response) ?? dataArray.length;
-
-  let totalCount = filteredCount;
-  if (searchValue) {
-    const totalParts = [];
-    totalParts.push('select=id');
-    baseFilters.forEach(part => totalParts.push(part));
-    totalParts.push('limit=1');
-    const totalQuery = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalParts.join('&');
-    const totalResponse = supabaseRequest_(totalQuery, { headers: preferHeaders, returnResponse: true });
-    const totalFromHeader = parseContentRangeCount_(totalResponse.response);
-    if (totalFromHeader != null) {
-      totalCount = totalFromHeader;
-    } else if (Array.isArray(totalResponse.data)) {
-      totalCount = totalResponse.data.length;
-    }
-  }
-
-  const rows = dataArray.map(row => mapTruckListRowToClient_(row, tz));
-  return {
-    draw: draw,
-    recordsTotal: totalCount,
-    recordsFiltered: filteredCount,
-    data: rows
-  };
+  return processServerSide(params, TRUCK_LIST_TOTAL_SHEET, HEADERS_TOTAL_LIST, HEADERS_TOTAL_LIST.indexOf('Register Date'));
 }
 
 /** =========================
@@ -1474,44 +1668,30 @@ function getXpplExportOptions(filter, sessionToken) {
   if (typeof validateSession === 'function') validateSession(sessionToken);
 
   const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
-  const normH = x => s(x).toLowerCase().replace(/\s+/g, '');
-  const findIdx = (headers, variants) => {
-    const H = headers.map(normH);
-    for (const v of variants) {
-      const i = H.indexOf(v);
-      if (i !== -1) return i;
-    }
-    return -1;
-  };
 
   const dateIn = s(filter && filter.dateString);
   const dateKey = _toDateKey(dateIn);
   if (!dateKey) return { contracts: [], customersByContract: {} };
 
-  const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shV = ss.getSheetByName(DATA_SHEET);       // 'VehicleData'
-  const shC = ss.getSheetByName(CONTRACT_SHEET);   // 'ContractData'
-  if (!shV || shV.getLastRow() < 2) return { contracts: [], customersByContract: {} };
+  const isoDate = toSupabaseDateString_(dateKey);
+  if (!isoDate) return { contracts: [], customersByContract: {} };
 
-  // ---- VehicleData: lấy Contract theo ngày + Approved
-  const lcV      = shV.getLastColumn();
-  const headVRaw = shV.getRange(1, 1, 1, lcV).getValues()[0];
-  const idxDate   = findIdx(headVRaw, ['registerdate','ngàydăngký','date','register']);
-  const idxNo     = findIdx(headVRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const idxStatus = findIdx(headVRaw, ['registrationstatus','status','trạngtháiđăngký','trangthai']);
-  if (idxDate === -1 || idxNo === -1) return { contracts: [], customersByContract: {} };
+  const vehicleRows = supabaseRequest_(
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent(['contract_no', 'register_date', 'registration_status'].join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+      + '&registration_status=eq.' + encodeURIComponent('Approved')
+  ) || [];
 
-  const rowsV = shV.getRange(2, 1, shV.getLastRow() - 1, lcV).getValues();
-  const setContracts = new Set();
-  for (const r of rowsV) {
-    if (_toDateKey(r[idxDate]) !== dateKey) continue;
-    if (idxStatus !== -1) {
-      const st = s(r[idxStatus]).toLowerCase();
-      if (st !== 'approved') continue;
-    }
-    const cno = s(r[idxNo]);
-    if (cno) setContracts.add(cno);
+  if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
+    return { contracts: [], customersByContract: {} };
   }
+
+  const setContracts = new Set();
+  vehicleRows.forEach(function (row) {
+    const cno = s(row.contract_no);
+    if (cno) setContracts.add(cno);
+ });
   const contracts = Array.from(setContracts).sort();
   if (!contracts.length) return { contracts: [], customersByContract: {} };
 
@@ -1519,30 +1699,25 @@ function getXpplExportOptions(filter, sessionToken) {
   const customersByContract = {};
   for (const c of contracts) customersByContract[c] = [];
 
-  if (shC && shC.getLastRow() > 1) {
-    const lcC      = shC.getLastColumn();
-    const headCRaw = shC.getRange(1, 1, 1, lcC).getValues()[0];
-    const idxCNo     = findIdx(headCRaw, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const idxCus     = findIdx(headCRaw, ['customername','customer','kháchhàng','khachhang']);
-    const idxCStatus = findIdx(headCRaw, ['status','trạngthái','trangthai']);
+  const filters = [];
+  const inFilter = buildSupabaseInFilter_('contract_no', contracts);
+  if (inFilter) filters.push(inFilter);
 
-    if (idxCNo !== -1 && idxCus !== -1) {
-      const rowsC = shC.getRange(2, 1, shC.getLastRow() - 1, lcC).getValues();
-      for (const r of rowsC) {
-        const cno = s(r[idxCNo]);
-        if (!(cno in customersByContract)) continue;
-        if (idxCStatus !== -1) {
-          const st = s(r[idxCStatus]).toLowerCase();
-          if (st && st !== 'active') continue;
-        }
-        const cus = s(r[idxCus]);
-        if (cus && customersByContract[cno].indexOf(cus) === -1) {
-          customersByContract[cno].push(cus);
-        }
-      }
-      Object.keys(customersByContract).forEach(no => customersByContract[no].sort());
+  const contractRows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], filters);
+  contractRows.forEach(function (row) {
+    const cno = s(row.contract_no);
+    if (!(cno in customersByContract)) return;
+    const status = s(row.status).toLowerCase();
+    if (status && status !== 'active') return;
+    const cus = s(row.customer_name);
+    if (!cus) return;
+    if (customersByContract[cno].indexOf(cus) === -1) {
+      customersByContract[cno].push(cus);
     }
-  }
+  });
+  Object.keys(customersByContract).forEach(function (no) {
+    customersByContract[no].sort();
+  });
 
   return { contracts, customersByContract };
 }
@@ -1569,8 +1744,7 @@ function getXpplExportData(filter, sessionToken) {
   if (inputErr.length) return { ok:false, errors: inputErr };
 
   // open SS + normalize date
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const tz = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || 'Asia/Ho_Chi_Minh';
+  const tz = (Session.getScriptTimeZone && Session.getScriptTimeZone()) || 'Asia/Ho_Chi_Minh';
   const toDateKey = (v) => {
     if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
     let str = String(v||'').trim().replace(/^'+/, '');
@@ -1582,108 +1756,65 @@ function getXpplExportData(filter, sessionToken) {
   };
   const dateKey = toDateKey(dateIn);
 
-  // 1) Xác thực Contract–Customer (nếu có sheet ContractData)
-  const shC = ss.getSheetByName(CONTRACT_SHEET);
-  if (shC && shC.getLastRow() > 1) {
-    const lc = shC.getLastColumn();
-    const H  = shC.getRange(1,1,1,lc).getValues()[0];
-    const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
-    const findIndex = (hdr, keys) => {
-      const HH = hdr.map(normalizeHeader);
-      for (const k of keys) { const i = HH.indexOf(k); if (i !== -1) return i; }
-      return -1;
-    };
-    const iNo  = findIndex(H, ['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-    const iCus = findIndex(H, ['customername','customer','kháchhàng','khachhang']);
-    const iStt = findIndex(H, ['status','trạngthái','trangthai']);
-
-    if (iNo !== -1 && iCus !== -1) {
-      const ok = shC.getRange(2,1,shC.getLastRow()-1,lc).getValues().some(r => {
-        if (s(r[iNo]) !== contractNo || s(r[iCus]) !== customerName) return false;
-        if (iStt === -1) return true;
-        const st = s(r[iStt]).toLowerCase();
-        return st === '' || st === 'active';
-      });
-      if (!ok) {
-        return { ok:false, errors:['Customer Name không khớp với Contract No (hoặc hợp đồng không Active).'] };
-      }
-    }
+  // 1) Xác thực Contract–Customer trong Supabase contract_data
+  const contractFilters = [];
+  const inFilter = buildSupabaseInFilter_('contract_no', [contractNo]);
+  if (inFilter) contractFilters.push(inFilter);
+  const contractRows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], contractFilters);
+  const isValidContract = contractRows.some(function (row) {
+    if (s(row.contract_no) !== contractNo) return false;
+    if (s(row.customer_name) !== customerName) return false;
+    const status = s(row.status).toLowerCase();
+    return status === '' || status === 'active';
+  });
+  if (!isValidContract) {
+    return { ok:false, errors:['Customer Name không khớp với Contract No (hoặc hợp đồng không Active).'] };
   }
 
-  // 2) Lọc VehicleData
-  const shV = ss.getSheetByName(DATA_SHEET);
-  if (!shV || shV.getLastRow() < 2) return { ok:false, errors:['Không có dữ liệu VehicleData.'] };
-
-  const lcV = shV.getLastColumn();
-  const HV  = shV.getRange(1,1,1,lcV).getValues()[0];
-
-  // chuẩn hóa header + tìm index (có fuzzy)
-  const normalizeHeader = x => String(x||'').trim().toLowerCase().replace(/\s+/g,'');
-  const findIdx = (keys) => {
-    const H = HV.map(normalizeHeader);
-    // exact
-    for (const k of keys) {
-      const i = H.indexOf(k);
-      if (i !== -1) return i;
-    }
-    // fuzzy: keys[0] chứa các từ cần có
-    if (keys.length) {
-      const need = keys[0].split(' ').filter(Boolean);
-      for (let i = 0; i < H.length; i++) {
-        const h = H[i];
-        if (need.every(w => h.includes(w))) return i;
-      }
-    }
-    return -1;
-  };
-
-  const iDate   = findIdx(['registerdate','ngàydăngký','date','register']);
-  const iNo2    = findIdx(['contractno','contractnumber','sốhđ','sohd','sốhợpđồng']);
-  const iStReg  = findIdx(['registrationstatus','status','trạngtháiđăngký','trangthai']);
-
-  const iTruck  = findIdx(['truckplate','truck plate','biểnxe','biensoxe']);
-  const iCountry= findIdx(['country','quốcgia','quocgia']);
-  const iWheel  = findIdx(['wheel','sốtrục','sotruc']);
-  const iTrailer= findIdx(['trailerplate','trailer plate','biểnromooc','bienromooc']);
-  const iDriver = findIdx(['drivername','driver name','tênlái','tenlai']);
-  const iID     = findIdx(['id/passport','idpassport','passport','id']);
-  const iPhone  = findIdx(['phone number','phonenumber','điệnthoại','dienthoai']);
-
-  // CHÚ Ý: bắt mọi biến thể "transportion/transportation/transport company"
-  const iTrans  = findIdx([
-    'transportion company',
-    'transport company',
-    'transportation company',
-    'transportationcompany',
-    'transportioncompany',
-    'transportcompany'
-  ]);
-
-  const iSub    = findIdx(['subcontractor','thầuphụ','thaophu']);
-
-  if (iDate === -1 || iNo2 === -1) {
+  // 2) Lọc dữ liệu từ Supabase vehicle_registration
+  const isoDate = toSupabaseDateString_(dateKey);
+  if (!isoDate) {
     return { ok:false, errors:['Thiếu cột bắt buộc trong VehicleData (Register Date / Contract No).'] };
   }
 
-  const all = shV.getRange(2,1,shV.getLastRow()-1,lcV).getValues();
-  const rows = [];
-  for (const r of all) {
-    if (toDateKey(r[iDate]) !== dateKey) continue;
-    if (s(r[iNo2]) !== contractNo) continue;
-    if (iStReg !== -1 && s(r[iStReg]).toLowerCase() !== 'approved') continue;
+  const vehicleRows = supabaseRequest_(
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent([
+        'truck_plate',
+        'country',
+        'wheel',
+        'trailer_plate',
+        'driver_name',
+        'id_passport',
+        'phone_number',
+        'transportation_company',
+        'subcontractor',
+        'contract_no',
+        'register_date',
+        'registration_status'
+      ].join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+      + '&contract_no=eq.' + encodeURIComponent(contractNo)
+      + '&registration_status=eq.' + encodeURIComponent('Approved')
+  ) || [];
 
-    rows.push({
-      'Truck Plate':            iTruck  !== -1 ? s(r[iTruck])  : '',
-      'Country':                iCountry!== -1 ? s(r[iCountry]): '',
-      'Wheel':                  iWheel  !== -1 ? s(r[iWheel])  : '',
-      'Trailer Plate':          iTrailer!== -1 ? s(r[iTrailer]): '',
-      'Driver Name':            iDriver !== -1 ? s(r[iDriver]) : '',
-      'ID/Passport':            iID     !== -1 ? s(r[iID])     : '',
-      'Phone number':           iPhone  !== -1 ? s(r[iPhone])  : '',
-      'Transportation Company':   iTrans  !== -1 ? s(r[iTrans])  : '',
-      'Subcontractor':          iSub    !== -1 ? s(r[iSub])    : ''
-    });
+  if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
+    return { ok:false, errors:['Không có dòng Approved phù hợp để xuất.'] };
   }
+
+  const rows = vehicleRows.map(function (row) {
+    return {
+      'Truck Plate':          s(row.truck_plate),
+      'Country':              s(row.country),
+      'Wheel':                row.wheel == null ? '' : row.wheel,
+      'Trailer Plate':        s(row.trailer_plate),
+      'Driver Name':          s(row.driver_name),
+      'ID/Passport':          s(row.id_passport),
+      'Phone number':         s(row.phone_number),
+      'Transportion Company': s(row.transportation_company),
+      'Subcontractor':        s(row.subcontractor)
+    };
+  });
 
   if (!rows.length) return { ok:false, errors:['Không có dòng Approved phù hợp để xuất.'] };
 
@@ -1781,7 +1912,7 @@ function _exportXpplToTemplate_(sheetId, filter, rows) {
     o['Driver Name'] || '',
     o['ID/Passport'] || '',
     o['Phone number'] || '',
-    o['Transportation Company'] || '',
+    o['Transportion Company'] || '',
     o['Subcontractor'] || ''
   ]));
 
@@ -2042,29 +2173,8 @@ const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu.
 const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
 
 function checkVehiclesAgainstTotalList(vehicles) {
-  if (!Array.isArray(vehicles) || !vehicles.length) {
-    return { isValid: true };
-  }
-
-  const plateSet = new Set();
-  const companyByPlate = new Map();
-
-  vehicles.forEach(vehicle => {
-    const plate = normalizeTruckPlate_(vehicle && vehicle['Truck Plate']);
-    if (!plate) return;
-    const company = String(vehicle['Transportation Company'] == null ? '' : vehicle['Transportation Company']).trim();
-    plateSet.add(plate);
-    if (!companyByPlate.has(plate)) {
-      companyByPlate.set(plate, company);
-    }
-  });
-
-  if (!plateSet.size) {
-    return { isValid: true };
-  }
-
-  const rows = fetchTruckListRowsByPlates_(Array.from(plateSet), ['truck_plate', 'transportation_company']);
-  if (!rows || !rows.length) {
+  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (totalListSheet.getLastRow() < 2) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2072,13 +2182,19 @@ function checkVehiclesAgainstTotalList(vehicles) {
     };
   }
 
-  const existingMap = new Map();
-  rows.forEach(row => {
-    const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
-    if (!plate) return;
-    const company = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-    if (!existingMap.has(plate)) {
-      existingMap.set(plate, company);
+  const totalListData = totalListSheet.getRange(
+    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
+  ).getValues();
+
+  const truckPlateIndex = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
+  const companyIndex    = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
+
+  // Map: PLATE -> Company (normalize biển số: uppercase & bỏ khoảng trắng)
+  const totalListMap = new Map();
+  totalListData.forEach(row => {
+    const plate = row[truckPlateIndex];
+    if (plate) {
+      totalListMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[companyIndex]);
     }
   });
 
@@ -2087,27 +2203,33 @@ function checkVehiclesAgainstTotalList(vehicles) {
   const seenNew = new Set();
   const seenMismatch = new Set();
 
-  plateSet.forEach(plate => {
-    if (!existingMap.has(plate)) {
+  for (const vehicle of vehicles) {
+    const plateRaw = vehicle['Truck Plate'] || '';
+    const plate    = String(plateRaw).toUpperCase().replace(/\s/g, '');
+    const company  = vehicle['Transportion Company'];
+
+    if (!plate) continue;
+
+    if (!totalListMap.has(plate)) {
       if (!seenNew.has(plate)) {
         seenNew.add(plate);
         newPlates.push(plate);
       }
-      return;
+      continue;
     }
-    const registeredCompany = existingMap.get(plate);
-    const requestedCompany = companyByPlate.get(plate) || '';
-    if (registeredCompany !== requestedCompany) {
+
+    const registeredCompany = totalListMap.get(plate);
+    if (registeredCompany !== company) {
       if (!seenMismatch.has(plate)) {
         seenMismatch.add(plate);
         mismatchPlates.push(plate);
       }
     }
-  });
+  }
 
   // Ưu tiên báo "Xe mới" nếu có
   if (newPlates.length > 0) {
-    const message = `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`;
+    const message = `Xe ${newPlates.join(',')} là xe mới. Yêu cầu gửi đăng ký bổ sung vào danh sách tổng với PSVN.`;    
     return {
       isValid: false,
       message: message,
@@ -2117,7 +2239,7 @@ function checkVehiclesAgainstTotalList(vehicles) {
 
   // Nếu có xe trùng đơn vị khác → trả về danh sách biển số
   if (mismatchPlates.length > 0) {
-    const message = `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`;
+    const message = `Xe ${mismatchPlates.join(',')} đã được đăng ký với đơn vị vận chuyển khác. Yêu cầu liên hệ PSVN để được xử lý.`;    
     return {
       isValid: false,
       message: message,
@@ -2132,17 +2254,8 @@ function checkVehiclesAgainstTotalList(vehicles) {
 // LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
 // =================================================================
 function checkVehicleActivityStatus(vehicles) {
-  if (!Array.isArray(vehicles) || !vehicles.length) {
-    return { isValid: true };
-  }
-
-  const plates = Array.from(new Set(vehicles.map(v => normalizeTruckPlate_(v && v['Truck Plate'])).filter(Boolean)));
-  if (!plates.length) {
-    return { isValid: true };
-  }
-
-  const rows = fetchTruckListRowsByPlates_(plates, ['truck_plate', 'activity_status']);
-  if (!rows || !rows.length) {
+  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (totalListSheet.getLastRow() < 2) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2150,26 +2263,33 @@ function checkVehicleActivityStatus(vehicles) {
     };
   }
 
+  const totalListData = totalListSheet.getRange(
+    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
+  ).getValues();
+
+  const plateIdx    = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
+  const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+
   const activityMap = new Map();
-  rows.forEach(row => {
-    const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
-    if (!plate) return;
-    const status = String(row.activity_status == null ? '' : row.activity_status).trim();
-    if (!activityMap.has(plate)) {
-      activityMap.set(plate, status);
+  totalListData.forEach(row => {
+    const plate = row[plateIdx];
+    if (plate) {
+      activityMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[activityIdx]);
     }
   });
 
   const bannedPlates = [];
-  plates.forEach(plate => {
+  vehicles.forEach(v => {
+    const plate = String(v['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
+    if (!plate) return;
     const status = activityMap.get(plate);
-    if (status && status.toUpperCase() === 'BANNED') {
+    if (status && String(status).toLowerCase() === 'banned') {
       bannedPlates.push(plate);
     }
   });
 
   if (bannedPlates.length > 0) {
-    const message = `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`;    
+   const message = `Xe biển số ${bannedPlates.join(', ')} đang trong tình trạng bị cấm, vui lòng liên hệ PSVN để xử lý.`;    
     return {
       isValid: false,
       message: message,
@@ -2185,62 +2305,41 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
   const userSession = validateSession(sessionToken);
   const role = String(userSession.role || '').toLowerCase();
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(DATA_SHEET);
-
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
-
+    const params = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
     const headers = HEADERS_REGISTER;
-    let rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-    const contractFilter = contractNo
-      ? String(contractNo).replace(/^'+/, '').trim().toLowerCase()
-      : '';    
 
-    // Lọc theo quyền user (nếu là user thường)
-     if (role === 'user') {
-      const compIdx = headers.indexOf('Transportation Company');
-      rows = rows.filter(r => r[compIdx] === userSession.contractor);
-    }
-    if (role === 'user-supervision') {
-      const statusIdx = headers.indexOf('Registration Status');
-      if (statusIdx !== -1) {
-        rows = rows.filter(r => String(r[statusIdx] || '').trim().toLowerCase() === 'approved');
-      }
-    }
-
-    // Lọc theo ngày (định dạng dd/MM/yyyy, bỏ dấu ')
     if (dateString) {
-      const dateIdx = headers.indexOf('Register Date');
-      rows = rows.filter(r => {
-        const v = r[dateIdx];
-        if (!v) return false;
-        let s = (v instanceof Date)
-          ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-          : String(v).replace(/^'/,'').trim();
-        return s === dateString;
+      const iso = toSupabaseDateString_(dateString);
+      if (!iso) return [];
+      params.push('register_date=eq.' + encodeURIComponent(iso));
+    }
+
+    if (contractNo) {
+      const contract = String(contractNo).replace(/^'+/, '').trim();
+      if (contract) params.push('contract_no=eq.' + encodeURIComponent(contract));
+    }
+
+    if (role === 'user') {
+      const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
+      if (!contractor) return [];
+      params.push('transportation_company=eq.' + encodeURIComponent(contractor));
+    } else if (role === 'user-supervision') {
+      params.push('registration_status=eq.' + encodeURIComponent('Approved'));
+    }
+
+    const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
+    if (!Array.isArray(rows) || !rows.length) return [];
+
+    let mapped = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+
+    if (searchQuery && String(searchQuery).trim()) {
+      const q = String(searchQuery).toLowerCase();
+      mapped = mapped.filter(function (r) {
+        return r.some(function (c) { return String(c).toLowerCase().indexOf(q) !== -1; });
       });
     }
 
-    if (contractFilter) {
-      const contractIdx = headers.indexOf('Contract No');
-      if (contractIdx !== -1) {
-        rows = rows.filter(r => {
-          const raw = r[contractIdx];
-          const value = String(raw == null ? '' : raw).replace(/^'+/, '').trim().toLowerCase();
-          return value === contractFilter;
-        });
-      }
-    }
-
-    // Lọc theo từ khóa search (nếu có)
-    if (searchQuery && String(searchQuery).trim()) {
-      const q = String(searchQuery).toLowerCase();
-      rows = rows.filter(r => r.some(c => String(c).toLowerCase().indexOf(q) !== -1));
-    }
-
-    // Trả về mảng object đã format (ngày/thời gian dạng chuỗi chuẩn)
-    return rows.map(r => formatRowForClient_(r, headers));
+    return mapped.map(function (r) { return formatRowForClient_(r, headers); });
   } catch (e) {
     Logger.log(e);
     throw new Error('Cannot retrieve export data: ' + e.message);
@@ -2290,7 +2389,7 @@ function saveData(dataToSave, sessionToken, language) {
     dataToSave.forEach(rec => {
       const cno = String(rec['Contract No'] || '').trim();
       const comp = String(
-        (userSession.role === 'user' ? userSession.contractor : rec['Transportation Company']) || ''
+        (userSession.role === 'user' ? userSession.contractor : rec['Transportion Company']) || ''
       ).trim().toUpperCase();
 
       if (!cno || !comp || !activeMap.has(comp) || !activeMap.get(comp).has(cno)) {
@@ -2309,7 +2408,7 @@ function saveData(dataToSave, sessionToken, language) {
   const dupCheckRecords = dataToSave.map(r => {
     const obj = Object.assign({}, r);
     if (userSession.role === 'user') {
-      obj['Transportation Company'] = userSession.contractor;
+      obj['Transportion Company'] = userSession.contractor;
     }
     return obj;
   });
@@ -2323,34 +2422,25 @@ function saveData(dataToSave, sessionToken, language) {
   }
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const dataArray = dataToSave.map(obj => {
+    const payloads = dataToSave.map(function (obj) {
       if (userSession.role === 'user') {
-        obj['Transportation Company'] = userSession.contractor;
+        obj['Transportion Company'] = userSession.contractor;
       }
-      coerceNumericRegisterFields_(obj);      
-      obj['Register Date'] = normalizeDate(obj['Register Date']);
-      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
+      coerceNumericRegisterFields_(obj);
+      const normalizedDate = normalizeDate(obj['Register Date']);
+      obj['Register Date'] = normalizedDate || obj['Register Date'];
+      obj['Time'] = new Date();
       obj['Registration Status'] = 'Pending approval';
-      return HEADERS_REGISTER.map(header => obj[header] || "");
+      return buildVehicleRegistrationPayload_(obj);
     });
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(30000)) {
-      throw new Error(pickMessage(
-        'Hệ thống đang bận, vui lòng thử lại sau.',
-        'The system is busy, please try again later.'
-      ));
-    }
 
-    try {
-      const lastRow = sheet.getLastRow();
-      sheet
-        .getRange(lastRow + 1, 1, dataArray.length, HEADERS_REGISTER.length)
-        .setValues(dataArray);
-    } finally {
-      lock.releaseLock();
-    }
-    bumpSheetCacheVersion_(DATA_SHEET);    
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT, {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      payload: payloads
+    });
+
+    bumpSheetCacheVersion_(DATA_SHEET);
     return pickMessage('Dữ liệu đã được lưu thành công!', 'Data saved successfully!');
   } catch (error) {
     Logger.log(error);
@@ -2363,44 +2453,64 @@ function updateData(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const dataRange = sheet.getRange(2, 1, sheet.getLastRow(), HEADERS_REGISTER.length);
-    const allValues = dataRange.getValues();
-    let rowToUpdate = -1;
-    let recordTimeStr = '';
+    const selectFields = encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','));
+    const existingRows = supabaseRequest_(
+      SUPABASE_VEHICLE_REG_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID) + '&select=' + selectFields
+    );
 
-    for (let i = 0; i < allValues.length; i++) {
-      if (allValues[i][0] == rowData.ID) {
-        rowToUpdate = i + 2;
-        recordTimeStr = String(allValues[i][19]).replace("'", "");
-        break;
-      }
+    if (!Array.isArray(existingRows) || !existingRows.length) {
+      throw new Error('Không tìm thấy dòng với ID: ' + rowData.ID);
     }
 
-    if (rowToUpdate === -1) throw new Error('Không tìm thấy dòng với ID: ' + rowData.ID);
+    const existing = existingRows[0];
     
     if (userSession.role === 'user') {
       const timeStatus = checkRegistrationTime();
       if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép chỉnh sửa dữ liệu.');
 
-      const recordHour = parseInt(recordTimeStr.split(':')[0]);
-      
-      if (recordHour >= 8 && recordHour < 16 && timeStatus.period !== 1) {
-        throw new Error('Dữ liệu đăng ký từ 8:00-16:00 chỉ có thể sửa trong khung giờ này.');
+      const recordTime = parseSupabaseTimestamp_(existing.time);
+      const recordHour = recordTime
+        ? parseInt(Utilities.formatDate(recordTime, 'Asia/Ho_Chi_Minh', 'HH'), 10)
+        : NaN;
+
+      const recordCompany = String(existing.transportation_company == null ? '' : existing.transportation_company).trim();
+      if (recordCompany !== String(userSession.contractor || '').trim()) {
+        throw new Error('Bạn không có quyền chỉnh sửa dữ liệu của đơn vị khác.');
       }
-      if (recordHour >= 20 && recordHour < 22 && timeStatus.period !== 2) {
-        throw new Error('Dữ liệu đăng ký từ 20:00-22:00 chỉ có thể sửa trong khung giờ này.');
+
+      if (!isNaN(recordHour)) {
+        if (recordHour >= 8 && recordHour < 16 && timeStatus.period !== 1) {
+          throw new Error('Dữ liệu đăng ký từ 8:00-16:00 chỉ có thể sửa trong khung giờ này.');
+        }
+        if (recordHour >= 20 && recordHour < 22 && timeStatus.period !== 2) {
+          throw new Error('Dữ liệu đăng ký từ 20:00-22:00 chỉ có thể sửa trong khung giờ này.');
+        }
       }
+    }
+
+
+    if (userSession.role === 'user') {
+      rowData['Transportion Company'] = userSession.contractor;
     }
     
     if (rowData['Register Date']) {
-    rowData['Register Date'] = "'" + rowData['Register Date'];
+      const normalizedDate = normalizeDate(rowData['Register Date']);
+      rowData['Register Date'] = normalizedDate || rowData['Register Date'];
     }
-    coerceNumericRegisterFields_(rowData);    
-    rowData['Time'] = "'" + Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss");
-    const dataArray = HEADERS_REGISTER.map(header => rowData[header] || "");
-    sheet.getRange(rowToUpdate, 1, 1, HEADERS_REGISTER.length).setValues([dataArray]);
-    bumpSheetCacheVersion_(DATA_SHEET);    
+
+    coerceNumericRegisterFields_(rowData);
+    rowData['Time'] = new Date();
+
+    const payload = buildVehicleRegistrationPayload_(rowData, { includeNulls: true });
+    delete payload.id;
+
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      payload: payload
+    });
+
+    bumpSheetCacheVersion_(DATA_SHEET);
     return 'Dữ liệu đã được cập nhật thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật dữ liệu: ' + error.message); }
 }
@@ -2413,26 +2523,38 @@ function deleteMultipleData(ids,sessionToken) {
     if (!timeStatus.isOpen) throw new Error('Đã hết thời gian cho phép xóa dữ liệu trong ngày.');
   }
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-    const companyColumnValues = sheet.getRange(2, 16, sheet.getLastRow(), 1).getValues().flat();
+    const uniqueIds = Array.from(new Set(ids.map(function (id) { return String(id).trim(); }).filter(Boolean)));
+    if (!uniqueIds.length) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
 
-    let rowsToDelete = [];
-    ids.forEach(id => {
-      const rowIndex = idColumnValues.indexOf(id);
-      if (rowIndex !== -1) {
-          if (userSession.role === 'user' && companyColumnValues[rowIndex] !== userSession.contractor) {
-            throw new Error(`Bạn không có quyền xóa xe có ID: ${id}.`);
-          }
-          rowsToDelete.push(rowIndex + 2);
-      }
+    const select = ['id', 'transportation_company'];
+    const filter = buildSupabaseInFilter_('id', uniqueIds);
+    if (!filter) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
+
+    const existing = supabaseRequest_(
+      SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + encodeURIComponent(select.join(',')) + '&' + filter
+    ) || [];
+
+    if (!Array.isArray(existing) || !existing.length) {
+      throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
+    }
+
+    if (userSession.role === 'user') {
+      const contractor = String(userSession.contractor || '').trim();
+      existing.forEach(function (row) {
+        const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+        if (comp !== contractor) {
+          throw new Error(`Bạn không có quyền xóa xe có ID: ${row.id}.`);
+        }
+      });
+    }
+
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + filter, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
     });
-    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
-    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
-      sheet.deleteRow(rowNum);
-    });
-    bumpSheetCacheVersion_(DATA_SHEET);    
-    return `Đã xóa thành công ${rowsToDelete.length} mục.`;
+
+    bumpSheetCacheVersion_(DATA_SHEET);
+    return `Đã xóa thành công ${existing.length} mục.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa dữ liệu: ' + error.message); }
 }
 
@@ -2441,38 +2563,51 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
   if (!recordsToCheck || recordsToCheck.length === 0) return [];
 
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-    const lastRow = sheet.getLastRow();
+    const normalizedRecords = [];
+    const uniqueDates = new Set();
 
-    // Thu thập các bản ghi đã tồn tại trong ngày
+    recordsToCheck.forEach(function (rec) {
+      const regDate = normalizeDate(rec['Register Date']);
+      const isoDate = toSupabaseDateString_(regDate) || '';
+      const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
+      const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
+      if (!isoDate || !plate || !company) return;
+      normalizedRecords.push({ date: isoDate, plate: plate, company: company });
+      uniqueDates.add(isoDate);
+    });
+
+    if (!normalizedRecords.length) return [];
+
+    const dateFilter = buildSupabaseInFilter_('register_date', Array.from(uniqueDates));
     const existingKeys = new Set();
-    if (lastRow >= 2) {
-      const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_REGISTER.length).getValues();
-      allData.forEach(row => {
-        const dateStr = Utilities.formatDate(new Date(row[1]), "Asia/Ho_Chi_Minh", "yyyy-MM-dd");
-        const plate = String(row[3] || '').toUpperCase().replace(/\s/g, '');
-        const company = String(row[15] || '').trim().toUpperCase();
-        existingKeys.add(`${dateStr}-${plate}-${company}`);
-      });
+    if (dateFilter) {
+      const existingRows = supabaseRequest_(
+        SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + encodeURIComponent(['register_date', 'truck_plate', 'transportation_company'].join(',')) + '&' + dateFilter
+      ) || [];
+
+      if (Array.isArray(existingRows)) {
+        existingRows.forEach(function (row) {
+          const dateStr = String(row.register_date || '').trim();
+          const plate = String(row.truck_plate || '').toUpperCase().replace(/\s/g, '');
+          const company = String(row.transportation_company || '').trim().toUpperCase();
+          if (dateStr && plate && company) {
+            existingKeys.add(`${dateStr}-${plate}-${company}`);
+          }
+        });
+      }
     }
 
-    // Kiểm tra dữ liệu đầu vào (bao gồm cả trùng lặp trong file)
     const seen = new Set();
-    
     const duplicates = [];
-    recordsToCheck.forEach(rec => {
-      const regDate = normalizeDate(rec['Register Date']);
-      const dateStr = regDate ? Utilities.formatDate(regDate, "Asia/Ho_Chi_Minh", "yyyy-MM-dd") : '';
-      const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-      const company = String(rec['Transportation Company'] || '').trim().toUpperCase();
-      const key = `${dateStr}-${plate}-${company}`;
+
+    normalizedRecords.forEach(function (rec) {
+      const key = `${rec.date}-${rec.plate}-${rec.company}`;
 
       if (existingKeys.has(key) || seen.has(key)) {
-        duplicates.push(plate);
+        duplicates.push(rec.plate);
       }
       seen.add(key);
     });
-    
     return duplicates;
   } catch (e) {
     Logger.log(e);
@@ -2487,33 +2622,32 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
 function getTotalListSummary(sessionToken) {
   const userSession = validateSession(sessionToken);
   try {
-    const role = String(userSession.role || '').toLowerCase();
-    const baseFilters = [];
-    if (role === 'user') {
-      const contractor = String(userSession.contractor || '').trim();
-      if (contractor) {
-        baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
-      }
-      baseFilters.push('activity_status=eq.ACTIVE');
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow < 2) {
+      return { total: 0, active: 0, banned: 0 };
     }
 
-    const queryParts = ['select=activity_status,count=id', 'group=activity_status'];
-    baseFilters.forEach(part => queryParts.push(part));
-    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&');
-    const data = supabaseRequest_(query);
-    const summary = { total: 0, active: 0, banned: 0 };
-
-    if (Array.isArray(data)) {
-      data.forEach(row => {
-        const status = String(row.activity_status == null ? '' : row.activity_status).trim().toUpperCase();
-        const countValue = row.count != null ? Number(row.count) : (row.count_id != null ? Number(row.count_id) : 0);
-        const count = isNaN(countValue) ? 0 : countValue;
-        summary.total += count;
-        if (status === 'ACTIVE') summary.active += count;
-        else if (status === 'BANNED') summary.banned += count;
-      });
+    const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_TOTAL_LIST.length).getValues();
+    
+    let filteredData = allData;
+    if (userSession.role === 'user') {
+      const companyIndex = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
+      const activityIndex = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+      filteredData = allData.filter(row => row[companyIndex] === userSession.contractor &&
+        String(row[activityIndex]).toUpperCase() === 'ACTIVE');
     }
 
+    const summary = { total: filteredData.length, active: 0, banned: 0 };
+    const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+
+    filteredData.forEach(row => {
+      const act = String(row[activityIdx]).toUpperCase();
+      if (act === 'ACTIVE') summary.active++;
+      else if (act === 'BANNED') summary.banned++;
+    });
+    
     return summary;
   } catch (e) {
     Logger.log(e);
@@ -2527,55 +2661,65 @@ function saveTotalTruckData(dataToSave, sessionToken) {
   if (userSession.role !== 'admin') throw new Error('Chỉ có admin mới được thực hiện chức năng này.');
   if (!dataToSave || dataToSave.length === 0) throw new Error('Không có dữ liệu để lưu.');
   try {
-    const existingSet = new Set(getExistingTruckPlates(sessionToken));
-    const inFileSeen = new Set();
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
+
+    // Chuẩn hóa biển số để so sánh
+    const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
+
+    // Lấy tất cả biển số hiện có
+    const plateIdx = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
+    const companyIdx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
+
+    let existingPlates = {};
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1 && plateIdx > 0) {
+      const plates = sheet.getRange(2, plateIdx, lastRow - 1, 1).getValues().flat();
+      plates.forEach(p => { const k = norm(p); if (k) existingPlates[k] = true; });
+    }
+
+    // Kiểm tra trùng lặp trong file và với dữ liệu hiện có
+    const inFileSeen = {};
     const skippedInFile = [];
     const skippedExisting = [];
     const rowsToAppend = [];
 
     dataToSave.forEach(obj => {
-      const plate = normalizeTruckPlate_(obj['Truck Plate']);
-      const company = obj['Transportation Company'] || '';
+      const plate = norm(obj['Truck Plate']);
+      const company = obj['Transportion Company'] || '';
       if (!plate) return;
 
-      if (inFileSeen.has(plate)) {
+      if (inFileSeen[plate]) {
         skippedInFile.push({ plate: plate, company: company });
         return;
       }
-      inFileSeen.add(plate);
+      inFileSeen[plate] = true;
 
-      if (existingSet.has(plate)) {
+      if (existingPlates[plate]) {
         skippedExisting.push({ plate: plate, company: company });
         return;
       }
 
       // Bổ sung ngày/giờ và map theo header
-      rowsToAppend.push({
-        'Truck Plate': plate,
-        'Country': obj['Country'] || '',
-        'Wheel': obj['Wheel'] || '',
-        'Trailer Plate': normalizeTruckPlate_(obj['Trailer Plate']),
-        'Truck weight': obj['Truck weight'] || '',
-        'Pay load': obj['Pay load'] || '',
-        'Container No1': obj['Container No1'] || '',
-        'Container No2': obj['Container No2'] || '',
-        'Driver Name': obj['Driver Name'] || '',
-        'ID/Passport': obj['ID/Passport'] || '',
-        'Phone number': obj['Phone number'] || '',
-        'Transportation Company': company,
-        'Subcontractor': obj['Subcontractor'] || '',
-        'Vehicle Status': obj['Vehicle Status'] || '',
-        'Activity Status': obj['Activity Status'] || ''
-      });
+      obj['Register Date'] = normalizeDate(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "dd/MM/yyyy"));
+      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
+      rowsToAppend.push(HEADERS_TOTAL_LIST.map(h => obj[h] || ""));
     });
 
     // Append thay vì replace
     let inserted = 0;
     if (rowsToAppend.length > 0) {
-      saveTotalListAppend(rowsToAppend, sessionToken);
+      const startRow = (lastRow || 1) + 1;
+      sheet.getRange(startRow, 1, rowsToAppend.length, HEADERS_TOTAL_LIST.length).setValues(rowsToAppend);
       inserted = rowsToAppend.length;
     }
 
+    if (inserted > 0) {
+      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
+    }    
+
+    // Trả chi tiết để client hiển thị
     return {
       status: 'ok',
       inserted: inserted,
@@ -2584,7 +2728,7 @@ function saveTotalTruckData(dataToSave, sessionToken) {
     };
   } catch (error) {
     Logger.log(error);
-    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + (error && error.message ? error.message : error));
+    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + error.message);
   }
 }
 
@@ -2592,22 +2736,31 @@ function deleteTotalListVehicles(ids, sessionToken) {
   const session = validateSession(sessionToken);
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
   if (!ids || ids.length === 0) throw new Error('Cần cung cấp ID để xóa.');
-
+  
   try {
-    const sanitizedIds = Array.from(new Set(ids.map(id => String(id || '').trim()).filter(Boolean)));
-    if (!sanitizedIds.length) throw new Error('Cần cung cấp ID hợp lệ để xóa.');
-    const filterValue = sanitizedIds
-      .map(v => '"' + v.replace(/"/g, '\\"') + '"')
-      .join(',');
-    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?id=in.(' + filterValue + ')';
-    const response = supabaseRequest_(query, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=representation' }
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
+    let rowsToDelete = [];
+
+    ids.forEach(id => {
+      const rowIndex = idColumnValues.indexOf(id);
+      if (rowIndex !== -1) {
+        rowsToDelete.push(rowIndex + 2);
+      }
     });
-    const affected = Array.isArray(response) ? response.length : 0;
-    if (affected === 0) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
-    return `Đã xóa thành công ${affected} xe.`;
-  } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + (error && error.message ? error.message : error)); }
+
+    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
+    
+    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
+      sheet.deleteRow(rowNum);
+    });
+
+    if (rowsToDelete.length > 0) {
+      bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
+    }    
+
+    return `Đã xóa thành công ${rowsToDelete.length} xe.`;
+  } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + error.message); }
 }
 
 function updateTotalListVehicle(rowData, sessionToken) {
@@ -2616,46 +2769,25 @@ function updateTotalListVehicle(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const now = new Date();
-    const dateParts = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
-    const timeParts = { hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds() };
-    const tz = getAppTimeZone_();
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
+    let rowToUpdate = -1;
 
-    const payload = {
-      truck_plate: normalizeTruckPlate_(rowData['Truck Plate']),
-      country: sanitizeString_(rowData['Country']),
-      wheel: sanitizeString_(rowData['Wheel']),
-      trailer_plate: normalizeTruckPlate_(rowData['Trailer Plate']),
-      truck_weight: sanitizeString_(rowData['Truck weight']),
-      payload: sanitizeString_(rowData['Pay load']),
-      container_no1: sanitizeString_(rowData['Container No1']),
-      container_no2: sanitizeString_(rowData['Container No2']),
-      driver_name: sanitizeString_(rowData['Driver Name']),
-      id_passport: sanitizeString_(rowData['ID/Passport']),
-      phone_number: sanitizeString_(rowData['Phone number']),
-      transportation_company: sanitizeString_(rowData['Transportation Company']),
-      subcontractor: sanitizeString_(rowData['Subcontractor']),
-      vehicle_status: sanitizeString_(rowData['Vehicle Status']),
-      activity_status: sanitizeString_(rowData['Activity Status']),
-      register_date: buildDateStringFromParts_(dateParts),
-      time: convertLocalDateTimeToUtcIso_(dateParts, timeParts, tz),
-      updated_by: sanitizeString_(session.username || '')
-    };
-
-    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID);
-    const response = supabaseRequest_(query, {
-      method: 'PATCH',
-      payload: payload,
-      headers: { Prefer: 'return=representation' }
-    });
-    if (!Array.isArray(response) || response.length === 0) {
-      throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
+    const rowIndex = idColumnValues.indexOf(rowData.ID);
+    if (rowIndex !== -1) {
+        rowToUpdate = rowIndex + 2;
     }
+
+    if (rowToUpdate === -1) throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
+
+    const now = new Date();
+    rowData['Register Date'] = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
+    rowData['Time'] = "'" + Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+    const dataArray = HEADERS_TOTAL_LIST.map(header => rowData[header] || "");
+    sheet.getRange(rowToUpdate, 1, 1, HEADERS_TOTAL_LIST.length).setValues([dataArray]);
+    bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);    
     return 'Cập nhật thông tin xe thành công!';
-  } catch (error) {
-    Logger.log(error);
-    throw new Error('Lỗi khi cập nhật thông tin xe: ' + (error && error.message ? error.message : error));
-  }
+  } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật thông tin xe: ' + error.message); }
 }
 
 // --- Helpers an toàn cho CacheService ---
@@ -2679,6 +2811,21 @@ function safeScriptCachePutJSON_(key, obj, seconds) {
   } catch (e) {
     Logger.log('Script cache put error: ' + e);
   }
+}
+
+function safeScriptCacheRemove_(key) {
+  if (!key) return;
+  try {
+    CacheService.getScriptCache().remove(key);
+  } catch (e) {
+    Logger.log('Script cache remove error: ' + e);
+  }
+}
+
+function removeSupabaseUserMissCache_(username) {
+  const missKey = buildSupabaseUserMissCacheKey_(username);
+  if (!missKey) return;
+  safeScriptCacheRemove_(missKey);
 }
 
 function getSheetCacheVersion_(sheetName) {
@@ -2804,6 +2951,7 @@ function refreshSessionExpiry_(username, token) {
     const data = supabaseRequest_(query);
     if (!Array.isArray(data) || data.length === 0) return;
     const user = data[0];
+    cacheSupabaseUserRecord_(username, user);    
     if (String(user.active_session_token == null ? '' : user.active_session_token).trim() !== token) return;
 
     const nowMs = Date.now();
@@ -2821,7 +2969,7 @@ function refreshSessionExpiry_(username, token) {
     if (shouldUpdate) {
       updateSupabaseUserByUsername_(username, {
         session_token_expiry: desiredExpiry.toISOString()
-      });
+      }, { returnMinimal: true });
     }
   } catch (e) {
     Logger.log('refreshSessionExpiry_ error: ' + e);
@@ -2836,6 +2984,9 @@ function lookupSessionFromSheet(sessionToken) {
     const data = supabaseRequest_(query);
     if (!Array.isArray(data) || data.length === 0) return null;
     const user = data[0];
+    if (user && user.username) {
+      cacheSupabaseUserRecord_(user.username, user);
+    }    
 
     const expiryDate = parseSupabaseTimestamp_(user.session_token_expiry);
     const nowMs = Date.now();
@@ -2907,20 +3058,22 @@ function getUserSession(sessionToken) {
 
 // Trả về Map: company (UPPER) -> Set(contractNo) chỉ chứa hợp đồng Active
 function buildActiveContractMap_() {
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, CONTRACT_HEADERS.length).getValues();
-  const IDX_NO = 1, IDX_COMP = 3, IDX_STATUS = 4;
+  const rows = fetchContractDataRows_(
+    ['contract_no', 'transportation_company', 'status']
+  );
 
   const map = new Map();
-  for (const r of rows) {
-    const no     = String(r[IDX_NO]   || '').trim();
-    const comp   = String(r[IDX_COMP] || '').trim().toUpperCase();
-    const status = String(r[IDX_STATUS] || '').trim().toLowerCase();
-    if (!no || !comp || status !== 'active') continue;
+  rows.forEach(function (row) {
+    const status = String(row.status == null ? '' : row.status).trim().toLowerCase();
+    if (status !== 'active') return;
+    const no = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    const comp = String(row.transportation_company == null ? '' : row.transportation_company)
+      .trim()
+      .toUpperCase();
+    if (!no || !comp) return;
     if (!map.has(comp)) map.set(comp, new Set());
     map.get(comp).add(no);
-  }
+  });
   return map;
 }
 
@@ -2933,65 +3086,74 @@ function isContractActiveForCompany_(contractNo, company) {
   return m.has(comp) && m.get(comp).has(cno);
 }
 
-
-//Page hop dong van chuyen
-function ensureContractSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sh = ss.getSheetByName(CONTRACT_SHEET);
-  if (!sh) {
-    sh = ss.insertSheet(CONTRACT_SHEET);
-    sh.getRange(1, 1, 1, CONTRACT_HEADERS.length).setValues([CONTRACT_HEADERS]);
-  }
-  return sh;
-}
-
-function genContractId_() {
-  const tz = Session.getScriptTimeZone();
-  const ddmm = Utilities.formatDate(new Date(), tz, 'dd/MM');
-  const rand = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(-6);
-  return `C${ddmm}${rand}`;
-}
-
 function getContractDataServerSide(params) {
   const session = validateSession(params.sessionToken);
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, CONTRACT_HEADERS.length).getValues();
+  const role = String(session.role == null ? '' : session.role).toLowerCase();
+  const isAdmin = role === 'admin';
 
-  // map -> object
-  let data = rows.map(r => ({
-    'ID': r[0] || '',
-    'Contract No': r[1] || '',
-    'Customer Name': r[2] || '',
-    'Transportation Company': r[3] || '',
-    'Status': r[4] || ''
-  }));
+  const rows = fetchContractDataRows_(CONTRACT_DATA_SELECT_FIELDS);
 
-  // User chỉ nhìn thấy theo đơn vị mình
-  if (session.role !== 'admin') {
-    data = data.filter(x => String(x['Transportation Company'] || '') === String(session.contractor || ''));
+  let data = rows.map(function (row) {
+    const createdAt = parseSupabaseTimestamp_(row.created_at);
+    const createdAtDisplay = formatSupabaseDateTime_(row.created_at);
+    const createdAtSort = createdAt ? createdAt.toISOString() : '';
+    return {
+      'ID': String(row.id == null ? '' : row.id).trim(),
+      'Contract No': String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim(),
+      'Customer Name': String(row.customer_name == null ? '' : row.customer_name).trim(),
+      'Transportion Company': String(row.transportation_company == null ? '' : row.transportation_company).trim(),
+      'Status': String(row.status == null ? '' : row.status).trim(),
+      'Created At': createdAtDisplay,
+      'Created At Sort': createdAtSort,
+      'Created By': String(row.created_by == null ? '' : row.created_by).trim()
+    };
+  });
+
+  if (!isAdmin) {
+    const contractor = String(session.contractor == null ? '' : session.contractor).trim();
+    if (contractor) {
+      data = data.filter(function (item) {
+        return String(item['Transportion Company'] || '') === contractor;
+      });
+    } else {
+      data = [];
+    }
   }
 
-  // Search toàn cục
   const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
+  const searchKeys = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];  
   let filtered = q
-    ? data.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(q)))
+    ? data.filter(function (item) {
+        return searchKeys.some(function (key) {
+          return String(item[key] == null ? '' : item[key]).toLowerCase().includes(q);
+        });
+      })
     : data;
 
-  // Order
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
-    const columns = ['ID','Contract No','Customer Name','Transportation Company','Status']; // đúng thứ tự trả về cho DataTable
-    const key = columns[order.column >= columns.length ? columns.length-1 : order.column];
-    const dir = (order.dir || 'asc').toLowerCase();
-    filtered.sort((a,b) => (String(a[key]).localeCompare(String(b[key]), undefined, {numeric:true}))
-      * (dir === 'desc' ? -1 : 1));
+    const dataColumns = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];
+    let idx = Number(order.column);
+    if (isNaN(idx)) idx = 0;
+    idx -= 2; // Bỏ qua 2 cột Select & Action
+    if (idx < 0) idx = 0;
+    if (idx >= dataColumns.length) idx = dataColumns.length - 1;
+    const key = dataColumns[idx];
+    const sortKey = key === 'Created At' ? 'Created At Sort' : key;
+    const dir = (order.dir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+    filtered = filtered.slice().sort(function (a, b) {
+      const valA = String(a[sortKey] == null ? '' : a[sortKey]);
+      const valB = String(b[sortKey] == null ? '' : b[sortKey]);
+      return valA.localeCompare(valB, undefined, { numeric: true }) * dir;
+    });
   }
 
-  // Paging
   const start = Number(params.start || 0);
   const length = Number(params.length || 50);
-  const page = filtered.slice(start, start + length);
+  const page = filtered.slice(start, start + length).map(function (item) {
+    const { ['Created At Sort']: _discard, ...rest } = item;
+    return rest;
+  });
 
   return {
     draw: Number(params.draw || 1),
@@ -3006,22 +3168,50 @@ function upsertContract(contract, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
 
   const { ID, 'Contract No': contractNo, 'Customer Name': customerName,
-          'Transportation Company': tc, 'Status': status } = contract;
-		  
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  const ids = last < 2 ? [] : sh.getRange(2, 1, last - 1, 1).getValues().flat();
+          'Transportion Company': tc, 'Status': status } = contract;
+
+  const payload = {
+    contract_no: String(contractNo == null ? '' : contractNo).trim(),
+    customer_name: String(customerName == null ? '' : customerName).trim(),
+    transportation_company: String(tc == null ? '' : tc).trim(),
+    status: String(status == null ? '' : status).trim()
+  };
+
+  const username = String(session.username == null ? '' : session.username).trim();
+  if (username) {
+    if (ID) {
+      payload.updated_by = username;
+    } else {
+      payload.created_by = username;
+    }
+  }
+
+  if (!payload.contract_no) {
+    throw new Error('Thiếu Contract No.');
+  }
 
   if (ID) {
-    const idx = ids.indexOf(ID);
-    if (idx === -1) throw new Error('Không tìm thấy ID để cập nhật.');
-    sh.getRange(idx + 2, 2, 1, 4).setValues([[contractNo, customerName, tc, status]]); // 4 cột
+    const query = SUPABASE_CONTRACT_DATA_ENDPOINT + '?id=eq.' + encodeURIComponent(String(ID).trim());
+    const result = supabaseRequest_(query, {
+      method: 'PATCH',
+      payload: payload,
+      headers: { Prefer: 'return=representation' }
+    });
+    if (!Array.isArray(result) || !result.length) {
+      throw new Error('Không tìm thấy ID để cập nhật.');
+    }
     return 'Đã cập nhật hợp đồng.';
-  } else {
-    const newId = genContractId_();
-    sh.appendRow([newId, contractNo, customerName, tc, status]);
-    return 'Đã tạo hợp đồng mới.';
   }
+
+  const insertResult = supabaseRequest_(SUPABASE_CONTRACT_DATA_ENDPOINT, {
+    method: 'POST',
+    payload: payload,
+    headers: { Prefer: 'return=representation' }
+  });
+  if (!Array.isArray(insertResult) || !insertResult.length) {
+    throw new Error('Không thể tạo hợp đồng mới.');
+  }
+  return 'Đã tạo hợp đồng mới.';
 }
 
 
@@ -3030,23 +3220,26 @@ function deleteContracts(ids, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
 
   if (!Array.isArray(ids) || !ids.length) return 'Không có mục nào để xoá.';
-  const sh = ensureContractSheet_();
-  const last = sh.getLastRow();
-  if (last < 2) return 'Không có dữ liệu.';
 
-  const allIds = sh.getRange(2,1,last-1,1).getValues().flat();
-  const rowsToDelete = [];
-  ids.forEach(id => {
-    const idx = allIds.indexOf(id);
-    if (idx !== -1) rowsToDelete.push(idx + 2); // sheet index
+  const sanitized = ids
+    .map(function (id) { return String(id == null ? '' : id).trim(); })
+    .filter(function (id) { return id.length > 0; });
+
+  if (!sanitized.length) return 'Không có mục nào để xoá.';
+
+  const filter = buildSupabaseInFilter_('id', sanitized);
+  if (!filter) return 'Không có mục nào để xoá.';
+
+  const result = supabaseRequest_(SUPABASE_CONTRACT_DATA_ENDPOINT + '?' + filter, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=representation' }
   });
 
-  // xoá từ dưới lên
-  rowsToDelete.sort((a,b)=>b-a).forEach(r => sh.deleteRow(r));
-  return `Đã xoá ${rowsToDelete.length} hợp đồng.`;
+  const count = Array.isArray(result) ? result.length : 0;
+  return `Đã xoá ${count} hợp đồng.`;
 }
 
-//Lấy danh sách Contractor từ Supabase (dropdown “Transportation Company” ở trang Hợp đồng)
+//Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
 function getContractorOptions() {
   try {
     const data = supabaseRequest_(
@@ -3067,48 +3260,49 @@ function getContractorOptions() {
 
 
 
-//Lấy danh sách "Đơn vị vận chuyển" từ Supabase Truck List Total
+//Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
 function getTransportCompanies() {
-  try {
-    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=transportation_company&transportation_company=not.is.null&limit=10000';
-    const data = supabaseRequest_(query);
-    if (!Array.isArray(data)) return [];
-    const set = new Set();
-    data.forEach(row => {
-      const value = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-      if (value) set.add(value);
-    });
-    return Array.from(set).sort();
-  } catch (e) {
-    Logger.log('getTransportCompanies error: ' + e);
-    return [];
-  }
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sh) return [];
+  const n = sh.getLastRow();
+  if (n < 2) return [];
+  const idx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
+  if (idx <= 0) return [];
+  const vals = sh.getRange(2, idx, n - 1, 1).getValues().flat();
+  const set = new Set();
+  vals.forEach(v => {
+    const s = String(v || '').trim();
+    if (s) set.add(s);
+  });
+  return Array.from(set).sort();
 }
 
 //Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
 function getActiveContractNos(sessionToken) {
   const session = validateSession(sessionToken);
-  const sh = ensureContractSheet_();
-  const n  = sh.getLastRow();
-  if (n < 2) return [];
-  const data = sh.getRange(2, 1, n - 1, CONTRACT_HEADERS.length).getValues();
+  const role = String(session.role == null ? '' : session.role).toLowerCase();
+  const contractor = String(session.contractor == null ? '' : session.contractor).trim();
 
-  const IDX_NO = 1, IDX_COMP = 3, IDX_STATUS = 4;
-  const out = [];
+  if (role !== 'admin' && !contractor) return [];
+
+  const rows = fetchContractDataRows_(['contract_no', 'transportation_company', 'status']);
+  if (!rows.length) return [];
+
   const seen = new Set();
+  rows.forEach(function (row) {
+    const status = String(row.status == null ? '' : row.status).trim().toLowerCase();
+    if (status !== 'active') return;  
 
-  for (const r of data) {
-    const status = String(r[IDX_STATUS] || '').trim().toLowerCase();
-    if (status !== 'active') continue;
+    const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+    if (role !== 'admin' && contractor && comp !== contractor) return;
 
-    if (session.role !== 'admin') {
-      if (String(r[IDX_COMP] || '') !== String(session.contractor || '')) continue;
-    }
+    const contractNo = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    if (!contractNo || seen.has(contractNo)) return;
+    seen.add(contractNo);
+  });
 
-    const no = String(r[IDX_NO] || '').trim();
-    if (no && !seen.has(no)) { seen.add(no); out.push(no); }
-  }
-  return out.sort();
+  return Array.from(seen).sort();
 }
 
 
@@ -3116,24 +3310,17 @@ function getActiveContractNos(sessionToken) {
 // ====== GS: Trả về danh sách biển số đang có để đánh dấu trùng ======
 function getExistingTruckPlates(sessionToken) {
   const session = validateSession(sessionToken);
-  void session; // chỉ để đảm bảo validateSession được gọi
-  const limit = 1000;
-  let offset = 0;
-  const collected = [];
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
 
-  while (true) {
-    const query = `${SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT}?select=truck_plate&truck_plate=not.is.null&order=truck_plate.asc&limit=${limit}&offset=${offset}`;
-    const data = supabaseRequest_(query);
-    if (!Array.isArray(data) || data.length === 0) break;
-    data.forEach(row => {
-      const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
-      if (plate) collected.push(plate);
-    });
-    if (data.length < limit) break;
-    offset += limit;
-  }
+  const plateCol = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
+  const lastRow  = sheet.getLastRow();
+  if (plateCol <= 0 || lastRow < 2) return [];
 
-  return Array.from(new Set(collected));
+  const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
+  const values = sheet.getRange(2, plateCol, lastRow - 1, 1).getValues().flat();
+  return values.map(norm).filter(Boolean);
 }
 
 
@@ -3144,59 +3331,53 @@ function saveTotalListAppend(rows, sessionToken) {
 
   if (!rows || !rows.length) return 'Không có dữ liệu để lưu.';
 
-  const now = new Date();
-  const defaultDateParts = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
-  const tz = getAppTimeZone_();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sh) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
 
-  const payloads = rows.map(obj => {
-    const plate = normalizeTruckPlate_(obj['Truck Plate']);
-    const trailer = normalizeTruckPlate_(obj['Trailer Plate']);
-    const registerParts = parseDdMmYyyy_(obj['Register Date']) || defaultDateParts;
-    const registerDate = buildDateStringFromParts_(registerParts) || buildDateStringFromParts_(defaultDateParts);
-    const timeParts = parseTimeString_(obj['Time']);
-    const timeIso = convertLocalDateTimeToUtcIso_(registerParts, timeParts, tz) || new Date().toISOString();
-
-    return {
-      truck_plate: plate,
-      country: sanitizeString_(obj['Country']),
-      wheel: sanitizeString_(obj['Wheel']),
-      trailer_plate: trailer,
-      truck_weight: sanitizeString_(obj['Truck weight']),
-      payload: sanitizeString_(obj['Pay load']),
-      container_no1: sanitizeString_(obj['Container No1']),
-      container_no2: sanitizeString_(obj['Container No2']),
-      driver_name: sanitizeString_(obj['Driver Name']),
-      id_passport: sanitizeString_(obj['ID/Passport']),
-      phone_number: sanitizeString_(obj['Phone number']),
-      transportation_company: sanitizeString_(obj['Transportation Company']),
-      subcontractor: sanitizeString_(obj['Subcontractor']),
-      vehicle_status: sanitizeString_(obj['Vehicle Status']),
-      activity_status: sanitizeString_(obj['Activity Status']),
-      register_date: registerDate,
-      time: timeIso,
-      created_by: sanitizeString_(session.username || ''),
-      updated_by: sanitizeString_(session.username || '')
-    };
-  });
-
-  try {
-    supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT, {
-      method: 'POST',
-      payload: payloads,
-      headers: { Prefer: 'return=representation' }
-    });
-  } catch (e) {
-    Logger.log('saveTotalListAppend error: ' + e);
-    throw new Error('Lỗi khi lưu dữ liệu danh sách xe tổng: ' + (e && e.message ? e.message : e));
+  const header = HEADERS_TOTAL_LIST;
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, header.length).setValues([header]);
   }
 
-  return `Đã thêm ${payloads.length} dòng mới vào Danh sách xe tổng.`;
-}
+  // Format ngày/giờ
+  const pad = n => ('0' + n).slice(-2);
+  const formatDateText = d =>
+    `'${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; // thêm dấu '
+  const formatTimeText = d =>
+    `'${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; // thêm dấu '
 
+  const normPlate = s => String(s || '').replace(/\s/g, '').toUpperCase();
 
-// Helper tạo ID ngắn, chữ hoa (15 ký tự)
-function generateShortId() {
-  return Utilities.getUuid().replace(/-/g, '').slice(0, 15).toUpperCase();
+  const values = rows.map(obj => {
+    const dNow = new Date();
+    const regDate = obj['Register Date']
+      ? `${obj['Register Date']}`
+      : formatDateText(dNow);
+    const regTime = obj['Time']
+      ? `${obj['Time']}`
+      : formatTimeText(dNow);
+
+    return header.map(h => {
+      switch (h) {
+        case 'Truck Plate':
+        case 'Trailer Plate':
+          return normPlate(obj[h]);
+        case 'Register Date':
+          return regDate;
+        case 'Time':
+          return regTime;
+        default:
+          return obj[h] == null ? '' : String(obj[h]);
+      }
+    });
+  });
+
+  const startRow = sh.getLastRow() + 1;
+  sh.getRange(startRow, 1, values.length, header.length).setValues(values);
+  bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);  
+
+  return `Đã thêm ${values.length} dòng mới vào Danh sách xe tổng.`;
 }
 
 // === THAY TOÀN BỘ addManualVehicle ===
@@ -3205,16 +3386,13 @@ function addManualVehicle(record, sessionToken, language) {
   const pickMessage = createMessagePicker_(language);
 
   try {
-    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(DATA_SHEET);
-    if (!sheet) throw new Error('Không tìm thấy sheet dữ liệu đăng ký.');
 
     // Chuẩn hóa/điền thêm các field bắt buộc
     const rowObj = Object.assign({}, record);
 
     // ✅ NEW: khóa Contractor cho user thường
     if (userSession.role === 'user') {
-      rowObj['Transportation Company'] = userSession.contractor || rowObj['Transportation Company'];
+      rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
     }
 
     coerceNumericRegisterFields_(rowObj);
@@ -3227,7 +3405,7 @@ function addManualVehicle(record, sessionToken, language) {
     // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
     const precheck = checkVehiclesAgainstTotalList([{
       'Truck Plate'         : String(rowObj['Truck Plate'] || '').toUpperCase().replace(/\s/g, ''),
-      'Transportation Company': rowObj['Transportation Company']
+      'Transportion Company': rowObj['Transportion Company']
     }]);
     if (!precheck.isValid) {
       throw new Error(pickMessage(precheck.message, precheck.messageEn));
@@ -3235,7 +3413,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: kiểm tra Contract No thuộc đúng Contractor & Active
     const contractNo = String(rowObj['Contract No'] || '').trim();
-    const company    = String(rowObj['Transportation Company'] || '').trim();
+    const company    = String(rowObj['Transportion Company'] || '').trim();
     if (!isContractActiveForCompany_(contractNo, company)) {
       throw new Error(pickMessage(
         'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).',
@@ -3247,7 +3425,7 @@ function addManualVehicle(record, sessionToken, language) {
     const dup = checkForExistingRegistrations([{
       'Register Date'       : rowObj['Register Date'],
       'Truck Plate'         : rowObj['Truck Plate'],
-      'Transportation Company': rowObj['Transportation Company']
+      'Transportion Company': rowObj['Transportion Company']
     }], sessionToken);
     if (dup && dup.length > 0) {
       throw new Error(pickMessage(
@@ -3256,24 +3434,25 @@ function addManualVehicle(record, sessionToken, language) {
       ));
     }
 
-    // ID do server tự sinh
-    rowObj['ID'] = generateShortId();
-
     // Lưu ngày dạng text (chỉ thêm 1 dấu ')
     if (rowObj['Register Date']) {
       rowObj['Register Date'] = normalizeDate(rowObj['Register Date']);
     }
 
     // Thời gian tạo (giữ nguyên cách lưu hiện tại)
-    rowObj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
+    rowObj['Time'] = new Date();
 
         // ✅ Bổ sung cột Registration Status
     rowObj['Registration Status'] = 'Pending approval';
 
-    // Ghi theo đúng thứ tự header
-    const values = [HEADERS_REGISTER.map(h => rowObj[h] ?? "")];
-    sheet.getRange(sheet.getLastRow() + 1, 1, 1, HEADERS_REGISTER.length).setValues(values);
-    bumpSheetCacheVersion_(DATA_SHEET);    
+    const payload = buildVehicleRegistrationPayload_(rowObj);
+
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT, {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      payload: [payload]
+    });
+    bumpSheetCacheVersion_(DATA_SHEET);
 
     return pickMessage('Đăng ký xe thành công!', 'Vehicle registered successfully!');
   } catch (e) {
@@ -3319,27 +3498,27 @@ function getXpplSnapshot(payload, sessionToken){
   var cached = _getCache(ck);
   if (cached) return cached;
 
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  if (!sh) throw new Error('Không tìm thấy sheet dữ liệu');
+  var isoDate = toSupabaseDateString_(dateString);
+  if (!isoDate) throw new Error('Thiếu ngày đăng ký hợp lệ');
   var headers = HEADERS_REGISTER;
-  var values = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), headers.length).getValues();
+  var response = supabaseRequest_(
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+  ) || [];
 
-  var idxDate = headers.indexOf('Register Date');
-  var idxCno  = headers.indexOf('Contract No');
-  var idxComp = headers.indexOf('Transportation Company');
-  var idxRS   = headers.indexOf('Registration Status');
+  if (!Array.isArray(response)) throw new Error('Không thể đọc dữ liệu đăng ký.');
+
+  var rowsRaw = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
 
   var rows = [];
   var pending=0, approved=0;
   var per={};
 
-  for (var i=0;i<values.length;i++){
-    var r=values[i];
-    if (_toDateKey(r[idxDate]) !== dateString) continue;
-    if (scope !== 'ALL' && String(r[idxComp]||'').trim() !== scope) continue;
-
-    // (SAU) – dùng helper đã có để đảm bảo DD/MM/YYYY + HH:mm:ss
+  for (var i=0;i<rowsRaw.length;i++){
+    var r=rowsRaw[i];
     var obj = formatRowForClient_(r, headers);
+    if (scope !== 'ALL' && String(obj['Transportion Company']||'').trim() !== scope) continue;
     rows.push(obj);
 
     var st = String(obj['Registration Status']||'');
@@ -3385,7 +3564,7 @@ function getRegistrationsForApproval(payload, sessionToken){
 
 
 function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
-  var userSession = requireAdmin_(sessionToken);
+  requireAdmin_(sessionToken);
   var dateString = filters && filters.dateString;
   var set = {};
   (filters.contracts||[]).forEach(function(c){ set[String(c).trim()] = true; });
@@ -3394,37 +3573,44 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   if (!dateString) throw new Error('Thiếu ngày đăng ký.');
   if (!newStatus || (['Approved','Pending approval'].indexOf(newStatus)===-1)) throw new Error('Trạng thái không hợp lệ.');
 
-  var sh = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DATA_SHEET);
-  var headers = HEADERS_REGISTER;
-  var values = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), headers.length).getValues();
+  var isoDate = toSupabaseDateString_(dateString);
+  if (!isoDate) throw new Error('Ngày đăng ký không hợp lệ.');
 
-  var idxDate = headers.indexOf('Register Date');
-  var idxCno  = headers.indexOf('Contract No');
-  var idxRS   = headers.indexOf('Registration Status');
-  var idxID   = headers.indexOf('ID');
-  var idxComp = headers.indexOf('Transportation Company');
+  var params = [
+    'select=' + encodeURIComponent(['id','contract_no','registration_status','transportation_company'].join(',')),
+    'register_date=eq.' + encodeURIComponent(isoDate)
+  ];
 
-  var scope = scope = 'ALL';
-  var changed = 0;
-
-  for (var r=0; r<values.length; r++){
-    var row = values[r];
-    if (_toDateKey(row[idxDate]) !== dateString) continue;
-    if (scope !== 'ALL' && String(row[idxComp]||'').trim() !== scope) continue;
-    if (Object.keys(set).length && !set[String(row[idxCno]||'').trim()]) continue;
-    if (idsSelected.length && idsSelected.indexOf(String(row[idxID]||''))===-1) continue;
-    if (row[idxRS] === newStatus) continue;
-    row[idxRS] = newStatus;
-    sh.getRange(r+2, idxRS+1).setValue(newStatus);
-    changed++;
+  if (idsSelected && idsSelected.length) {
+    var idFilter = buildSupabaseInFilter_('id', idsSelected);
+    if (!idFilter) return 'Không có dòng nào được cập nhật.';
+    params.push(idFilter);
   }
 
-  if (changed > 0) {
-    bumpSheetCacheVersion_(DATA_SHEET);
-  }  
+  var rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
+  if (!Array.isArray(rows) || !rows.length) return 'Không có dòng nào được cập nhật.';
 
-  _bust(['SNAP_'+dateString+'_'+scope, 'SNAP_'+dateString+'_ALL']);
-  return 'Đã cập nhật ' + changed + ' dòng.';
+  var changedIds = [];
+  rows.forEach(function (row) {
+    if (Object.keys(set).length && !set[String(row.contract_no || '').trim()]) return;
+    if (String(row.registration_status || '') === newStatus) return;
+    changedIds.push(String(row.id));
+  });
+
+  if (!changedIds.length) return 'Không có dòng nào được cập nhật.';
+
+  var updateFilter = buildSupabaseInFilter_('id', changedIds);
+  if (!updateFilter) return 'Không có dòng nào được cập nhật.';
+
+  supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + updateFilter, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    payload: { registration_status: newStatus }
+  });
+
+  bumpSheetCacheVersion_(DATA_SHEET);
+  _bust(['SNAP_'+dateString+'_ALL']);
+  return 'Đã cập nhật ' + changedIds.length + ' dòng.';
 }
 
 
@@ -3433,31 +3619,28 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
  * params: { dateString?: 'dd/MM/yyyy', search?: string }
  */
 function exportRegisteredVehicles(params) {
-  const sheet = SpreadsheetApp.getActive().getSheetByName('VehicleData'); // đổi tên nếu bạn dùng sheet khác
-  const headers = HEADERS_REGISTER; // mảng header của Registered (đang dùng cho DataTable)
-  const range = sheet.getRange(2, 1, Math.max(0, sheet.getLastRow() - 1), headers.length);
-  let allData = range.getValues();
+  const headers = HEADERS_REGISTER;
+  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
 
-  // --- lọc theo ngày (chấp nhận Date thật hoặc text có/dính dấu ')
   if (params && params.dateString) {
-    const dateIdx = headers.indexOf('Register Date');
-    allData = allData.filter(row => {
-      const v = row[dateIdx];
-      const cmp = (v instanceof Date)
-        ? Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy")
-        : String(v).replace(/^'/, '');
-      return cmp === params.dateString;
+    const iso = toSupabaseDateString_(params.dateString);
+    if (iso) {
+      queryParams.push('register_date=eq.' + encodeURIComponent(iso));
+    }
+  }
+
+  let response = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParams.join('&')) || [];
+  if (!Array.isArray(response)) response = [];
+
+  let rowsData = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+  if (params && params.search) {
+    const q = String(params.search).toLowerCase();
+    rowsData = rowsData.filter(function (row) {
+      return row.some(function (cell) { return String(cell).toLowerCase().includes(q); });
     });
   }
 
-  // --- lọc theo chuỗi tìm kiếm (áp dụng trên toàn hàng đã bóc dấu ')
-  if (params && params.search) {
-    const q = params.search.toLowerCase();
-    allData = allData.filter(row => row.some(cell => String(cell).replace(/^'/, '').toLowerCase().includes(q)));
-  }
-
-  // --- map & format để client đổ thẳng vào Excel
-  const rows = allData.map(row => formatRowForClient_(row, headers));
+  const rows = rowsData.map(function (row) { return formatRowForClient_(row, headers); });
   return { headers: headers, rows: rows };
 }
 
@@ -3508,7 +3691,7 @@ function exportXpplToTemplateDownload(filter, sessionToken) {
       r['Driver Name']||'',
       r['ID/Passport']||'',
       r['Phone number']||'',
-      r['Transportation Company']||'',
+      r['Transportion Company']||'',
       r['Subcontractor']||''
     ]);
     if (aoa.length) sh.getRange(r0, c0, aoa.length, 10).setValues(aoa);
@@ -3534,19 +3717,18 @@ function saveXpplWeighingData(rows, sessionToken) {
   const user = requireXpplRole_(sessionToken);
   if (!rows || !rows.length) throw new Error('Không có dữ liệu.');
 
-  // build valid Contract-Customer set from ContractData
-  const ssMain = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shCon = ssMain.getSheetByName(CONTRACT_SHEET);
-  const lc = shCon.getLastColumn();
-  const head = shCon.getRange(1,1,1,lc).getValues()[0];
-  const idxCNo = head.indexOf('Contract No');
-  const idxCus = head.indexOf('Customer Name');
+  // build valid Contract-Customer set from contract_data in Supabase
+  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
+  const contractNos = Array.from(new Set((rows || []).map(r => normalize(r['ContractNo'])))).filter(Boolean);
   const validSet = new Set();
-  if (idxCNo !== -1 && idxCus !== -1) {
-    const data = shCon.getRange(2,1,Math.max(0, shCon.getLastRow()-1), lc).getValues();
-    data.forEach(r => {
-      const key = String(r[idxCus]).trim() + '|' + String(r[idxCNo]).trim();
-      validSet.add(key);
+  if (contractNos.length) {
+    const filters = [];
+    const inFilter = buildSupabaseInFilter_('contract_no', contractNos);
+    if (inFilter) filters.push(inFilter);
+    const contractRows = fetchContractDataRows_(['contract_no', 'customer_name'], filters);
+    contractRows.forEach(function (row) {
+      const key = normalize(row.customer_name) + '|' + normalize(row.contract_no);
+      if (key !== '|') validSet.add(key);
     });
   }
 
@@ -3562,7 +3744,7 @@ function saveXpplWeighingData(rows, sessionToken) {
   }
 
   const toSave = rows.map(r => {
-    const key = String(r['Customer Name']||'').trim() + '|' + String(r['Contract No']||'').trim();
+    const key = String(r['Customer Name']||'').trim() + '|' + String(r['ContractNo']||'').trim();
     if (validSet.size && !validSet.has(key)) {
       throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
     }
@@ -3600,7 +3782,7 @@ function getXpplWeighingData(filter, sessionToken) {
 
   const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
   const idxDate = XPPL_DB_HEADERS.indexOf('Date Out');
-  const idxContract = XPPL_DB_HEADERS.indexOf('Contract No');
+  const idxContract = XPPL_DB_HEADERS.indexOf('ContractNo');
   const idxCustomer = XPPL_DB_HEADERS.indexOf('Customer Name');
   const idxNet = XPPL_DB_HEADERS.indexOf('Net Weight');
 
@@ -3636,7 +3818,20 @@ function getXpplWeighingData(filter, sessionToken) {
 // ===== WEIGHING RESULT HELPERS =====
 function matchTransportionCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
+  const main = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  const totalLast = totalSh.getLastRow();
+  const totalHead = totalLast > 0 ? totalSh.getRange(1,1,1,totalSh.getLastColumn()).getValues()[0] : [];
+  const idxPlateTL = totalHead.indexOf('Truck Plate');
+  const idxCompTL = totalHead.indexOf('Transportion Company');
   const plateMap = new Map();
+  if (idxPlateTL > -1 && idxCompTL > -1 && totalLast > 1) {
+    const vals = totalSh.getRange(2,1,totalLast-1,totalSh.getLastColumn()).getValues();
+    vals.forEach(r => {
+      const plate = String(r[idxPlateTL]||'').replace(/\s/g,'').toUpperCase();
+      if (plate) plateMap.set(plate, String(r[idxCompTL]||'').trim());
+    });
+  }
 
   const ss = SpreadsheetApp.openById(XPPL_DB_ID);
   const sh = ss.getSheetByName(XPPL_DB_SHEET);
@@ -3653,31 +3848,9 @@ function matchTransportionCompanies(filter, sessionToken) {
 
   const f = filter || {};
   const from = _toDateKey(f.dateFrom);
-  const to = _toDateKey(f.dateTo);
+  const to = _toDateKey(f.dateTo);  
 
   const data = sh.getRange(2,1,lr-1,headers.length).getValues();
-
-  const platesNeeded = new Set();
-  data.forEach(row => {
-    const dk = _toDateKey(row[idxDateOut]);
-    if (from && dk < from) return;
-    if (to && dk > to) return;
-    const plate = normalizeTruckPlate_(row[idxTruck]);
-    if (plate) platesNeeded.add(plate);
-  });
-
-  if (platesNeeded.size) {
-    const rows = fetchTruckListRowsByPlates_(Array.from(platesNeeded), ['truck_plate', 'transportation_company']);
-    rows.forEach(row => {
-      const plate = normalizeTruckPlate_(row.truck_plate || row.truckPlate);
-      if (!plate) return;
-      const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-      if (!plateMap.has(plate)) {
-        plateMap.set(plate, comp || 'Unknown');
-      }
-    });
-  }
-
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
   const now = new Date();
   const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -3689,8 +3862,7 @@ function matchTransportionCompanies(filter, sessionToken) {
     const dk = _toDateKey(r[idxDateOut]);
     if (from && dk < from) return;
     if (to && dk > to) return;
-    const plate = normalizeTruckPlate_(r[idxTruck]);
-    if (!plate) return;
+    const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
     const compName = sanitizeXpplText_(plateMap.get(plate) || 'Unknown');
     r[idxComp] = compName;
     r[idxDate] = dateValue;
@@ -3711,7 +3883,7 @@ function matchTransportionCompanies(filter, sessionToken) {
       block.push(cur.values);
     } else {
       sh.getRange(start,1,block.length,headers.length).setValues(block);
-      applyXpplDbFormats_(sh, start, block.length);
+      applyXpplDbFormats_(sh, start, block.length);      
       start = cur.row;
       block = [cur.values];
     }
@@ -3818,7 +3990,7 @@ function getWeighResultData(params) {
   }
 
   const idxDateOut = headers.indexOf('Date Out');
-  const idxContract = headers.indexOf('Contract No');
+  const idxContract = headers.indexOf('ContractNo');
   const idxCompany = headers.indexOf('Transportation Company');
   const idxCustomer = headers.indexOf('Customer Name');
   const idxNetWeight = headers.indexOf('Net Weight');
