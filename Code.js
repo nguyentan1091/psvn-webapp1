@@ -525,6 +525,16 @@ function normalizeDate(v) {
   if (!v) return null;
   if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
   v = stripLeadingApostrophe(v);
+  var iso = String(v).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    var y = parseInt(iso[1], 10);
+    var mIso = parseInt(iso[2], 10) - 1;
+    var dIso = parseInt(iso[3], 10);
+    var dtIso = new Date(y, mIso, dIso);
+    if (!isNaN(dtIso.getTime()) && dtIso.getFullYear() === y && dtIso.getMonth() === mIso && dtIso.getDate() === dIso) {
+      return new Date(dtIso.getFullYear(), dtIso.getMonth(), dtIso.getDate());
+    }
+  }
   var m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
   var d = parseInt(m[1],10), M = parseInt(m[2],10)-1, y = parseInt(m[3],10);
