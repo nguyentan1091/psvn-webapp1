@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
+const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
 const DATA_SHEET = 'VehicleData';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 // === XPPL Weighing Station database ===
@@ -101,8 +101,8 @@ const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
 
 // ================= SUPABASE CONFIGURATION =================
-const SUPABASE_URL = 'https://medlgvtmhujuqdvceaoz.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lZGxndnRtaHVqdXFkdmNlYW96Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODg5NzY5NSwiZXhwIjoyMDc0NDczNjk1fQ.h-hVavhpp_NbJ4tiaFTPJBQsdS0SNfpndQeGp-eyFAo';
+const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ieXJydWN6aWhuaWV3ZHZ4b2tqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODMzNDE5OSwiZXhwIjoyMDczOTEwMTk5fQ.78Xkt_3GCdvfEL8R0313MVeOEeuXBECDYZ3QHh6XigE';
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
 const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
 const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
@@ -2441,7 +2441,12 @@ function saveData(dataToSave, sessionToken, language) {
       obj['Register Date'] = normalizedDate || obj['Register Date'];
       obj['Time'] = new Date();
       obj['Registration Status'] = 'Pending approval';
-      return buildVehicleRegistrationPayload_(obj);
+      const payload = buildVehicleRegistrationPayload_(obj);
+      if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'id')) {
+        // Let Supabase auto-generate the primary key when inserting multiple records
+        delete payload.id;
+      }
+      return payload;
     });
 
     supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT, {
