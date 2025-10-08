@@ -2429,7 +2429,8 @@ function validateAndTransformData(dataRows) {
         };
         
         const record = {
-            'ID': generateRandomId(12),
+            // Leave ID empty so Supabase can assign it automatically when saving
+            'ID': '',
             'Register Date': row[1] || '', 'Contract No': row[2] || '',
             'Truck Plate': String(row[3] || '').replace(/\s/g, '').toUpperCase(), 'Country': row[4] || '',
             'Wheel': row[5] || '', 'Trailer Plate': String(row[6] || '').replace(/\s/g, '').toUpperCase(),
@@ -2562,7 +2563,13 @@ function validateAndTransformData(dataRows) {
 
 function handleSaveUploadedData() {
     const dataToSave = previewTableData.filter(row => !row.errors);
-    const t = translations[currentLang];    
+    const sanitizedDataToSave = dataToSave.map(row => {
+        if (!row || typeof row !== 'object') return row;
+        // Remove ID so Supabase can auto-generate it on insert
+        const { ID, ...rest } = row;
+        return rest;
+    });
+    const t = translations[currentLang];
     if (dataToSave.length === 0) {
         Swal.fire(t.no_valid_data_title || 'Không có dữ liệu hợp lệ',
                   t.no_valid_data_message || 'Không có dữ liệu nào để lưu.',
@@ -2580,7 +2587,7 @@ function handleSaveUploadedData() {
             $('#fileUploader').val('').trigger('change');
         })
         .withFailureHandler(showError)
-        .saveData(dataToSave, userSession.token, currentLang);
+        .saveData(sanitizedDataToSave, userSession.token, currentLang);
 }
 
 function initializeDataTable(config) {
