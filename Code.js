@@ -3623,36 +3623,47 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   var isoDate = toSupabaseDateString_(dateString);
   if (!isoDate) throw new Error('Ngày đăng ký không hợp lệ.');
 
-  var params = [
+  var baseParams = [
     'select=' + encodeURIComponent(['id','contract_no','registration_status','transportation_company'].join(',')),
     'register_date=eq.' + encodeURIComponent(isoDate)
   ];
 
+  var rows = [];
   if (idsSelected && idsSelected.length) {
-    var idFilter = buildSupabaseInFilter_('id', idsSelected);
-    if (!idFilter) return 'Không có dòng nào được cập nhật.';
-    params.push(idFilter);
+    var batches = chunkArray_(idsSelected, SUPABASE_IN_FILTER_BATCH_SIZE);
+    batches.forEach(function(batch) {
+      var idFilter = buildSupabaseInFilter_('id', batch);
+      if (!idFilter) return;
+      var batchRows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + baseParams.concat(idFilter).join('&')) || [];
+      if (Array.isArray(batchRows) && batchRows.length) {
+        rows = rows.concat(batchRows);
+      }
+    });
+  } else {
+    rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + baseParams.join('&')) || [];
   }
 
-  var rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
   if (!Array.isArray(rows) || !rows.length) return 'Không có dòng nào được cập nhật.';
 
-  var changedIds = [];
+  var changedIdsSet = {};
   rows.forEach(function (row) {
     if (Object.keys(set).length && !set[String(row.contract_no || '').trim()]) return;
     if (String(row.registration_status || '') === newStatus) return;
-    changedIds.push(String(row.id));
+    if (row.id != null) changedIdsSet[String(row.id)] = true;
   });
 
+  var changedIds = Object.keys(changedIdsSet);
   if (!changedIds.length) return 'Không có dòng nào được cập nhật.';
 
-  var updateFilter = buildSupabaseInFilter_('id', changedIds);
-  if (!updateFilter) return 'Không có dòng nào được cập nhật.';
-
-  supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + updateFilter, {
-    method: 'PATCH',
-    headers: { Prefer: 'return=minimal' },
-    payload: { registration_status: newStatus }
+  var updateBatches = chunkArray_(changedIds, SUPABASE_IN_FILTER_BATCH_SIZE);
+  updateBatches.forEach(function (batch) {
+    var updateFilter = buildSupabaseInFilter_('id', batch);
+    if (!updateFilter) return;
+    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + updateFilter, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      payload: { registration_status: newStatus }
+    });
   });
 
   bumpSheetCacheVersion_(DATA_SHEET);
