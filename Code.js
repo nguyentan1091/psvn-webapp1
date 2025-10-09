@@ -122,6 +122,7 @@ const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
 const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
 const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
 const SUPABASE_USER_MISS_CACHE_TTL_SECONDS = 45;
+const SUPABASE_IN_FILTER_BATCH_SIZE = 20;
 const SUPABASE_USER_SELECT_FIELDS = [
   'username',
   'password_hash',
@@ -324,6 +325,16 @@ function buildVehicleRegistrationPayload_(record, options) {
     payload[column] = value;
   });
   return payload;
+}
+
+function chunkArray_(array, size) {
+  if (!Array.isArray(array) || !array.length) return [];
+  const chunkSize = size && size > 0 ? size : array.length;
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
 }
 
 function buildSupabaseInFilter_(column, values) {
@@ -2441,7 +2452,7 @@ function saveData(dataToSave, sessionToken, language) {
       obj['Register Date'] = normalizedDate || obj['Register Date'];
       obj['Time'] = new Date();
       obj['Registration Status'] = 'Pending approval';
-      const payload = buildVehicleRegistrationPayload_(obj);
+      const payload = buildVehicleRegistrationPayload_(obj, { includeNulls: true });
       if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'id')) {
         // Let Supabase auto-generate the primary key when inserting multiple records
         delete payload.id;
@@ -2542,14 +2553,28 @@ function deleteMultipleData(ids,sessionToken) {
     if (!uniqueIds.length) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
 
     const select = ['id', 'transportation_company'];
-    const filter = buildSupabaseInFilter_('id', uniqueIds);
-    if (!filter) throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
+    const selectParam = encodeURIComponent(select.join(','));
+    const batches = chunkArray_(uniqueIds, SUPABASE_IN_FILTER_BATCH_SIZE);
+    const existingMap = {};
 
-    const existing = supabaseRequest_(
-      SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + encodeURIComponent(select.join(',')) + '&' + filter
-    ) || [];
+    batches.forEach(function (batch) {
+      const batchFilter = buildSupabaseInFilter_('id', batch);
+      if (!batchFilter) return;
+      const existingBatch = supabaseRequest_(
+        SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + selectParam + '&' + batchFilter
+      ) || [];
+      if (Array.isArray(existingBatch) && existingBatch.length) {
+        existingBatch.forEach(function (row) {
+          if (row && row.id != null) {
+            existingMap[String(row.id)] = row;
+          }
+        });
+      }
+    });
 
-    if (!Array.isArray(existing) || !existing.length) {
+    const existing = Object.values(existingMap);
+
+    if (!existing.length) {
       throw new Error('Không tìm thấy dòng nào với các ID đã cho.');
     }
 
@@ -2563,9 +2588,16 @@ function deleteMultipleData(ids,sessionToken) {
       });
     }
 
-    supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + filter, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' }
+    const idsToDelete = Object.keys(existingMap);
+    const deleteBatches = chunkArray_(idsToDelete, SUPABASE_IN_FILTER_BATCH_SIZE);
+
+    deleteBatches.forEach(function (batch) {
+      const batchFilter = buildSupabaseInFilter_('id', batch);
+      if (!batchFilter) return;
+      supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + batchFilter, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=minimal' }
+      });
     });
 
     bumpSheetCacheVersion_(DATA_SHEET);
@@ -3460,7 +3492,7 @@ function addManualVehicle(record, sessionToken, language) {
         // ✅ Bổ sung cột Registration Status
     rowObj['Registration Status'] = 'Pending approval';
 
-    const payload = buildVehicleRegistrationPayload_(rowObj);
+    const payload = buildVehicleRegistrationPayload_(rowObj, { includeNulls: true });
 
     supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT, {
       method: 'POST',
