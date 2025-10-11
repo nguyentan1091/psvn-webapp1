@@ -527,16 +527,6 @@ function formatSupabaseDateTime_(value) {
   }
 }
 
-function buildSupabaseDateRange_(value) {
-  const normalized = normalizeDate(value);
-  if (!normalized) return null;
-  const timezone = Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh';
-  const start = Utilities.formatDate(normalized, timezone, "yyyy-MM-dd'T'00:00:00XXX");
-  const endDate = new Date(normalized.getTime() + 24 * 60 * 60 * 1000);
-  const end = Utilities.formatDate(endDate, timezone, "yyyy-MM-dd'T'00:00:00XXX");
-  return { start: start, end: end };
-}
-
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
 function stripLeadingApostrophe(v) {
   if (typeof v === 'string' && v.length > 0 && v[0] === "'") return v.slice(1);
@@ -601,6 +591,45 @@ function formatTimeForClient(v) {
   }
   return stripLeadingApostrophe(v);
 }
+
+function toDisplayString_(value) {
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function parseHistoryDateFilter_(value, endOfDay) {
+  if (!value) return null;
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const date = createUtcDate_(year, month, day);
+  if (!date) return null;
+  const tz = 'Asia/Ho_Chi_Minh';
+  const timePart = endOfDay ? "23:59:59" : "00:00:00";
+  try {
+    return Utilities.formatDate(date, tz, "yyyy-MM-dd'T'" + timePart + "XXX");
+  } catch (e) {
+    return null;
+  }
+}
+
+function parseContentRangeTotal_(headers) {
+  if (!headers || typeof headers !== 'object') return null;
+  const rangeHeader = headers['Content-Range'] || headers['content-range'];
+  if (!rangeHeader) return null;
+  const parts = String(rangeHeader).split('/');
+  if (parts.length !== 2) return null;
+  const total = parseInt(parts[1], 10);
+  return isNaN(total) ? null : total;
+}
+
+function sanitizeHistorySearchTerm_(value) {
+  if (!value) return '';
+  return String(value).replace(/["'`]/g, '').replace(/%/g, '').replace(/,/g, ' ').trim();
+}
+
 
 function normalizeToUtcDate_(date) {
   if (Object.prototype.toString.call(date) !== '[object Date]' || isNaN(date)) return null;
@@ -1649,80 +1678,6 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   };  
 }
 
-
-function processObjectsForDataTable_(params, rows, options) {
-  params = params || {};
-  const draw = parseInt(params.draw, 10) || 0;
-  const start = Math.max(parseInt(params.start, 10) || 0, 0);
-  const length = Math.max(parseInt(params.length, 10) || 0, 0);
-  const searchValue = params.search && typeof params.search.value === 'string'
-    ? params.search.value.toLowerCase().trim()
-    : '';
-  const searchKeys = (options && options.searchKeys) || [];
-  const sortKeyMap = (options && options.sortKeyMap) || {};
-  const defaultSortKey = options && options.defaultSortKey;
-
-  let filtered = Array.isArray(rows) ? rows.slice() : [];
-
-  if (searchValue) {
-    filtered = filtered.filter(function (row) {
-      if (!row || typeof row !== 'object') return false;
-      for (let i = 0; i < searchKeys.length; i++) {
-        const key = searchKeys[i];
-        const value = row[key];
-        if (value == null) continue;
-        if (String(value).toLowerCase().indexOf(searchValue) !== -1) return true;
-      }
-      return false;
-    });
-  }
-
-  const recordsTotal = Array.isArray(rows) ? rows.length : 0;
-  const recordsFiltered = filtered.length;
-
-  const orderInfo = Array.isArray(params.order) && params.order.length ? params.order[0] : null;
-  const columnDefs = Array.isArray(params.columns) ? params.columns : [];
-  if (orderInfo) {
-    const columnIndex = orderInfo.column;
-    const direction = orderInfo.dir === 'desc' ? -1 : 1;
-    const columnName = columnDefs[columnIndex] && columnDefs[columnIndex].data;
-    const sortKey = sortKeyMap[columnName] || columnName;
-    if (sortKey) {
-      filtered = filtered.slice().sort(function (a, b) {
-        const va = a[sortKey];
-        const vb = b[sortKey];
-        if (va == null && vb == null) return 0;
-        if (va == null) return -1 * direction;
-        if (vb == null) return 1 * direction;
-        if (va < vb) return -1 * direction;
-        if (va > vb) return 1 * direction;
-        return 0;
-      });
-    }
-  } else if (defaultSortKey) {
-    filtered = filtered.slice().sort(function (a, b) {
-      const va = a[defaultSortKey];
-      const vb = b[defaultSortKey];
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (va < vb) return 1;
-      if (va > vb) return -1;
-      return 0;
-    });
-  }
-
-  const data = length > 0 ? filtered.slice(start, start + length) : filtered.slice();
-
-  return {
-    draw: draw,
-    recordsTotal: recordsTotal,
-    recordsFiltered: recordsFiltered,
-    data: data
-  };
-}
-
-
 function getRegisteredDataServerSide(params) {
   return processServerSide(params, DATA_SHEET, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
 }
@@ -1763,282 +1718,6 @@ function getRegisteredContractOptions(filter, sessionToken) {
 function getTotalListDataServerSide(params) {
   return processServerSide(params, TRUCK_LIST_TOTAL_SHEET, HEADERS_TOTAL_LIST, HEADERS_TOTAL_LIST.indexOf('Register Date'));
 }
-
-
-function getVehicleHistoryFilterOptions(filter, sessionToken) {
-  validateSession(sessionToken);
-  const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
-  const isoDate = toSupabaseDateString_(dateString);
-
-  const queryParts = [
-    'select=' + encodeURIComponent(['contract_no', 'transportation_comp', 'register_date'].join(',')),
-    'limit=2000'
-  ];
-  if (isoDate) {
-    queryParts.push('register_date=eq.' + encodeURIComponent(isoDate));
-  }
-
-  let rows;
-  try {
-    rows = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
-  } catch (err) {
-    Logger.log('getVehicleHistoryFilterOptions error: ' + err);
-    rows = [];
-  }
-
-  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
-  const contracts = new Set();
-  const companies = new Set();
-
-  if (Array.isArray(rows)) {
-    rows.forEach(row => {
-      const contract = normalize(row.contract_no);
-      if (contract) contracts.add(contract);
-      const company = normalize(row.transportation_comp || row.transportation_company);
-      if (company) companies.add(company);
-    });
-  }
-
-  return {
-    contracts: Array.from(contracts).sort(),
-    companies: Array.from(companies).sort()
-  };
-}
-
-function getLoginHistoryDataServerSide(params) {
-  validateSession(params && params.sessionToken);
-  const dateFilter = params && params.dateString ? String(params.dateString).trim() : '';
-  const contractFilter = params && params.contractNo ? String(params.contractNo).trim() : '';
-  const companyFilter = params && params.transportationCompany ? String(params.transportationCompany).trim() : '';
-
-  const queryParts = [
-    'select=' + encodeURIComponent([
-      'id',
-      'occurred_at',
-      'username',
-      'outcome',
-      'ip',
-      'latitude',
-      'longitude',
-      'user_agent',
-      'created_at',
-      'contract_no',
-      'transportation_comp'
-    ].join(',')),
-    'order=occurred_at.desc',
-    'limit=1000'
-  ];
-
-  if (dateFilter) {
-    const range = buildSupabaseDateRange_(dateFilter);
-    if (range) {
-      queryParts.push('occurred_at=gte.' + encodeURIComponent(range.start));
-      queryParts.push('occurred_at=lt.' + encodeURIComponent(range.end));
-    }
-  }
-  if (contractFilter) {
-    queryParts.push('contract_no=eq.' + encodeURIComponent(contractFilter));
-  }
-  if (companyFilter) {
-    queryParts.push('transportation_comp=eq.' + encodeURIComponent(companyFilter));
-  }
-
-  let rows;
-  try {
-    rows = supabaseRequest_(SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT + '?' + queryParts.join('&')) || [];
-  } catch (err) {
-    Logger.log('getLoginHistoryDataServerSide error: ' + err);
-    rows = [];
-  }
-
-  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
-  const contractNorm = normalize(contractFilter);
-  const companyNorm = normalize(companyFilter);
-
-  let mapped = [];
-  if (Array.isArray(rows)) {
-    mapped = rows.map(row => {
-      const occurredAt = parseSupabaseTimestamp_(row.occurred_at);
-      const createdAt = parseSupabaseTimestamp_(row.created_at);
-      const contract = normalize(row.contract_no);
-      const company = normalize(row.transportation_comp || row.transportation_company);
-      return {
-        OccurredAt: formatSupabaseDateTime_(row.occurred_at),
-        OccurredAtSort: occurredAt ? occurredAt.getTime() : 0,
-        Username: normalize(row.username),
-        Outcome: normalize(row.outcome),
-        IPAddress: normalize(row.ip),
-        Latitude: row && row.latitude != null ? row.latitude : '',
-        Longitude: row && row.longitude != null ? row.longitude : '',
-        UserAgent: normalize(row.user_agent),
-        CreatedAt: formatSupabaseDateTime_(row.created_at),
-        CreatedAtSort: createdAt ? createdAt.getTime() : 0,
-        ContractNo: contract,
-        TransportationCompany: company
-      };
-    });
-  }
-
-  if (contractNorm) {
-    mapped = mapped.filter(item => normalize(item.ContractNo) === contractNorm);
-  }
-  if (companyNorm) {
-    mapped = mapped.filter(item => normalize(item.TransportationCompany) === companyNorm);
-  }
-
-  return processObjectsForDataTable_(params, mapped, {
-    searchKeys: ['OccurredAt', 'Username', 'Outcome', 'IPAddress', 'Latitude', 'Longitude', 'UserAgent', 'CreatedAt', 'ContractNo', 'TransportationCompany'],
-    sortKeyMap: { OccurredAt: 'OccurredAtSort', CreatedAt: 'CreatedAtSort' },
-    defaultSortKey: 'OccurredAtSort'
-  });
-}
-
-function getVehicleRegistrationHistoryServerSide(params) {
-  validateSession(params && params.sessionToken);
-  const dateFilter = params && params.dateString ? String(params.dateString).trim() : '';
-  const contractFilter = params && params.contractNo ? String(params.contractNo).trim() : '';
-  const companyFilter = params && params.transportationCompany ? String(params.transportationCompany).trim() : '';
-
-  const queryParts = [
-    'select=' + encodeURIComponent([
-      'id',
-      'action_type',
-      'action_time',
-      'register_date',
-      'contract_no',
-      'truck_plate',
-      'country',
-      'wheel',
-      'trailer_plate',
-      'truck_weight',
-      'pay_load',
-      'container_no1',
-      'container_no2',
-      'driver_name',
-      'id_passport',
-      'phone_number',
-      'destination_est',
-      'transportation_comp',
-      'subcontractor',
-      'vehicle_status',
-      'registration_status',
-      'time',
-      'created_at',
-      'created_by'
-    ].join(',')),
-    'order=action_time.desc',
-    'limit=1000'
-  ];
-
-  if (dateFilter) {
-    const isoDate = toSupabaseDateString_(dateFilter);
-    if (isoDate) {
-      queryParts.push('register_date=eq.' + encodeURIComponent(isoDate));
-    }
-  }
-  if (contractFilter) {
-    queryParts.push('contract_no=eq.' + encodeURIComponent(contractFilter));
-  }
-  if (companyFilter) {
-    queryParts.push('transportation_comp=eq.' + encodeURIComponent(companyFilter));
-  }
-
-  let rows;
-  try {
-    rows = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
-  } catch (err) {
-    Logger.log('getVehicleRegistrationHistoryServerSide error: ' + err);
-    rows = [];
-  }
-
-  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
-  const contractNorm = normalize(contractFilter);
-  const companyNorm = normalize(companyFilter);
-
-  let mapped = [];
-  if (Array.isArray(rows)) {
-    mapped = rows.map(row => {
-      const actionTime = parseSupabaseTimestamp_(row.action_time);
-      const registerDate = parseSupabaseTimestamp_(row.register_date);
-      const timeSlot = parseSupabaseTimestamp_(row.time);
-      const createdAt = parseSupabaseTimestamp_(row.created_at);
-      const contract = normalize(row.contract_no);
-      const company = normalize(row.transportation_comp || row.transportation_company);
-      return {
-        ActionType: normalize(row.action_type),
-        ActionTime: formatSupabaseDateTime_(row.action_time),
-        ActionTimeSort: actionTime ? actionTime.getTime() : 0,
-        RegisterDate: formatDateForClient(row.register_date),
-        RegisterDateSort: registerDate ? registerDate.getTime() : 0,
-        ContractNo: contract,
-        TruckPlate: normalize(row.truck_plate),
-        Country: normalize(row.country),
-        Wheels: row && row.wheel != null ? row.wheel : '',
-        TrailerPlate: normalize(row.trailer_plate),
-        TruckWeight: row && row.truck_weight != null ? row.truck_weight : '',
-        Payload: row && row.pay_load != null ? row.pay_load : '',
-        Container1: normalize(row.container_no1),
-        Container2: normalize(row.container_no2),
-        DriverName: normalize(row.driver_name),
-        IDPassport: normalize(row.id_passport),
-        PhoneNumber: normalize(row.phone_number),
-        Destination: normalize(row.destination_est),
-        TransportationCompany: company,
-        Subcontractor: normalize(row.subcontractor),
-        VehicleStatus: normalize(row.vehicle_status),
-        RegistrationStatus: normalize(row.registration_status),
-        TimeSlot: formatTimeForClient(row.time),
-        TimeSlotSort: timeSlot ? timeSlot.getTime() : 0,
-        CreatedAt: formatSupabaseDateTime_(row.created_at),
-        CreatedAtSort: createdAt ? createdAt.getTime() : 0,
-        CreatedBy: normalize(row.created_by)
-      };
-    });
-  }
-
-  if (contractNorm) {
-    mapped = mapped.filter(item => normalize(item.ContractNo) === contractNorm);
-  }
-  if (companyNorm) {
-    mapped = mapped.filter(item => normalize(item.TransportationCompany) === companyNorm);
-  }
-
-  return processObjectsForDataTable_(params, mapped, {
-    searchKeys: [
-      'ActionType',
-      'ActionTime',
-      'RegisterDate',
-      'ContractNo',
-      'TruckPlate',
-      'Country',
-      'Wheels',
-      'TrailerPlate',
-      'TruckWeight',
-      'Payload',
-      'Container1',
-      'Container2',
-      'DriverName',
-      'IDPassport',
-      'PhoneNumber',
-      'Destination',
-      'TransportationCompany',
-      'Subcontractor',
-      'VehicleStatus',
-      'RegistrationStatus',
-      'TimeSlot',
-      'CreatedAt',
-      'CreatedBy'
-    ],
-    sortKeyMap: {
-      ActionTime: 'ActionTimeSort',
-      RegisterDate: 'RegisterDateSort',
-      TimeSlot: 'TimeSlotSort',
-      CreatedAt: 'CreatedAtSort'
-    },
-    defaultSortKey: 'ActionTimeSort'
-  });
-}
-
 
 /** =========================
  *  XPPL — OPTIONS cho dropdown
@@ -2726,6 +2405,370 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
     Logger.log(e);
     throw new Error('Cannot retrieve export data: ' + e.message);
   }
+}
+
+function resolveLoginHistoryCompanies_(filters) {
+  const result = { companies: [], hasFilter: false };
+  if (!filters || typeof filters !== 'object') return result;
+
+  const rawCompany = stripLeadingApostrophe(filters.company);
+  const company = String(rawCompany == null ? '' : rawCompany).trim();
+  const rawContract = stripLeadingApostrophe(filters.contractNo);
+  const contract = String(rawContract == null ? '' : rawContract).trim();
+
+  const hasCompanyFilter = company.length > 0;
+  const hasContractFilter = contract.length > 0;
+  result.hasFilter = hasCompanyFilter || hasContractFilter;
+
+  const selectedCompanies = new Set();
+  if (hasCompanyFilter) {
+    selectedCompanies.add(company);
+  }
+
+  let contractCompanies = [];
+  if (hasContractFilter) {
+    try {
+      const contractFilters = ['contract_no=eq.' + encodeURIComponent(contract)];
+      const rows = fetchContractDataRows_(['contract_no', 'transportation_company'], contractFilters);
+      if (Array.isArray(rows) && rows.length) {
+        const set = new Set();
+        rows.forEach(function (row) {
+          const comp = String(stripLeadingApostrophe(row && row.transportation_company) || '').trim();
+          if (comp) set.add(comp);
+        });
+        contractCompanies = Array.from(set);
+      }
+    } catch (e) {
+      Logger.log('resolveLoginHistoryCompanies_ error: ' + e);
+    }
+  }
+
+  if (hasContractFilter) {
+    if (selectedCompanies.size) {
+      if (contractCompanies.length) {
+        const intersection = Array.from(selectedCompanies).filter(function (item) {
+          return contractCompanies.indexOf(item) !== -1;
+        });
+        result.companies = intersection;
+      } else {
+        result.companies = [];
+      }
+    } else {
+      result.companies = contractCompanies;
+    }
+  } else {
+    result.companies = Array.from(selectedCompanies);
+  }
+
+  return result;
+}
+
+function fetchLoginHistoryUsernamesForCompanies_(companies) {
+  const sanitized = Array.isArray(companies)
+    ? companies
+        .map(function (value) { return stripLeadingApostrophe(value); })
+        .map(function (value) { return String(value == null ? '' : value).trim(); })
+        .filter(function (value) { return value.length > 0; })
+    : [];
+  if (!sanitized.length) return [];
+
+  const unique = Array.from(new Set(sanitized));
+  const filter = buildSupabaseInFilter_('contractor', unique);
+  if (!filter) return [];
+
+  try {
+    const rows = supabaseRequest_(SUPABASE_APP_USERS_ENDPOINT + '?select=username&' + filter);
+    if (!Array.isArray(rows) || !rows.length) return [];
+    const seen = new Set();
+    const usernames = [];
+    rows.forEach(function (row) {
+      const username = String(row && row.username == null ? '' : row.username).trim();
+      if (username && !seen.has(username)) {
+        seen.add(username);
+        usernames.push(username);
+      }
+    });
+    return usernames;
+  } catch (e) {
+    Logger.log('fetchLoginHistoryUsernamesForCompanies_ error: ' + e);
+    return [];
+  }
+}
+
+function buildLoginHistoryUserFilterClause_(filters) {
+  const info = resolveLoginHistoryCompanies_(filters);
+  if (!info.hasFilter) return '';
+  if (!info.companies || !info.companies.length) {
+    return 'username=eq.__no_matching_user__';
+  }
+  const usernames = fetchLoginHistoryUsernamesForCompanies_(info.companies);
+  if (!usernames.length) {
+    return 'username=eq.__no_matching_user__';
+  }
+  const inFilter = buildSupabaseInFilter_('username', usernames);
+  return inFilter || 'username=eq.__no_matching_user__';
+}
+
+function buildLoginHistoryQueryParts_(filters, searchValue) {
+  const parts = ['select=' + encodeURIComponent('*')];
+
+  const userFilterClause = buildLoginHistoryUserFilterClause_(filters || {});
+  if (userFilterClause) parts.push(userFilterClause);
+  const fromIso = parseHistoryDateFilter_(filters && filters.dateFrom, false);
+  if (fromIso) parts.push('occurred_at=gte.' + encodeURIComponent(fromIso));
+  const toIso = parseHistoryDateFilter_(filters && filters.dateTo, true);
+  if (toIso) parts.push('occurred_at=lte.' + encodeURIComponent(toIso));
+  const sanitized = sanitizeHistorySearchTerm_(searchValue);
+  if (sanitized) {
+    const likeValue = `%${sanitized}%`;
+    const orConditions = [
+      `username.ilike.${likeValue}`,
+      `outcome.ilike.${likeValue}`,
+      `ip.ilike.${likeValue}`,
+      `user_agent.ilike.${likeValue}`
+    ];
+    parts.push('or=' + encodeURIComponent('(' + orConditions.join(',') + ')'));
+  }
+  return parts;
+}
+
+function mapLoginHistoryRow_(row) {
+  return {
+    occurred_at: formatTimeForClient(row && row.occurred_at),
+    username: toDisplayString_(row && row.username),
+    outcome: toDisplayString_(row && row.outcome),
+    ip: toDisplayString_(row && row.ip),
+    latitude: toDisplayString_(row && row.latitude),
+    longitude: toDisplayString_(row && row.longitude),
+    accuracy_m: toDisplayString_(row && row.accuracy_m),
+    user_agent: toDisplayString_(row && row.user_agent),
+    created_at: formatTimeForClient(row && row.created_at)
+  };
+}
+
+function getLoginHistoryServerSide(params) {
+  params = params || {};
+  requireAdmin_(params.sessionToken);
+
+  const draw = parseInt(params.draw, 10) || 0;
+  const start = Math.max(parseInt(params.start, 10) || 0, 0);
+  let length = parseInt(params.length, 10);
+  if (!isFinite(length) || length <= 0) length = 50;
+
+  const columns = [
+    'occurred_at',
+    'username',
+    'outcome',
+    'ip',
+    'latitude',
+    'longitude',
+    'accuracy_m',
+    'user_agent',
+    'created_at'
+  ];
+
+  let sortColumn = columns[0];
+  let sortDir = 'desc';
+  if (Array.isArray(params.order) && params.order.length) {
+    const orderInfo = params.order[0] || {};
+    const idx = parseInt(orderInfo.column, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < columns.length) {
+      sortColumn = columns[idx];
+    }
+    if (String(orderInfo.dir).toLowerCase() === 'asc') {
+      sortDir = 'asc';
+    }
+  }
+
+  const queryParts = buildLoginHistoryQueryParts_(params.filters || {}, params.search && params.search.value);
+  queryParts.push('limit=' + Math.max(length, 10));
+  queryParts.push('offset=' + start);
+  queryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+
+  const response = supabaseRequest_(SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT + '?' + queryParts.join('&'), {
+    headers: { Prefer: 'count=exact' },
+    returnResponse: true
+  });
+  const rows = Array.isArray(response.data) ? response.data : [];
+  const total = parseContentRangeTotal_(response.headers);
+
+  return {
+    draw,
+    recordsTotal: total != null ? total : rows.length,
+    recordsFiltered: total != null ? total : rows.length,
+    data: rows.map(mapLoginHistoryRow_)
+  };
+}
+
+function getAllLoginHistoryForExport(filters, sessionToken, searchQuery) {
+  requireAdmin_(sessionToken);
+  const queryParts = buildLoginHistoryQueryParts_(filters || {}, searchQuery);
+  const rows = supabaseRequest_(SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT + '?' + queryParts.join('&')) || [];
+  const data = Array.isArray(rows) ? rows : [];
+  return data.map(mapLoginHistoryRow_);
+}
+
+function buildVehicleHistoryQueryParts_(filters, searchValue) {
+  const parts = ['select=' + encodeURIComponent('*')];
+  const fromIso = parseHistoryDateFilter_(filters && filters.dateFrom, false);
+  if (fromIso) parts.push('action_time=gte.' + encodeURIComponent(fromIso));
+  const toIso = parseHistoryDateFilter_(filters && filters.dateTo, true);
+  if (toIso) parts.push('action_time=lte.' + encodeURIComponent(toIso));
+
+  const contract = String(filters && filters.contractNo || '').trim();
+  if (contract) {
+    parts.push('contract_no=eq.' + encodeURIComponent(contract));
+  }
+
+  const company = String(filters && filters.company || '').trim();
+  if (company) {
+    parts.push('transportation_comp=eq.' + encodeURIComponent(company));
+  }
+
+  const sanitized = sanitizeHistorySearchTerm_(searchValue);
+  if (sanitized) {
+    const likeValue = `%${sanitized}%`;
+    const orConditions = [
+      `action_type.ilike.${likeValue}`,
+      `contract_no.ilike.${likeValue}`,
+      `truck_plate.ilike.${likeValue}`,
+      `driver_name.ilike.${likeValue}`,
+      `id_passport.ilike.${likeValue}`,
+      `phone_number.ilike.${likeValue}`,
+      `transportation_comp.ilike.${likeValue}`,
+      `subcontractor.ilike.${likeValue}`,
+      `created_by.ilike.${likeValue}`
+    ];
+    parts.push('or=' + encodeURIComponent('(' + orConditions.join(',') + ')'));
+  }
+
+  return parts;
+}
+
+function mapVehicleHistoryRow_(row) {
+  return {
+    action_type: toDisplayString_(row && row.action_type),
+    action_time: formatTimeForClient(row && row.action_time),
+    register_date: formatDateForClient(row && row.register_date),
+    contract_no: toDisplayString_(row && row.contract_no),
+    truck_plate: toDisplayString_(row && row.truck_plate),
+    country: toDisplayString_(row && row.country),
+    wheel: toDisplayString_(row && row.wheel),
+    trailer_plate: toDisplayString_(row && row.trailer_plate),
+    truck_weight: toDisplayString_(row && row.truck_weight),
+    pay_load: toDisplayString_(row && row.pay_load),
+    container_no1: toDisplayString_(row && row.container_no1),
+    container_no2: toDisplayString_(row && row.container_no2),
+    driver_name: toDisplayString_(row && row.driver_name),
+    id_passport: toDisplayString_(row && row.id_passport),
+    phone_number: toDisplayString_(row && row.phone_number),
+    destination_est: toDisplayString_(row && row.destination_est),
+    transportation_comp: toDisplayString_(row && row.transportation_comp),
+    subcontractor: toDisplayString_(row && row.subcontractor),
+    vehicle_status: toDisplayString_(row && row.vehicle_status),
+    registration_status: toDisplayString_(row && row.registration_status),
+    time: formatTimeForClient(row && row.time),
+    created_by: toDisplayString_(row && row.created_by),
+    created_at: formatTimeForClient(row && row.created_at)
+  };
+}
+
+function getVehicleRegistrationHistoryServerSide(params) {
+  params = params || {};
+  requireAdmin_(params.sessionToken);
+
+  const draw = parseInt(params.draw, 10) || 0;
+  const start = Math.max(parseInt(params.start, 10) || 0, 0);
+  let length = parseInt(params.length, 10);
+  if (!isFinite(length) || length <= 0) length = 50;
+
+  const columns = [
+    'action_type',
+    'action_time',
+    'register_date',
+    'contract_no',
+    'truck_plate',
+    'country',
+    'wheel',
+    'trailer_plate',
+    'truck_weight',
+    'pay_load',
+    'container_no1',
+    'container_no2',
+    'driver_name',
+    'id_passport',
+    'phone_number',
+    'destination_est',
+    'transportation_comp',
+    'subcontractor',
+    'vehicle_status',
+    'registration_status',
+    'time',
+    'created_by',
+    'created_at'
+  ];
+
+  let sortColumn = columns[1];
+  let sortDir = 'desc';
+  if (Array.isArray(params.order) && params.order.length) {
+    const orderInfo = params.order[0] || {};
+    const idx = parseInt(orderInfo.column, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < columns.length) {
+      sortColumn = columns[idx];
+    }
+    if (String(orderInfo.dir).toLowerCase() === 'asc') {
+      sortDir = 'asc';
+    }
+  }
+
+  const queryParts = buildVehicleHistoryQueryParts_(params.filters || {}, params.search && params.search.value);
+  queryParts.push('limit=' + Math.max(length, 10));
+  queryParts.push('offset=' + start);
+  queryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+
+  const response = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&'), {
+    headers: { Prefer: 'count=exact' },
+    returnResponse: true
+  });
+  const rows = Array.isArray(response.data) ? response.data : [];
+  const total = parseContentRangeTotal_(response.headers);
+
+  return {
+    draw,
+    recordsTotal: total != null ? total : rows.length,
+    recordsFiltered: total != null ? total : rows.length,
+    data: rows.map(mapVehicleHistoryRow_)
+  };
+}
+
+function getAllVehicleHistoryForExport(filters, sessionToken, searchQuery) {
+  requireAdmin_(sessionToken);
+  const queryParts = buildVehicleHistoryQueryParts_(filters || {}, searchQuery);
+  const rows = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  const data = Array.isArray(rows) ? rows : [];
+  return data.map(mapVehicleHistoryRow_);
+}
+
+function getHistoryFilterOptions(sessionToken) {
+  requireAdmin_(sessionToken);
+  const rows = fetchContractDataRows_(['contract_no', 'transportation_company', 'status']);
+  if (!rows || !rows.length) {
+    return { contracts: [], companies: [] };
+  }
+  const contracts = new Set();
+  const companies = new Set();
+  rows.forEach(function (row) {
+    const status = String(row.status == null ? '' : row.status).trim().toLowerCase();
+    if (status !== 'active') return;
+    const contract = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
+    if (contract) contracts.add(contract);
+    const company = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+    if (company) companies.add(company);
+  });
+  return {
+    contracts: Array.from(contracts).sort(),
+    companies: Array.from(companies).sort()
+  };
 }
 
 function createMessagePicker_(language) {
