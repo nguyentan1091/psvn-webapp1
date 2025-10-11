@@ -19,6 +19,7 @@
 let userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
 let inactivityTimer;
 let registeredVehicleTable, totalListTable, usersTable;
+let loginHistoryTable, vehicleHistoryTable;
 let wrResultTable, wrUnknownTable;
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
@@ -505,6 +506,9 @@ const translations = {
     "sidebar_weighing": "Trạm Cân",
     "sidebar_weighing_result": "Kết quả bốc hàng",
     "sidebar_account_parent": "Tài khoản",
+    "sidebar_history_parent": "Lịch sử",
+    "sidebar_login_history": "Lịch sử đăng nhập",
+    "sidebar_vehicle_history": "Lịch sử đăng ký xe mới",
     "sidebar_guide": "Hướng dẫn",
 
     // Contracts Page
@@ -635,7 +639,27 @@ const translations = {
     "no_data_export_message": "Không có dữ liệu để xuất file.",
     "edit_vehicle_title": "Chỉnh sửa thông tin xe",
     "edit_validation_message": "Vui lòng điền đầy đủ và đúng định dạng các trường bắt buộc.",
-    "loading_updating": "Đang cập nhật...",    
+    "loading_updating": "Đang cập nhật...",
+
+    // History Pages
+    "history_login_title": "Lịch sử đăng nhập",
+    "history_vehicle_title": "Lịch sử đăng ký xe mới",
+    "history_filter_date_from": "Từ ngày",
+    "history_filter_date_to": "Đến ngày",
+    "history_filter_contract": "Số hợp đồng",
+    "history_filter_company": "Đơn vị vận chuyển",
+    "history_filter_all": "Tất cả",
+    "history_col_occurred_at": "Thời điểm đăng nhập",
+    "history_col_outcome": "Kết quả",
+    "history_col_ip": "Địa chỉ IP",
+    "history_col_latitude": "Vĩ độ",
+    "history_col_longitude": "Kinh độ",
+    "history_col_accuracy": "Sai số (m)",
+    "history_col_user_agent": "User Agent",
+    "history_col_created_at": "Thời gian tạo",
+    "history_col_action_type": "Loại hành động",
+    "history_col_action_time": "Thời điểm hành động",
+    "history_col_created_by": "Người thao tác",
 
     // Total List Page
     "total_list_upload_header": "Thêm mới danh sách xe (Upload File)",
@@ -816,6 +840,9 @@ const translations = {
     "sidebar_weighing": "Weighing Station",
     "sidebar_weighing_result": "Weighing Results",
     "sidebar_account_parent": "Account",
+    "sidebar_history_parent": "History",
+    "sidebar_login_history": "Login history",
+    "sidebar_vehicle_history": "New vehicle registration history",
     "sidebar_guide": "Guide",
 
     // Contracts Page
@@ -907,6 +934,25 @@ const translations = {
     "delete_success_title": "Deleted!",
     "loading_deleting": "Deleting...",
     "loading_updating": "Updating...",
+    // History Pages
+    "history_login_title": "Login history",
+    "history_vehicle_title": "New vehicle registration history",
+    "history_filter_date_from": "From date",
+    "history_filter_date_to": "To date",
+    "history_filter_contract": "Contract No",
+    "history_filter_company": "Transportation company",
+    "history_filter_all": "All",
+    "history_col_occurred_at": "Login time",
+    "history_col_outcome": "Outcome",
+    "history_col_ip": "IP address",
+    "history_col_latitude": "Latitude",
+    "history_col_longitude": "Longitude",
+    "history_col_accuracy": "Accuracy (m)",
+    "history_col_user_agent": "User Agent",
+    "history_col_created_at": "Created at",
+    "history_col_action_type": "Action type",
+    "history_col_action_time": "Action time",
+    "history_col_created_by": "Operator",
     "edit_vehicle_title": "Edit vehicle information",
     "edit_validation_message": "Please complete all required fields with valid values.",    
     "register_contract_placeholder": "Enter or select Contract No",
@@ -1088,6 +1134,12 @@ function setLanguage(lang) {
     }
     if ($.fn.DataTable.isDataTable('#usersTable')) {
         initUsersTable();
+    }
+    if ($.fn.DataTable.isDataTable('#login-history-table')) {
+        initLoginHistoryPage();
+    }
+    if ($.fn.DataTable.isDataTable('#vehicle-history-table')) {
+        initVehicleHistoryPage();
     }
     
     if (typeof xpplWeighingTable !== 'undefined' && $.fn.DataTable.isDataTable('#xppl-weighing-table')) {
@@ -1391,6 +1443,8 @@ function loadDashboard() {
             hideMenuItem('Page_Contract');
             hideMenuItem('Page_XuLyXPPL');
             hideMenuItem('XPPL-WeighingStation');
+            hideMenuItem('Page_HistoryLogin');
+            hideMenuItem('Page_HistoryVehicle');
             hideMenuItem('Page_Guide');
             $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
             const viewLink = $('#sidebar-wrapper .list-group-item[data-page="Page_View"]');
@@ -1400,9 +1454,13 @@ function loadDashboard() {
             hideMenuItem('Page_Register');
             hideMenuItem('Page_Contract');
             hideMenuItem('Page_XuLyXPPL');
+            hideMenuItem('Page_HistoryLogin');
+            hideMenuItem('Page_HistoryVehicle');
             $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
           } else if (role !== 'admin') {
             hideMenuItem('Page_XuLyXPPL');
+            hideMenuItem('Page_HistoryLogin');
+            hideMenuItem('Page_HistoryVehicle');
             const active = $('#sidebar-wrapper .list-group-item[data-page].active');
             if (active.data('page') === 'Page_XuLyXPPL') {
               active.removeClass('active');
@@ -1463,19 +1521,29 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
       return;
     }
 
+    if ((pageName === 'Page_HistoryLogin' || pageName === 'Page_HistoryVehicle') && !hasAnyRole(['admin'])) {
+      if (!isInitialLoad) Swal.close();
+      Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin.', 'info');
+      $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
+      loadPage('Page_View', 'view_header', true);
+      return;
+    }
+
     google.script.run
         .withSuccessHandler(html => {
             $('#main-content').html(html);
             switch (pageName) {
-                case 'Page_Guide': initGuidePage(); break;              
+                case 'Page_Guide': initGuidePage(); break;
                 case 'Page_Register': initRegisterPage(); break;
                 case 'Page_View': initViewPage(); break;
                 case 'Page_TotalList': initTotalListPage(); break;
                 case 'Page_Account': initAccountPage(); break;
                 case 'Page_Contract': initContractPage(); break;
                 case 'XPPL-WeighingStation': initXPPLWeighingStationPage(); break;
-                case 'Page_WeighResult': initWeighResultPage(); break;                
+                case 'Page_WeighResult': initWeighResultPage(); break;
                 case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
+                case 'Page_HistoryLogin': initLoginHistoryPage(); break;
+                case 'Page_HistoryVehicle': initVehicleHistoryPage(); break;
 }
             setLanguage(currentLang); // Dịch nội dung trang mới
             if (!isInitialLoad) Swal.close();
@@ -1512,6 +1580,12 @@ function setupDashboardListeners() {
         }
         if ($.fn.DataTable.isDataTable('#totalListTable')) {
             $('#totalListTable').DataTable().columns.adjust();
+        }
+        if ($.fn.DataTable.isDataTable('#login-history-table')) {
+            $('#login-history-table').DataTable().columns.adjust();
+        }
+        if ($.fn.DataTable.isDataTable('#vehicle-history-table')) {
+            $('#vehicle-history-table').DataTable().columns.adjust();
         }
       }, 300);
     });
@@ -2595,18 +2669,21 @@ function initializeDataTable(config) {
         tableId,
         columns,
         ajaxFunction,
+        getExtraParams = () => ({}),
         searchControl,
         lengthControl,
         deleteButton,
         selectAllCheckbox,
-        enableSelect = true
+        enableSelect = true,
+        pageLength = 50,
+        order: initialOrder
     } = config;
 
     if ($.fn.DataTable.isDataTable(`#${tableId}`)) {
         $(`#${tableId}`).DataTable().destroy();
     }
 
-    const table = $(`#${tableId}`).DataTable({
+    const options = {
         processing: true,
         serverSide: true,
         ajax: function(data, callback, settings) {
@@ -2617,7 +2694,7 @@ function initializeDataTable(config) {
                 search: data.search,
                 order: data.order,
                 sessionToken: userSession.token,
-                ...config.getExtraParams()
+                ...getExtraParams()
             };
             ajaxFunction(params, callback);
         },
@@ -2630,7 +2707,7 @@ function initializeDataTable(config) {
         deferRender: true,
         scrollX: true,
         select: enableSelect ? { style: 'multi', selector: 'td:first-child .row-checkbox' } : false,
-        pageLength: 50,
+        pageLength: pageLength,
         language: {
             "processing": translations[currentLang].dt_processing || "Đang xử lý...",
             "lengthMenu": `${translations[currentLang].show_label || "Hiển thị"} _MENU_ ${translations[currentLang].entries_label || "dòng"}`,
@@ -2649,7 +2726,13 @@ function initializeDataTable(config) {
         drawCallback: function(settings) {
             setTimeout(() => $(this.api().table().node()).DataTable().columns.adjust(), 50);
         }
-    });
+    };
+
+    if (Array.isArray(initialOrder) && initialOrder.length) {
+        options.order = initialOrder;
+    }
+
+    const table = $(`#${tableId}`).DataTable(options);
 
     function debounce(func, delay) {
         let timeout;
@@ -3133,6 +3216,353 @@ function handleExportExcel() {
 }
 
 
+function getLoginHistoryFilters() {
+  return {
+    dateFrom: ($('#login-history-date-from').val() || '').trim(),
+    dateTo: ($('#login-history-date-to').val() || '').trim(),
+    contractNo: ($('#login-history-contract').val() || '').trim(),
+    company: ($('#login-history-company').val() || '').trim()
+  };
+}
+
+function getVehicleHistoryFilters() {
+  return {
+    dateFrom: ($('#vehicle-history-date-from').val() || '').trim(),
+    dateTo: ($('#vehicle-history-date-to').val() || '').trim(),
+    contractNo: ($('#vehicle-history-contract').val() || '').trim(),
+    company: ($('#vehicle-history-company').val() || '').trim()
+  };
+}
+
+function populateHistorySelect($select, values, previousValue) {
+  if (!$select || !$select.length) return;
+  const t = translations[currentLang];
+  const normalizedValues = Array.isArray(values)
+    ? values.map(v => String(v == null ? '' : v).trim()).filter(Boolean)
+    : [];
+
+  const prev = String(previousValue == null ? '' : previousValue).trim();
+
+  const allOptionText = (t && t.history_filter_all) || 'Tất cả';
+  $select.empty();
+  $select.append($('<option>').val('').attr('data-translate', 'history_filter_all').text(allOptionText));
+
+  normalizedValues.forEach(val => {
+    $select.append($('<option>').val(val).text(val));
+  });
+
+  if (prev && normalizedValues.includes(prev)) {
+    $select.val(prev);
+  } else {
+    $select.val('');
+  }
+  $select.prop('disabled', false);
+}
+
+function loadHistoryFilterOptions(contractSelector, companySelector) {
+  const $contract = $(contractSelector);
+  const $company = $(companySelector);
+  if (!$contract.length || !$company.length) return;
+
+  const prevContract = $contract.val();
+  const prevCompany = $company.val();
+
+  $contract.prop('disabled', true);
+  $company.prop('disabled', true);
+
+  populateHistorySelect($contract, [], prevContract);
+  populateHistorySelect($company, [], prevCompany);
+  $contract.prop('disabled', true);
+  $company.prop('disabled', true);
+
+  google.script.run
+    .withSuccessHandler(res => {
+      const contracts = res && Array.isArray(res.contracts) ? res.contracts : [];
+      const companies = res && Array.isArray(res.companies) ? res.companies : [];
+      populateHistorySelect($contract, contracts, prevContract);
+      populateHistorySelect($company, companies, prevCompany);
+    })
+    .withFailureHandler(err => {
+      populateHistorySelect($contract, [], '');
+      populateHistorySelect($company, [], '');
+      showError(err);
+    })
+    .getHistoryFilterOptions(userSession.token);
+}
+
+function buildHistoryExportFileName(prefix, filters) {
+  const safePrefix = (prefix || 'History').replace(/[\/:*?"<>|]/g, '_');
+  const dateParts = [];
+  if (filters && typeof filters === 'object') {
+    const from = String(filters.dateFrom == null ? '' : filters.dateFrom).trim();
+    const to = String(filters.dateTo == null ? '' : filters.dateTo).trim();
+    if (from) dateParts.push(from);
+    if (to && to !== from) dateParts.push(to);
+  }
+  const suffix = dateParts.length ? dateParts.join('_') : new Date().toISOString().slice(0, 10);
+  const safeSuffix = suffix.replace(/[\/:*?"<>|]/g, '-');
+  return `${safePrefix}_${safeSuffix}.xlsx`;
+}
+
+function exportHistoryData({ table, exportButtonSelector, serverMethod, filters, sheetName, fileNamePrefix }) {
+  if (!table) return;
+  const t = translations[currentLang];
+  const colDefs = table.settings().init().columns || [];
+  const visibleIdx = table.columns({ visible: true, order: 'index' }).indexes().toArray();
+
+  if (!visibleIdx.length) {
+    Swal.fire(
+      (t && t.wr_no_export_columns_title) || 'Không có cột để xuất',
+      (t && t.wr_no_export_columns_message) || 'Vui lòng hiển thị ít nhất 1 cột trước khi xuất Excel.',
+      'info'
+    );
+    return;
+  }
+
+  const headers = visibleIdx.map(i => $(table.column(i).header()).text().trim());
+  const keys = visibleIdx.map(i => {
+    const def = colDefs[i] || {};
+    return typeof def.data === 'string' ? def.data : null;
+  });
+
+  const searchVal = table.search() || '';
+  const $btn = $(exportButtonSelector);
+  $btn.prop('disabled', true);
+  showLoading((t && t.loading_preparing_data) || 'Đang chuẩn bị dữ liệu...');
+
+  const onComplete = () => {
+    Swal.close();
+    $btn.prop('disabled', false);
+  };
+
+  const run = google.script.run
+    .withSuccessHandler(rows => {
+      onComplete();
+      if (!Array.isArray(rows) || !rows.length) {
+        Swal.fire((t && t.no_data_title) || 'Không có dữ liệu', (t && t.no_data_export_message) || 'Không có dữ liệu để xuất.', 'info');
+        return;
+      }
+
+      const aoa = [headers];
+      rows.forEach(row => {
+        aoa.push(keys.map(key => {
+          if (!key) return '';
+          const value = row && Object.prototype.hasOwnProperty.call(row, key) ? row[key] : '';
+          return value == null ? '' : value;
+        }));
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      (function applyWorksheetStyling() {
+        if (!ws['!ref']) return;
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const borderSide = { style: 'thin', color: { rgb: '000000' } };
+        const headerRow = range.s.r;
+        for (let r = range.s.r; r <= range.e.r; ++r) {
+          for (let c = range.s.c; c <= range.e.c; ++c) {
+            const ref = XLSX.utils.encode_cell({ r, c });
+            const cell = ws[ref] || (ws[ref] = { t: 's', v: '' });
+            cell.s = cell.s || {};
+            cell.s.border = { top: borderSide, right: borderSide, bottom: borderSide, left: borderSide };
+            if (r === headerRow) {
+              cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+            }
+          }
+        }
+
+        const colCount = aoa[0] ? aoa[0].length : 0;
+        if (!colCount) return;
+        const colWidths = [];
+        for (let idx = 0; idx < colCount; ++idx) {
+          let maxLen = 0;
+          aoa.forEach(row => {
+            const text = row[idx] == null ? '' : String(row[idx]);
+            text.split(/
+?
+/).forEach(part => {
+              if (part.length > maxLen) maxLen = part.length;
+            });
+          });
+          const width = Math.min(Math.max(maxLen + 2, 10), 60);
+          colWidths.push({ wch: width });
+        }
+        ws['!cols'] = colWidths;
+      })();
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName || 'History');
+      const fileName = buildHistoryExportFileName(fileNamePrefix || 'History', filters);
+      XLSX.writeFile(wb, fileName);
+    })
+    .withFailureHandler(err => {
+      onComplete();
+      showError(err);
+    });
+
+  if (serverMethod === 'getAllLoginHistoryForExport') {
+    run.getAllLoginHistoryForExport(filters, userSession.token, searchVal);
+  } else if (serverMethod === 'getAllVehicleHistoryForExport') {
+    run.getAllVehicleHistoryForExport(filters, userSession.token, searchVal);
+  } else {
+    onComplete();
+  }
+}
+
+function initLoginHistoryPage() {
+  ensureVietnamTime();
+  const now = typeof getVietnamNowClient === 'function' ? getVietnamNowClient() : new Date();
+  const todayIso = typeof formatDateInput === 'function' ? formatDateInput(now) : new Date().toISOString().slice(0, 10);
+
+  $('#login-history-date-from').val(todayIso);
+  $('#login-history-date-to').val(todayIso);
+
+  loadHistoryFilterOptions('#login-history-contract', '#login-history-company');
+
+  const t = translations[currentLang];
+  const columns = [
+    { data: 'occurred_at', title: t.history_col_occurred_at || 'Thời điểm đăng nhập' },
+    { data: 'username', title: t.col_username || 'Tên đăng nhập' },
+    { data: 'outcome', title: t.history_col_outcome || 'Kết quả' },
+    { data: 'ip', title: t.history_col_ip || 'Địa chỉ IP' },
+    { data: 'latitude', title: t.history_col_latitude || 'Vĩ độ' },
+    { data: 'longitude', title: t.history_col_longitude || 'Kinh độ' },
+    { data: 'accuracy_m', title: t.history_col_accuracy || 'Sai số (m)' },
+    { data: 'user_agent', title: t.history_col_user_agent || 'User Agent' },
+    { data: 'created_at', title: t.history_col_created_at || 'Thời gian tạo' }
+  ];
+
+  loginHistoryTable = initializeDataTable({
+    tableId: 'login-history-table',
+    columns,
+    ajaxFunction: (params, callback) => {
+      google.script.run
+        .withSuccessHandler(json => callback(json))
+        .withFailureHandler(showError)
+        .getLoginHistoryServerSide(params);
+    },
+    getExtraParams: () => ({ filters: getLoginHistoryFilters() }),
+    searchControl: '#login-history-search',
+    lengthControl: '#login-history-length',
+    enableSelect: false,
+    pageLength: 25,
+    order: [[0, 'desc']]
+  });
+
+  $('#login-history-length').val('25');
+  $('#login-history-search').val('');
+
+  $('#login-history-date-from, #login-history-date-to, #login-history-contract, #login-history-company')
+    .off('.history')
+    .on('change.history', function () {
+      if (loginHistoryTable) loginHistoryTable.ajax.reload();
+    });
+
+  $('#login-history-reload')
+    .off('.history')
+    .on('click.history', function (e) {
+      e.preventDefault();
+      if (loginHistoryTable) loginHistoryTable.ajax.reload(null, false);
+    });
+
+  $('#login-history-export')
+    .off('.history')
+    .on('click.history', function (e) {
+      e.preventDefault();
+      exportHistoryData({
+        table: loginHistoryTable,
+        exportButtonSelector: '#login-history-export',
+        serverMethod: 'getAllLoginHistoryForExport',
+        filters: getLoginHistoryFilters(),
+        sheetName: 'LoginHistory',
+        fileNamePrefix: 'LoginHistory'
+      });
+    });
+}
+
+function initVehicleHistoryPage() {
+  ensureVietnamTime();
+  const now = typeof getVietnamNowClient === 'function' ? getVietnamNowClient() : new Date();
+  const todayIso = typeof formatDateInput === 'function' ? formatDateInput(now) : new Date().toISOString().slice(0, 10);
+
+  $('#vehicle-history-date-from').val(todayIso);
+  $('#vehicle-history-date-to').val(todayIso);
+
+  loadHistoryFilterOptions('#vehicle-history-contract', '#vehicle-history-company');
+
+  const t = translations[currentLang];
+  const columns = [
+    { data: 'action_type', title: t.history_col_action_type || 'Loại hành động' },
+    { data: 'action_time', title: t.history_col_action_time || 'Thời điểm hành động' },
+    { data: 'register_date', title: t.col_register_date || 'Ngày đăng ký' },
+    { data: 'contract_no', title: t.col_contract_no || 'Số hợp đồng' },
+    { data: 'truck_plate', title: t.col_truck_plate || 'Biển số xe' },
+    { data: 'country', title: t.col_country || 'Quốc gia' },
+    { data: 'wheel', title: t.col_wheel || 'Số bánh' },
+    { data: 'trailer_plate', title: t.col_trailer_plate || 'Biển số Mooc' },
+    { data: 'truck_weight', title: t.col_truck_weight || 'Trọng lượng xe' },
+    { data: 'pay_load', title: t.col_payload || 'Tải trọng xe' },
+    { data: 'container_no1', title: t.col_container1 || 'Container 1' },
+    { data: 'container_no2', title: t.col_container2 || 'Container 2' },
+    { data: 'driver_name', title: t.col_driver_name || 'Tên lái xe' },
+    { data: 'id_passport', title: t.col_id_passport || 'Số hộ chiếu' },
+    { data: 'phone_number', title: t.col_phone_number || 'Số điện thoại' },
+    { data: 'destination_est', title: t.col_destination || 'Điểm trả hàng dự kiến' },
+    { data: 'transportation_comp', title: t.col_transport_company || 'Đơn vị vận chuyển' },
+    { data: 'subcontractor', title: t.col_subcontractor || 'Nhà thầu phụ' },
+    { data: 'vehicle_status', title: t.col_vehicle_status || 'Tình trạng xe' },
+    { data: 'registration_status', title: t.col_registration_status || 'Trạng thái đăng ký' },
+    { data: 'time', title: t.col_time || 'Thời gian đăng ký' },
+    { data: 'created_by', title: t.history_col_created_by || 'Người thao tác' },
+    { data: 'created_at', title: t.history_col_created_at || 'Thời gian tạo' }
+  ];
+
+  vehicleHistoryTable = initializeDataTable({
+    tableId: 'vehicle-history-table',
+    columns,
+    ajaxFunction: (params, callback) => {
+      google.script.run
+        .withSuccessHandler(json => callback(json))
+        .withFailureHandler(showError)
+        .getVehicleRegistrationHistoryServerSide(params);
+    },
+    getExtraParams: () => ({ filters: getVehicleHistoryFilters() }),
+    searchControl: '#vehicle-history-search',
+    lengthControl: '#vehicle-history-length',
+    enableSelect: false,
+    pageLength: 25,
+    order: [[1, 'desc']]
+  });
+
+  $('#vehicle-history-length').val('25');
+  $('#vehicle-history-search').val('');
+
+  $('#vehicle-history-date-from, #vehicle-history-date-to, #vehicle-history-contract, #vehicle-history-company')
+    .off('.vhistory')
+    .on('change.vhistory', function () {
+      if (vehicleHistoryTable) vehicleHistoryTable.ajax.reload();
+    });
+
+  $('#vehicle-history-reload')
+    .off('.vhistory')
+    .on('click.vhistory', function (e) {
+      e.preventDefault();
+      if (vehicleHistoryTable) vehicleHistoryTable.ajax.reload(null, false);
+    });
+
+  $('#vehicle-history-export')
+    .off('.vhistory')
+    .on('click.vhistory', function (e) {
+      e.preventDefault();
+      exportHistoryData({
+        table: vehicleHistoryTable,
+        exportButtonSelector: '#vehicle-history-export',
+        serverMethod: 'getAllVehicleHistoryForExport',
+        filters: getVehicleHistoryFilters(),
+        sheetName: 'VehicleHistory',
+        fileNamePrefix: 'VehicleHistory'
+      });
+    });
+}
 
 
 function handleDeleteSelected() {
