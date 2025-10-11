@@ -1,0 +1,61 @@
+<div class="card registered-vehicles-card history-card">
+  <div class="card-header registered-vehicles-card__header">
+    <div class="registered-vehicles-card__icon">
+      <i class="fas fa-truck-loading"></i>
+    </div>
+    <div class="registered-vehicles-card__titles">
+      <h3 class="registered-vehicles-card__title mb-1" data-translate="history_vehicle_title">Lịch sử đăng ký xe mới</h3>
+      <p class="registered-vehicles-card__subtitle mb-0" data-translate="history_vehicle_subtitle">Theo dõi lịch sử thao tác đăng ký xe</p>
+    </div>
+  </div>
+  <div class="card-body registered-vehicles-card__body">
+    <div class="view-toolbar mb-4 history-toolbar">
+      <div class="view-toolbar__filters history-toolbar__filters">
+        <div class="view-filter history-filter">
+          <label class="form-label mb-1" for="vehicle-history-date" data-translate="history_filter_date">Ngày</label>
+          <input type="date" id="vehicle-history-date" class="form-control form-control-sm" />
+        </div>
+        <div class="view-filter history-filter">
+          <label class="form-label mb-1" for="vehicle-history-contract" data-translate="history_filter_contract">Số hợp đồng</label>
+          <select id="vehicle-history-contract" class="form-select form-select-sm">
+            <option value="" data-translate="history_filter_contract_all">Tất cả hợp đồng</option>
+          </select>
+        </div>
+        <div class="view-filter history-filter">
+          <label class="form-label mb-1" for="vehicle-history-company" data-translate="history_filter_company">Đơn vị vận chuyển</label>
+          <select id="vehicle-history-company" class="form-select form-select-sm">
+            <option value="" data-translate="history_filter_company_all">Tất cả đơn vị</option>
+          </select>
+        </div>
+      </div>
+      <div class="history-toolbar__actions">
+        <div class="input-group input-group-sm history-search">
+          <span class="input-group-text"><i class="fas fa-search"></i></span>
+          <input type="text" id="vehicle-history-search" class="form-control" placeholder="Tìm kiếm..." data-translate-placeholder="search_in_table_placeholder" />
+        </div>
+        <div class="btn-group ms-3">
+          <button id="vehicle-history-export" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i> <span data-translate="history_export_button">Xuất Excel</span></button>
+          <button id="vehicle-history-reload" class="btn btn-secondary btn-sm"><i class="fas fa-sync-alt me-1"></i> <span data-translate="history_reload_button">Tải lại</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="view-table-controls history-table-controls">
+      <div class="dataTables_length">
+        <label class="mb-0">
+          <span data-translate="show_label">Hiển thị</span>
+          <select id="vehicle-history-page-length" class="form-select form-select-sm d-inline-block w-auto">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+          <span data-translate="entries_label">dòng</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="table-responsive mt-3">
+      <table id="vehicleHistoryTable" class="table table-bordered table-striped" style="width: 100%;"></table>
+    </div>
+  </div>
+</div>
