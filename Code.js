@@ -106,6 +106,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const SUPABASE_APP_USERS_ENDPOINT = '/rest/v1/app_users';
 const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
 const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
+const SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT = '/rest/v1/history_vehicle_registration';
 const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
 const CONTRACT_DATA_SELECT_FIELDS = [
   'id',
@@ -524,6 +525,16 @@ function formatSupabaseDateTime_(value) {
   } catch (e) {
     return dt.toISOString();
   }
+}
+
+function buildSupabaseDateRange_(value) {
+  const normalized = normalizeDate(value);
+  if (!normalized) return null;
+  const timezone = Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh';
+  const start = Utilities.formatDate(normalized, timezone, "yyyy-MM-dd'T'00:00:00XXX");
+  const endDate = new Date(normalized.getTime() + 24 * 60 * 60 * 1000);
+  const end = Utilities.formatDate(endDate, timezone, "yyyy-MM-dd'T'00:00:00XXX");
+  return { start: start, end: end };
 }
 
 // =============== DATE/TIME NORMALIZATION HELPERS ===============
@@ -1638,6 +1649,80 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   };  
 }
 
+
+function processObjectsForDataTable_(params, rows, options) {
+  params = params || {};
+  const draw = parseInt(params.draw, 10) || 0;
+  const start = Math.max(parseInt(params.start, 10) || 0, 0);
+  const length = Math.max(parseInt(params.length, 10) || 0, 0);
+  const searchValue = params.search && typeof params.search.value === 'string'
+    ? params.search.value.toLowerCase().trim()
+    : '';
+  const searchKeys = (options && options.searchKeys) || [];
+  const sortKeyMap = (options && options.sortKeyMap) || {};
+  const defaultSortKey = options && options.defaultSortKey;
+
+  let filtered = Array.isArray(rows) ? rows.slice() : [];
+
+  if (searchValue) {
+    filtered = filtered.filter(function (row) {
+      if (!row || typeof row !== 'object') return false;
+      for (let i = 0; i < searchKeys.length; i++) {
+        const key = searchKeys[i];
+        const value = row[key];
+        if (value == null) continue;
+        if (String(value).toLowerCase().indexOf(searchValue) !== -1) return true;
+      }
+      return false;
+    });
+  }
+
+  const recordsTotal = Array.isArray(rows) ? rows.length : 0;
+  const recordsFiltered = filtered.length;
+
+  const orderInfo = Array.isArray(params.order) && params.order.length ? params.order[0] : null;
+  const columnDefs = Array.isArray(params.columns) ? params.columns : [];
+  if (orderInfo) {
+    const columnIndex = orderInfo.column;
+    const direction = orderInfo.dir === 'desc' ? -1 : 1;
+    const columnName = columnDefs[columnIndex] && columnDefs[columnIndex].data;
+    const sortKey = sortKeyMap[columnName] || columnName;
+    if (sortKey) {
+      filtered = filtered.slice().sort(function (a, b) {
+        const va = a[sortKey];
+        const vb = b[sortKey];
+        if (va == null && vb == null) return 0;
+        if (va == null) return -1 * direction;
+        if (vb == null) return 1 * direction;
+        if (va < vb) return -1 * direction;
+        if (va > vb) return 1 * direction;
+        return 0;
+      });
+    }
+  } else if (defaultSortKey) {
+    filtered = filtered.slice().sort(function (a, b) {
+      const va = a[defaultSortKey];
+      const vb = b[defaultSortKey];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (va < vb) return 1;
+      if (va > vb) return -1;
+      return 0;
+    });
+  }
+
+  const data = length > 0 ? filtered.slice(start, start + length) : filtered.slice();
+
+  return {
+    draw: draw,
+    recordsTotal: recordsTotal,
+    recordsFiltered: recordsFiltered,
+    data: data
+  };
+}
+
+
 function getRegisteredDataServerSide(params) {
   return processServerSide(params, DATA_SHEET, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
 }
@@ -1678,6 +1763,282 @@ function getRegisteredContractOptions(filter, sessionToken) {
 function getTotalListDataServerSide(params) {
   return processServerSide(params, TRUCK_LIST_TOTAL_SHEET, HEADERS_TOTAL_LIST, HEADERS_TOTAL_LIST.indexOf('Register Date'));
 }
+
+
+function getVehicleHistoryFilterOptions(filter, sessionToken) {
+  validateSession(sessionToken);
+  const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
+  const isoDate = toSupabaseDateString_(dateString);
+
+  const queryParts = [
+    'select=' + encodeURIComponent(['contract_no', 'transportation_comp', 'register_date'].join(',')),
+    'limit=2000'
+  ];
+  if (isoDate) {
+    queryParts.push('register_date=eq.' + encodeURIComponent(isoDate));
+  }
+
+  let rows;
+  try {
+    rows = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  } catch (err) {
+    Logger.log('getVehicleHistoryFilterOptions error: ' + err);
+    rows = [];
+  }
+
+  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
+  const contracts = new Set();
+  const companies = new Set();
+
+  if (Array.isArray(rows)) {
+    rows.forEach(row => {
+      const contract = normalize(row.contract_no);
+      if (contract) contracts.add(contract);
+      const company = normalize(row.transportation_comp || row.transportation_company);
+      if (company) companies.add(company);
+    });
+  }
+
+  return {
+    contracts: Array.from(contracts).sort(),
+    companies: Array.from(companies).sort()
+  };
+}
+
+function getLoginHistoryDataServerSide(params) {
+  validateSession(params && params.sessionToken);
+  const dateFilter = params && params.dateString ? String(params.dateString).trim() : '';
+  const contractFilter = params && params.contractNo ? String(params.contractNo).trim() : '';
+  const companyFilter = params && params.transportationCompany ? String(params.transportationCompany).trim() : '';
+
+  const queryParts = [
+    'select=' + encodeURIComponent([
+      'id',
+      'occurred_at',
+      'username',
+      'outcome',
+      'ip',
+      'latitude',
+      'longitude',
+      'user_agent',
+      'created_at',
+      'contract_no',
+      'transportation_comp'
+    ].join(',')),
+    'order=occurred_at.desc',
+    'limit=1000'
+  ];
+
+  if (dateFilter) {
+    const range = buildSupabaseDateRange_(dateFilter);
+    if (range) {
+      queryParts.push('occurred_at=gte.' + encodeURIComponent(range.start));
+      queryParts.push('occurred_at=lt.' + encodeURIComponent(range.end));
+    }
+  }
+  if (contractFilter) {
+    queryParts.push('contract_no=eq.' + encodeURIComponent(contractFilter));
+  }
+  if (companyFilter) {
+    queryParts.push('transportation_comp=eq.' + encodeURIComponent(companyFilter));
+  }
+
+  let rows;
+  try {
+    rows = supabaseRequest_(SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT + '?' + queryParts.join('&')) || [];
+  } catch (err) {
+    Logger.log('getLoginHistoryDataServerSide error: ' + err);
+    rows = [];
+  }
+
+  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
+  const contractNorm = normalize(contractFilter);
+  const companyNorm = normalize(companyFilter);
+
+  let mapped = [];
+  if (Array.isArray(rows)) {
+    mapped = rows.map(row => {
+      const occurredAt = parseSupabaseTimestamp_(row.occurred_at);
+      const createdAt = parseSupabaseTimestamp_(row.created_at);
+      const contract = normalize(row.contract_no);
+      const company = normalize(row.transportation_comp || row.transportation_company);
+      return {
+        OccurredAt: formatSupabaseDateTime_(row.occurred_at),
+        OccurredAtSort: occurredAt ? occurredAt.getTime() : 0,
+        Username: normalize(row.username),
+        Outcome: normalize(row.outcome),
+        IPAddress: normalize(row.ip),
+        Latitude: row && row.latitude != null ? row.latitude : '',
+        Longitude: row && row.longitude != null ? row.longitude : '',
+        UserAgent: normalize(row.user_agent),
+        CreatedAt: formatSupabaseDateTime_(row.created_at),
+        CreatedAtSort: createdAt ? createdAt.getTime() : 0,
+        ContractNo: contract,
+        TransportationCompany: company
+      };
+    });
+  }
+
+  if (contractNorm) {
+    mapped = mapped.filter(item => normalize(item.ContractNo) === contractNorm);
+  }
+  if (companyNorm) {
+    mapped = mapped.filter(item => normalize(item.TransportationCompany) === companyNorm);
+  }
+
+  return processObjectsForDataTable_(params, mapped, {
+    searchKeys: ['OccurredAt', 'Username', 'Outcome', 'IPAddress', 'Latitude', 'Longitude', 'UserAgent', 'CreatedAt', 'ContractNo', 'TransportationCompany'],
+    sortKeyMap: { OccurredAt: 'OccurredAtSort', CreatedAt: 'CreatedAtSort' },
+    defaultSortKey: 'OccurredAtSort'
+  });
+}
+
+function getVehicleRegistrationHistoryServerSide(params) {
+  validateSession(params && params.sessionToken);
+  const dateFilter = params && params.dateString ? String(params.dateString).trim() : '';
+  const contractFilter = params && params.contractNo ? String(params.contractNo).trim() : '';
+  const companyFilter = params && params.transportationCompany ? String(params.transportationCompany).trim() : '';
+
+  const queryParts = [
+    'select=' + encodeURIComponent([
+      'id',
+      'action_type',
+      'action_time',
+      'register_date',
+      'contract_no',
+      'truck_plate',
+      'country',
+      'wheel',
+      'trailer_plate',
+      'truck_weight',
+      'pay_load',
+      'container_no1',
+      'container_no2',
+      'driver_name',
+      'id_passport',
+      'phone_number',
+      'destination_est',
+      'transportation_comp',
+      'subcontractor',
+      'vehicle_status',
+      'registration_status',
+      'time',
+      'created_at',
+      'created_by'
+    ].join(',')),
+    'order=action_time.desc',
+    'limit=1000'
+  ];
+
+  if (dateFilter) {
+    const isoDate = toSupabaseDateString_(dateFilter);
+    if (isoDate) {
+      queryParts.push('register_date=eq.' + encodeURIComponent(isoDate));
+    }
+  }
+  if (contractFilter) {
+    queryParts.push('contract_no=eq.' + encodeURIComponent(contractFilter));
+  }
+  if (companyFilter) {
+    queryParts.push('transportation_comp=eq.' + encodeURIComponent(companyFilter));
+  }
+
+  let rows;
+  try {
+    rows = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  } catch (err) {
+    Logger.log('getVehicleRegistrationHistoryServerSide error: ' + err);
+    rows = [];
+  }
+
+  const normalize = value => String(value == null ? '' : value).replace(/^'+/, '').trim();
+  const contractNorm = normalize(contractFilter);
+  const companyNorm = normalize(companyFilter);
+
+  let mapped = [];
+  if (Array.isArray(rows)) {
+    mapped = rows.map(row => {
+      const actionTime = parseSupabaseTimestamp_(row.action_time);
+      const registerDate = parseSupabaseTimestamp_(row.register_date);
+      const timeSlot = parseSupabaseTimestamp_(row.time);
+      const createdAt = parseSupabaseTimestamp_(row.created_at);
+      const contract = normalize(row.contract_no);
+      const company = normalize(row.transportation_comp || row.transportation_company);
+      return {
+        ActionType: normalize(row.action_type),
+        ActionTime: formatSupabaseDateTime_(row.action_time),
+        ActionTimeSort: actionTime ? actionTime.getTime() : 0,
+        RegisterDate: formatDateForClient(row.register_date),
+        RegisterDateSort: registerDate ? registerDate.getTime() : 0,
+        ContractNo: contract,
+        TruckPlate: normalize(row.truck_plate),
+        Country: normalize(row.country),
+        Wheels: row && row.wheel != null ? row.wheel : '',
+        TrailerPlate: normalize(row.trailer_plate),
+        TruckWeight: row && row.truck_weight != null ? row.truck_weight : '',
+        Payload: row && row.pay_load != null ? row.pay_load : '',
+        Container1: normalize(row.container_no1),
+        Container2: normalize(row.container_no2),
+        DriverName: normalize(row.driver_name),
+        IDPassport: normalize(row.id_passport),
+        PhoneNumber: normalize(row.phone_number),
+        Destination: normalize(row.destination_est),
+        TransportationCompany: company,
+        Subcontractor: normalize(row.subcontractor),
+        VehicleStatus: normalize(row.vehicle_status),
+        RegistrationStatus: normalize(row.registration_status),
+        TimeSlot: formatTimeForClient(row.time),
+        TimeSlotSort: timeSlot ? timeSlot.getTime() : 0,
+        CreatedAt: formatSupabaseDateTime_(row.created_at),
+        CreatedAtSort: createdAt ? createdAt.getTime() : 0,
+        CreatedBy: normalize(row.created_by)
+      };
+    });
+  }
+
+  if (contractNorm) {
+    mapped = mapped.filter(item => normalize(item.ContractNo) === contractNorm);
+  }
+  if (companyNorm) {
+    mapped = mapped.filter(item => normalize(item.TransportationCompany) === companyNorm);
+  }
+
+  return processObjectsForDataTable_(params, mapped, {
+    searchKeys: [
+      'ActionType',
+      'ActionTime',
+      'RegisterDate',
+      'ContractNo',
+      'TruckPlate',
+      'Country',
+      'Wheels',
+      'TrailerPlate',
+      'TruckWeight',
+      'Payload',
+      'Container1',
+      'Container2',
+      'DriverName',
+      'IDPassport',
+      'PhoneNumber',
+      'Destination',
+      'TransportationCompany',
+      'Subcontractor',
+      'VehicleStatus',
+      'RegistrationStatus',
+      'TimeSlot',
+      'CreatedAt',
+      'CreatedBy'
+    ],
+    sortKeyMap: {
+      ActionTime: 'ActionTimeSort',
+      RegisterDate: 'RegisterDateSort',
+      TimeSlot: 'TimeSlotSort',
+      CreatedAt: 'CreatedAtSort'
+    },
+    defaultSortKey: 'ActionTimeSort'
+  });
+}
+
 
 /** =========================
  *  XPPL — OPTIONS cho dropdown
