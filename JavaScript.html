@@ -5947,6 +5947,50 @@ function initWeighResultPage() {
   if (isAdmin) $('#wr-unknown-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrUnknownTable, 'UnknownVehicles'); });
 }
 
+function formatTimeForDisplay(value) {
+  if (value == null || value === '') return '';
+
+  if (value instanceof Date && !isNaN(value)) {
+    return value.toTimeString().slice(0, 8);
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const fraction = ((value % 1) + 1) % 1;
+    const totalSeconds = Math.round(fraction * 86400);
+    const seconds = ((totalSeconds % 86400) + 86400) % 86400;
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return [hours, minutes, secs].map(v => String(v).padStart(2, '0')).join(':');
+  }
+
+  const str = String(value).trim();
+  if (!str) return '';
+
+  const isoMatch = str.match(/T(\d{2}:\d{2}:\d{2})/);
+  if (isoMatch) return isoMatch[1];
+
+  const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = parseInt(ampmMatch[2] ?? '0', 10);
+    const seconds = parseInt(ampmMatch[3] ?? '0', 10);
+    const meridiem = ampmMatch[4].toUpperCase();
+    hours = hours % 12 + (meridiem === 'PM' ? 12 : 0);
+    return [hours, minutes, seconds].map(v => String(v).padStart(2, '0')).join(':');
+  }
+
+  const timeMatch = str.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+  if (timeMatch) {
+    const hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    const seconds = parseInt(timeMatch[3], 10);
+    return [hours, minutes, seconds].map(v => String(v).padStart(2, '0')).join(':');
+  }
+
+  return str;
+}
+
 function formatDateInput(d){ return d.toISOString().slice(0,10); }
 
 function parseMultiValueInput(value) {
@@ -6288,7 +6332,9 @@ function buildWeighResultTables(isAdmin) {
   const headers = ['ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out','Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name','DriverName','Id/Passport','CargoLotNo','CargoName','CargoCompany','PackUnit','PackQtt','OrderNo','ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode','Note','CreateUser','Transportation Company','Changed Date','Changed Time','Username'];
 
   if ($.fn.DataTable.isDataTable('#wr-result-table')) $('#wr-result-table').DataTable().destroy();
-  const resWrap = $('#wr-result-table').parent();  
+  const resWrap = $('#wr-result-table').parent();
+
+  const timeOnlyColumns = new Set(['Time In','Time Out','Changed Time']);
 
   let cols = [];
   if (isAdmin) {
@@ -6302,7 +6348,21 @@ function buildWeighResultTables(isAdmin) {
     });
     cols.push({ data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wr-edit"><i class="fas fa-edit"></i></button>`});
   }
-  cols = cols.concat(headers.map(h => (h === 'No.' || h === 'W.ID' ) ? { data: row => row[h], title:h } : { data:h, title:h }));
+  cols = cols.concat(headers.map(h => {
+    if (h === 'No.' || h === 'W.ID') {
+      return { data: row => row[h], title: h };
+    }
+    const colDef = { data: h, title: h };
+    if (timeOnlyColumns.has(h)) {
+      colDef.render = (data, type) => {
+        if (type === 'display' || type === 'filter') {
+          return formatTimeForDisplay(data);
+        }
+        return data;
+      };
+    }
+    return colDef;
+  }));
 
   const resTable = `<table id="wr-result-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${cols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
   resWrap.html(resTable);
@@ -6418,7 +6478,18 @@ function buildWeighResultTables(isAdmin) {
       { data:null, title:`<input type="checkbox" class="form-check-input" id="wru-select-all" aria-label="${unknownSelectAllLabel}" title="${unknownSelectAllLabel}">`, orderable:false, className:'no-export text-center', render:() => `<input type="checkbox" class="row-checkbox form-check-input">`},
       { data:null, title: translations[currentLang].action_column || 'Hành động', orderable:false, className:'no-export text-center', render:() => `<button class="btn btn-warning btn-sm wru-edit"><i class="fas fa-edit"></i></button>`}
     ];
-    uCols = uCols.concat(uHeaders.map(h => ({ data:h, title:h })));
+    uCols = uCols.concat(uHeaders.map(h => {
+      const colDef = { data: h, title: h };
+      if (timeOnlyColumns.has(h)) {
+        colDef.render = (data, type) => {
+          if (type === 'display' || type === 'filter') {
+            return formatTimeForDisplay(data);
+          }
+          return data;
+        };
+      }
+      return colDef;
+    }));
     const uTable = `<table id="wr-unknown-table" class="table table-bordered table-striped" style="width:100%"><thead><tr>${uCols.map(c=>`<th>${c.title||''}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
     uWrap.html(uTable);
     $('#wr-unknown-table').data('wrColumns', uCols);
