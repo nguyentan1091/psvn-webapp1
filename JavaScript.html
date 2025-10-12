@@ -1110,18 +1110,34 @@ const translations = {
   }
 };
 
+function getLanguageDict(lang) {
+    if (lang && translations[lang]) {
+        return translations[lang];
+    }
+
+    if (currentLang && translations[currentLang]) {
+        return translations[currentLang];
+    }
+
+    if (translations.vi) return translations.vi;
+    const firstKey = Object.keys(translations || {})[0];
+    return (translations && firstKey && translations[firstKey]) || {};
+}
+
 function setLanguage(lang) {
-    currentLang = lang;
+    currentLang = translations[lang] ? lang : (translations[currentLang] ? currentLang : 'vi');
+    const dict = getLanguageDict(currentLang);
+
     document.querySelectorAll('[data-translate]').forEach(el => {
         const key = el.getAttribute('data-translate');
-        if (translations[lang][key]) {
-            el.innerHTML = translations[lang][key];
+        if (key && dict[key]) {
+            el.innerHTML = dict[key];
         }
     });
     document.querySelectorAll('[data-translate-placeholder]').forEach(el => {
         const key = el.getAttribute('data-translate-placeholder');
-        if (translations[lang][key]) {
-            el.setAttribute('placeholder', translations[lang][key]);
+        if (key && dict[key]) {
+            el.setAttribute('placeholder', dict[key]);
         }
     });
 
@@ -1144,15 +1160,16 @@ function setLanguage(lang) {
     
     if (typeof xpplWeighingTable !== 'undefined' && $.fn.DataTable.isDataTable('#xppl-weighing-table')) {
         const count = xpplWeighingTable.rows({ search: 'applied' }).count();
-        const label = (translations[lang] && translations[lang].xppl_total_rows) || 'Tổng số dòng';
+        const label = (dict && dict.xppl_total_rows) || 'Tổng số dòng';
         $('#xppl-count').html(`${label}: <span class="badge bg-primary">${count}</span>`);
     }
     
     // Cập nhật thông tin người dùng
     if(userSession.isLoggedIn) {
          const roleText = getRoleDisplay();
+         const helloTemplate = (dict && dict.hello_user) || 'Xin chào, {username} ({role})';
          $('#userInfo').text(
-            translations[currentLang].hello_user
+            helloTemplate
                 .replace('{username}', userSession.username)
                 .replace('{role}', roleText)
          );
@@ -1293,7 +1310,18 @@ $(document).ready(function() {
         }, 450);
     }
 
-    initializeApp(existingToken);
+    try {
+        initializeApp(existingToken);
+    } catch (err) {
+        if (typeof console !== 'undefined' && console.error) {
+            console.error('Failed to initialize app:', err);
+        }
+        sessionCheckCompleted = true;
+        clearLoginFallbackTimer();
+        if (!renderLoginTemplate()) {
+            loadLoginPage();
+        }
+    }
 });
 
 
@@ -1329,6 +1357,7 @@ function initializeApp(existingToken) {
             clearStoredSession();
             clearSessionFlag();
             if (!renderLoginTemplate()) {
+                loadLoginPage();
                 const loader = getLoaderWrapper();
                 loader.hide();
             }
@@ -1370,7 +1399,13 @@ function showApp() {
     setTimeout(() => {
         loader.hide();
         app.show();
-        setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
+        try {
+            setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
+        } catch (err) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('setLanguage failed while showing app:', err);
+            }
+        }
     }, 180);
 }
 
@@ -1394,7 +1429,13 @@ function renderLoginTemplate() {
     loginFallbackTimer = null;
     document.body.className = 'login-view-active';
     app.html(loginTemplateHTML);
-    setLanguage(currentLang);    
+    try {
+        setLanguage(currentLang);
+    } catch (err) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('setLanguage failed while rendering login template:', err);
+        }
+    }
     bindLoginEvents();
     showApp();
     return true;
@@ -1409,7 +1450,13 @@ function loadLoginPage() {
     .withSuccessHandler(html => {
         document.body.className = 'login-view-active';
         $('#app-container').html(html);
-        setLanguage(currentLang);        
+        try {
+            setLanguage(currentLang);
+        } catch (err) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('setLanguage failed while loading login page:', err);
+            }
+        }
         bindLoginEvents();
         showApp();
     })
@@ -1443,8 +1490,8 @@ function loadDashboard() {
             hideMenuItem('Page_Contract');
             hideMenuItem('Page_XuLyXPPL');
             hideMenuItem('XPPL-WeighingStation');
-            hideMenuItem('Page_HistoryLogin');
-            hideMenuItem('Page_HistoryVehicle');
+            hideMenuItem('Page_LoginHistory');
+            hideMenuItem('Page_VehicleHistory');
             hideMenuItem('Page_Guide');
             $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
             const viewLink = $('#sidebar-wrapper .list-group-item[data-page="Page_View"]');
@@ -1454,13 +1501,13 @@ function loadDashboard() {
             hideMenuItem('Page_Register');
             hideMenuItem('Page_Contract');
             hideMenuItem('Page_XuLyXPPL');
-            hideMenuItem('Page_HistoryLogin');
-            hideMenuItem('Page_HistoryVehicle');
+            hideMenuItem('Page_LoginHistory');
+            hideMenuItem('Page_VehicleHistory');
             $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
           } else if (role !== 'admin') {
             hideMenuItem('Page_XuLyXPPL');
-            hideMenuItem('Page_HistoryLogin');
-            hideMenuItem('Page_HistoryVehicle');
+            hideMenuItem('Page_LoginHistory');
+            hideMenuItem('Page_VehicleHistory');
             const active = $('#sidebar-wrapper .list-group-item[data-page].active');
             if (active.data('page') === 'Page_XuLyXPPL') {
               active.removeClass('active');
@@ -1521,7 +1568,7 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
       return;
     }
 
-    if ((pageName === 'Page_HistoryLogin' || pageName === 'Page_HistoryVehicle') && !hasAnyRole(['admin'])) {
+    if ((pageName === 'Page_LoginHistory' || pageName === 'Page_VehicleHistory') && !hasAnyRole(['admin'])) {
       if (!isInitialLoad) Swal.close();
       Swal.fire('Không có quyền', 'Chức năng này chỉ dành cho Admin.', 'info');
       $('.page-title').text(translations[currentLang]['view_header'] || 'Xe đã đăng ký');
@@ -1542,10 +1589,16 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
                 case 'XPPL-WeighingStation': initXPPLWeighingStationPage(); break;
                 case 'Page_WeighResult': initWeighResultPage(); break;
                 case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
-                case 'Page_HistoryLogin': initLoginHistoryPage(); break;
-                case 'Page_HistoryVehicle': initVehicleHistoryPage(); break;
+                case 'Page_LoginHistory': initLoginHistoryPage(); break;
+                case 'Page_VehicleHistory': initVehicleHistoryPage(); break;
 }
-            setLanguage(currentLang); // Dịch nội dung trang mới
+            try {
+                setLanguage(currentLang); // Dịch nội dung trang mới
+            } catch (err) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('setLanguage failed after loading page:', err);
+                }
+            }
             if (!isInitialLoad) Swal.close();
         })
         .withFailureHandler(showError)
@@ -3377,9 +3430,8 @@ function exportHistoryData({ table, exportButtonSelector, serverMethod, filters,
           let maxLen = 0;
           aoa.forEach(row => {
             const text = row[idx] == null ? '' : String(row[idx]);
-            text.split(/
-?
-/).forEach(part => {
+            text.split(/\r?\n/).forEach(part => {
+
               if (part.length > maxLen) maxLen = part.length;
             });
           });
