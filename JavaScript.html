@@ -4010,6 +4010,7 @@ function handleTotalListFileUpload() {
 
               // Bạn đã có hàm validateAndTransformTotalListData(rows, existingPlates)
               const result = validateAndTransformTotalListData(jsonData.slice(1), existingPlates);
+              const validationErrors = Array.isArray(result.errors) ? result.errors : [];
 
               // Chuẩn hoá record để luôn có đủ key DataTable cần
               totalListPreviewData = (result.data || []).map(r => ({
@@ -4028,7 +4029,7 @@ function handleTotalListFileUpload() {
                 'Transportion Company': r['Transportion Company'] || '',
                 'Subcontractor': r['Subcontractor'] || '',
                 'Vehicle Status': (r['Vehicle Status'] || '').toString().toUpperCase(),
-                'Activity Status': r['Activity Status'] || '',                
+                'Activity Status': r['Activity Status'] || '',
                 'Register Date': r['Register Date'] || '',
                 'Time': r['Time'] || '',
                 _duplicate: typeof r._duplicate === 'boolean'
@@ -4099,20 +4100,49 @@ function handleTotalListFileUpload() {
                 .filter(r => r && r._duplicate)
                 .map(r => r['Truck Plate'])
                 .filter(Boolean);
-              const hasErrors = totalListPreviewData.some(r => r && r.errors && Object.keys(r.errors).length);
+              const hasErrors = validationErrors.length > 0;
               const hasDup = duplicatePlates.length > 0;
+
+              const alertSections = [];
+
+              if (hasErrors) {
+                const maxErrorRows = 10;
+                const errorItems = validationErrors.slice(0, maxErrorRows).map(err => {
+                  const rowLabel = err && err.row ? `Dòng ${err.row}` : 'Dòng không xác định';
+                  const messages = Array.isArray(err.messages) ? err.messages.join('<br>') : '';
+                  return `<li><strong>${rowLabel}</strong><br>${messages}</li>`;
+                }).join('');
+
+                alertSections.push(`
+                  <div>
+                    <div class="fw-bold mb-1">Lỗi dữ liệu</div>
+                    <div class="text-start" style="max-height:160px; overflow:auto">
+                      <ol class="ps-3 mb-0">${errorItems}</ol>
+                      ${validationErrors.length > maxErrorRows ? '<div class="mt-2"><small>...</small></div>' : ''}
+                    </div>
+                  </div>
+                `);
+              }
 
               if (hasDup) {
                 const max = 20;
                 const show = duplicatePlates.slice(0, max).join(', ');
+                alertSections.push(`
+                  <div>
+                    <div class="fw-bold mb-1">Phát hiện dữ liệu trùng</div>
+                    <div class="text-start" style="max-height:120px; overflow:auto">
+                      <small>${show}${duplicatePlates.length > max ? ', ...' : ''}</small>
+                    </div>
+                    <div class="mt-1"><small>Vui lòng loại bỏ/cập nhật trong file trước khi lưu.</small></div>
+                  </div>
+                `);
+              }
+
+              if (alertSections.length) {
                 Swal.fire({
-                  icon: 'warning',
-                  title: 'Phát hiện dữ liệu trùng',
-                  html: `Có <b>${duplicatePlates.length}</b> biển số đã tồn tại trong Danh sách tổng.<br>
-                         <div class="text-start mt-2" style="max-height:120px; overflow:auto">
-                           <small>${show}${duplicatePlates.length > max ? ', ...' : ''}</small>
-                         </div>
-                         <div class="mt-1"><small>Vui lòng loại bỏ/cập nhật trong file trước khi lưu.</small></div>`
+                  icon: hasErrors ? 'error' : 'warning',
+                  title: 'Kiểm tra lại dữ liệu tải lên',
+                  html: alertSections.join('<hr class="my-2">')
                 });
               } else {
                 Swal.close(); // đóng spinner nếu không có cảnh báo thêm
@@ -4157,41 +4187,164 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
   const allErrors = [];
   const duplicateList = [];
 
+  const allowedActivity = ['ACTIVE', 'BANNED'];
+  const allowedVehicleStatus = ['RO', 'CO', 'PM', 'CM', 'AC', 'ND'];
+  const allowedCountries = ['VIETNAM', 'LAOS'];
+
   dataRows.forEach((row, index) => {
     if (row.length === 0 || row.every(cell => cell === "")) return;
-    const plate = String(row[1] || '').replace(/\s/g, '').toUpperCase();
 
-    const activityRaw = String(row[12] || '').trim();
+    const rowNumber = index + 2; // tính cả header
+    const errors = {};
+    const addError = (field, message) => {
+      if (!message) return;
+      errors[field] = errors[field] ? `${errors[field]} ${message}` : message;
+    };
+
+    const plate = String(row[1] || '').replace(/\s/g, '').toUpperCase();
+    const countryRaw = String(row[2] || '').trim();
+    const wheelRaw = String(row[3] || '').trim();
+    const trailerPlate = String(row[4] || '').replace(/\s/g, '').toUpperCase();
+    const truckWeightRaw = String(row[5] || '').trim();
+    const payLoadRaw = String(row[6] || '').trim();
+    const registerDateRaw = String(row[16] || '').trim();
+    const normalizedRegisterDate = registerDateRaw ? normalizeRegisterDateValue(registerDateRaw) : '';
+    const timeRaw = String(row[17] || '').trim();
+
+    const activityRaw = String(row[15] || '').trim();
     const activityUpper = activityRaw.toUpperCase();
+    const vehicleStatusRaw = String(row[14] || '').trim().toUpperCase();
+    const phoneRaw = String(row[11] || '').trim();
+    const transportCompanyRaw = String(row[12] || '').trim();
+    const subcontractorRaw = String(row[13] || '').trim();
+
     const record = {
       'ID': generateCustomId(),
       'Truck Plate': plate,
-      'Country': row[2] || '',
-      'Wheel': row[3] || '',
-      'Trailer Plate': String(row[4] || '').replace(/\s/g, '').toUpperCase(),
-      'Truck weight': row[5] || '',
-      'Pay load': row[6] || '',
+      'Country': countryRaw,
+      'Wheel': wheelRaw,
+      'Trailer Plate': trailerPlate,
+      'Truck weight': truckWeightRaw,
+      'Pay load': payLoadRaw,
       'Container No1': row[7] || '',
       'Container No2': row[8] || '',
-      'Driver Name': row[9] || '',
-      'ID/Passport': row[10] || '',
-      'Phone number': row[11] || '',
-      'Transportion Company': row[12] || '',
-      'Subcontractor': row[13] || '',
-      'Vehicle Status': String(row[14] || '').toUpperCase(),
-      'Activity Status': activityRaw,      
-      _duplicate: existingPlates.has(plate)  // đánh dấu nếu trùng
+      'Driver Name': String(row[9] || '').trim(),
+      'ID/Passport': String(row[10] || '').trim(),
+      'Phone number': phoneRaw,
+      'Transportion Company': transportCompanyRaw,
+      'Subcontractor': subcontractorRaw,
+      'Vehicle Status': vehicleStatusRaw,
+      'Activity Status': activityRaw,
+      'Register Date': normalizedRegisterDate || registerDateRaw,
+      'Time': timeRaw,
+      _duplicate: existingPlates.has(plate)
     };
 
-    const errors = {};
+    if (!plate) {
+      addError('Truck Plate', "- Cột 'Truck Plate' không được để trống.");
+    } else {
+      if (plate.length > 13) {
+        addError('Truck Plate', "- Cột 'Truck Plate' không vượt quá 13 ký tự.");
+      }
+
+      // Biển số Việt Nam: chữ cái Latin, số, '-', '.'
+      const vnPlateRegex = /^[A-Za-z0-9.-]+$/;
+
+      // Biển số Lào: chỉ chữ Lào (U+0E80–U+0EFF) và số (không có dấu nào khác)
+      const laPlateRegex = /^[\u0E80-\u0EFF0-9]+$/;
+
+      if (!vnPlateRegex.test(plate) && !laPlateRegex.test(plate)) {
+        addError(
+          'Truck Plate',
+          "- Cột 'Truck Plate' chỉ chấp nhận biển số Việt Nam (A-Z, 0-9, '-', '.') hoặc biển số Lào (ບຄ1234)."
+        );
+      }
+    }
+
+    if (!countryRaw) {
+      addError('Country', "- Cột 'Country' không được để trống.");
+    } else if (!allowedCountries.includes(countryRaw.toUpperCase())) {
+      addError('Country', "- Cột 'Country' chỉ chấp nhận: Vietnam, Laos.");
+    }
+
+    if (!wheelRaw) {
+      addError('Wheel', "- Cột 'Wheel' không được để trống.");
+    } else {
+      const wheelValue = Number(wheelRaw);
+      if (!Number.isInteger(wheelValue) || wheelValue <= 0) {
+        addError('Wheel', "- Cột 'Wheel' phải là số nguyên dương.");
+      }
+    }
+
+    if (!truckWeightRaw) {
+      addError('Truck weight', "- Cột 'Truck weight' không được để trống.");
+    } else {
+      const truckWeightValue = Number(truckWeightRaw);
+      if (!Number.isFinite(truckWeightValue) || truckWeightValue <= 0) {
+        addError('Truck weight', "- Cột 'Truck weight' phải là số lớn hơn 0.");
+      }
+    }
+
+    if (!payLoadRaw) {
+      addError('Pay load', "- Cột 'Pay load' không được để trống.");
+    } else {
+      const payLoadValue = Number(payLoadRaw);
+      if (!Number.isFinite(payLoadValue) || payLoadValue <= 0) {
+        addError('Pay load', "- Cột 'Pay load' phải là số lớn hơn 0.");
+      }
+    }
+
+    if (!record['Driver Name']) {
+      addError('Driver Name', "- Cột 'Driver Name' không được để trống.");
+    }
+
+    if (!record['ID/Passport']) {
+      addError('ID/Passport', "- Cột 'ID/Passport' không được để trống.");
+    }
+
+    if (phoneRaw) {
+      if (!/^\d{8,20}$/.test(phoneRaw)) {
+        addError('Phone number', "- Cột 'Phone number' chỉ chấp nhận số (8-20 ký tự).");
+      }
+    }
+
+    if (!transportCompanyRaw) {
+      addError('Transportion Company', "- Cột 'Transportion Company' không được để trống.");
+    }
+
+    if (!subcontractorRaw) {
+      addError('Subcontractor', "- Cột 'Subcontractor' không được để trống.");
+    }
+
+    if (!vehicleStatusRaw) {
+      addError('Vehicle Status', "- Cột 'Vehicle Status' không được để trống.");
+    } else if (!allowedVehicleStatus.includes(vehicleStatusRaw)) {
+      addError('Vehicle Status', "- Cột 'Vehicle Status' chỉ chấp nhận: RO, CO, PM, CM, AC, ND.");
+    }
+
     if (!activityRaw) {
-      errors['Activity Status'] = "- Cột 'Activity Status' không được để trống.";
-    } else if (!['ACTIVE', 'BANNED'].includes(activityUpper)) {
-      errors['Activity Status'] = "- Cột 'Activity Status' chỉ chấp nhận: Active, Banned.";
+      addError('Activity Status', "- Cột 'Activity Status' không được để trống.");
+    } else if (!allowedActivity.includes(activityUpper)) {
+      addError('Activity Status', "- Cột 'Activity Status' chỉ chấp nhận: Active, Banned.");
+    }
+
+    if (registerDateRaw && !normalizedRegisterDate) {
+      addError('Register Date', "- Cột 'Register Date' không đúng định dạng (dd/MM/yyyy hoặc yyyy-MM-dd).");
+    }
+
+    if (timeRaw) {
+      if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(timeRaw)) {
+        addError('Time', "- Cột 'Time' phải có định dạng HH:mm hoặc HH:mm:ss.");
+      }
     }
 
     if (Object.keys(errors).length) {
       record.errors = errors;
+      allErrors.push({
+        row: rowNumber,
+        fields: Object.keys(errors),
+        messages: Object.values(errors)
+      });
     }
     if (record._duplicate) {
       duplicateList.push(plate);
@@ -4200,7 +4353,7 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
     transformedData.push(record);
   });
 
-  return { data: transformedData, duplicates: duplicateList };
+  return { data: transformedData, duplicates: duplicateList, errors: allErrors };
 }
 
 
