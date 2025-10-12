@@ -4250,13 +4250,13 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
       // Biển số Việt Nam: chữ cái Latin, số, '-', '.'
       const vnPlateRegex = /^[A-Za-z0-9.-]+$/;
 
-      // Biển số Lào: chỉ chữ Lào (U+0E80–U+0EFF) và số (không có dấu nào khác)
-      const laPlateRegex = /^[\u0E80-\u0EFF0-9]+$/;
+      // Biển số Lào: chữ Lào (U+0E80–U+0EFF), số và dấu '.'
+      const laPlateRegex = /^[\u0E80-\u0EFF0-9.]+$/;
 
       if (!vnPlateRegex.test(plate) && !laPlateRegex.test(plate)) {
         addError(
           'Truck Plate',
-          "- Cột 'Truck Plate' chỉ chấp nhận biển số Việt Nam (A-Z, 0-9, '-', '.') hoặc biển số Lào (ບຄ1234)."
+          "- Cột 'Truck Plate' chỉ chấp nhận biển số Việt Nam (A-Z, 0-9, '-', '.') hoặc biển số Lào (ບຄ4693 hoặc ບຄ4693.)."
         );
       }
     }
