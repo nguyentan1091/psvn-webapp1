@@ -310,6 +310,13 @@ function buildVehicleRegistrationPayload_(record, options) {
     const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
     if (!column) return;
     const value = record[header];
+
+    if (header === 'ID') {
+      if (value !== '' && value !== null && value !== undefined) {
+        payload[column] = value;
+      }
+      return;
+    }
     if (header === 'Register Date') {
       const iso = toSupabaseDateString_(value);
       if (iso) payload[column] = iso;
