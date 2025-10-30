@@ -1,6 +1,6 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
+const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const VEHICLE_REGISTRATION_CACHE_KEY = 'vehicle_registration_supabase';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 // === XPPL Weighing Station database ===
@@ -13,6 +13,48 @@ const XPPL_DB_HEADERS = [
   'ContractNo','InvoiceNo','CoNo','OVS_DMT','Plant','Trailer No','Truck Country','Truck Type','WeighStationCode',
   'Note','CreateUser','Transportation Company','Changed Date','Changed Time','Username'
 ];
+const XPPL_DB_FIELD_MAP = {
+  'ID': 'id',
+  'No.': 'no',
+  'W.ID': 'w_id',
+  'Weighing Type': 'weighing_type',
+  'TicketID': 'ticket_id',
+  'Truck No': 'truck_no',
+  'Date In': 'date_in',
+  'Time In': 'time_in',
+  'Date Out': 'date_out',
+  'Time Out': 'time_out',
+  'Weight In': 'weight_in',
+  'Weight Out': 'weight_out',
+  'Net Weight': 'net_weight',
+  'Product Name': 'product_name',
+  'CoalSource': 'coal_source',
+  'ProductionCode': 'production_code',
+  'Customer Name': 'customer_name',
+  'DriverName': 'driver_name',
+  'Id/Passport': 'id_passport',
+  'CargoLotNo': 'cargo_lot_no',
+  'CargoName': 'cargo_name',
+  'CargoCompany': 'cargo_company',
+  'PackUnit': 'pack_unit',
+  'PackQtt': 'pack_qtt',
+  'OrderNo': 'order_no',
+  'ContractNo': 'contract_no',
+  'InvoiceNo': 'invoice_no',
+  'CoNo': 'co_no',
+  'OVS_DMT': 'ovs_dmt',
+  'Plant': 'plant',
+  'Trailer No': 'trailer_no',
+  'Truck Country': 'truck_country',
+  'Truck Type': 'truck_type',
+  'WeighStationCode': 'weigh_station_code',
+  'Note': 'note',
+  'CreateUser': 'create_user',
+  'Transportation Company': 'transportation_company',
+  'Changed Date': 'changed_date',
+  'Changed Time': 'changed_time',
+  'Username': 'username'
+};
 // === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
 // ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
 const XPPL_TEMPLATE_ID = '1p8n8ffm81NaxSWB5F7Wn1GhsaBrQ21XttaWmX5yvBl4';
@@ -108,6 +150,7 @@ const SUPABASE_VEHICLE_REG_ENDPOINT = '/rest/v1/vehicle_registration';
 const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
 const SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT = '/rest/v1/history_vehicle_registration';
 const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
+const SUPABASE_XPPL_DATABASE_ENDPOINT = '/rest/v1/xppl_database';
 const CONTRACT_DATA_SELECT_FIELDS = [
   'id',
   'contract_no',
@@ -586,9 +629,10 @@ function formatDateForClient(v) {
 
 function formatTimeForClient(v) {
   if (!v && v!==0) return '';
-  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "dd/MM/yyyy HH:mm:ss");
-  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(v));
-  if (parsed) return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "dd/MM/yyyy HH:mm:ss");
+  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+  const stripped = stripLeadingApostrophe(v);
+  const parsed = parseSupabaseTimestamp_(stripped);
+  if (parsed) return Utilities.formatDate(parsed, "Asia/Ho_Chi_Minh", "HH:mm:ss");
   if (typeof v === 'number') {
     var total = Math.round(v*86400);
     var hh = Math.floor(total/3600);
@@ -596,7 +640,14 @@ function formatTimeForClient(v) {
     var ss = total%60;
     return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
   }
-  return stripLeadingApostrophe(v);
+  const match = String(stripped || '').match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    const hh = String(Math.min(23, Math.max(0, parseInt(match[1], 10) || 0))).padStart(2, '0');
+    const mm = String(Math.min(59, Math.max(0, parseInt(match[2], 10) || 0))).padStart(2, '0');
+    const ss = String(Math.min(59, Math.max(0, match[3] ? parseInt(match[3], 10) : 0))).padStart(2, '0');
+    return hh + ':' + mm + ':' + ss;
+  }
+  return stripped;
 }
 
 function toDisplayString_(value) {
@@ -797,6 +848,100 @@ function applyXpplDbFormats_(sheet, startRow, numRows) {
     else format = '@';
     sheet.getRange(startRow, i + 1, numRows, 1).setNumberFormat(format);
   }
+}
+
+function toXpplSupabaseDate_(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const normalized = normalizeDate(value);
+  if (normalized) {
+    return Utilities.formatDate(normalized, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
+  }
+  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(value));
+  if (parsed) {
+    return Utilities.formatDate(parsed, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
+  }
+  const str = sanitizeXpplText_(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  return str;
+}
+
+function toXpplSupabaseTime_(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  if (value instanceof Date && !isNaN(value)) {
+    return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'HH:mm:ss');
+  }
+  let fraction = null;
+  if (typeof value === 'number' && isFinite(value)) {
+    fraction = value % 1;
+    if (fraction < 0) fraction += 1;
+  } else {
+    fraction = normalizeTime(value);
+  }
+  if (fraction !== null && fraction !== undefined && !isNaN(fraction)) {
+    const totalSeconds = Math.round(fraction * 86400);
+    const hh = Math.floor(totalSeconds / 3600);
+    const mm = Math.floor((totalSeconds % 3600) / 60);
+    const ss = totalSeconds % 60;
+    return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  }
+  const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(value));
+  if (parsed) {
+    return Utilities.formatDate(parsed, 'Asia/Ho_Chi_Minh', 'HH:mm:ss');
+  }
+  const str = sanitizeXpplText_(value);
+  const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    const hh = String(Math.min(23, Math.max(0, parseInt(match[1], 10) || 0))).padStart(2, '0');
+    const mm = String(Math.min(59, Math.max(0, parseInt(match[2], 10) || 0))).padStart(2, '0');
+    const ss = String(Math.min(59, Math.max(0, match[3] ? parseInt(match[3], 10) : 0))).padStart(2, '0');
+    return hh + ':' + mm + ':' + ss;
+  }
+  return str;
+}
+
+function buildXpplDatabasePayload_(row, options) {
+  const opts = options || {};
+  const userLabel = sanitizeXpplText_(opts.userLabel || '');
+  const payload = {};
+  Object.keys(XPPL_DB_FIELD_MAP).forEach(function (header) {
+    const column = XPPL_DB_FIELD_MAP[header];
+    if (!column) return;
+    if (header === 'ID' || header === 'Changed Date' || header === 'Changed Time') return;
+    if (header === 'CreateUser') {
+      payload[column] = userLabel;
+      return;
+    }
+    const value = row ? row[header] : '';
+    if (header === 'Date In' || header === 'Date Out') {
+      const iso = toXpplSupabaseDate_(value);
+      payload[column] = iso || '';
+      return;
+    }
+    if (header === 'Time In' || header === 'Time Out') {
+      payload[column] = toXpplSupabaseTime_(value);
+      return;
+    }
+    if (value === '' || value === null || value === undefined) {
+      payload[column] = '';
+      return;
+    }
+    payload[column] = sanitizeXpplText_(value);
+  });
+  return payload;
+}
+
+function mapXpplRecordToRowArray_(record, headers) {
+  const cols = headers || XPPL_DB_HEADERS;
+  return cols.map(function (header) {
+    const column = XPPL_DB_FIELD_MAP[header];
+    if (!column) return '';
+    const value = record && record.hasOwnProperty(column) ? record[column] : '';
+    if (value === null || value === undefined) return '';
+    if (header === 'Changed Date' || header === 'Changed Time') {
+      return parseSupabaseTimestamp_(value) || value;
+    }
+    return value;
+  });
 }
 
 function ensureDateTimeFormats(sheet, headers) {
@@ -4243,47 +4388,38 @@ function saveXpplWeighingData(rows, sessionToken) {
     });
   }
 
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
-  const prefix = Utilities.formatDate(new Date(), tz, 'dd-MM') + '-';
-  let lr = sh.getLastRow();
-  if (lr === 0) {
-    sh.getRange(1, 1, 1, XPPL_DB_HEADERS.length).setValues([XPPL_DB_HEADERS]);
-    applyXpplDbFormats_(sh, 2, Math.max(0, sh.getMaxRows() - 1));    
-    lr = 1;
-  }
-
-  const toSave = rows.map(r => {
-    const key = String(r['Customer Name']||'').trim() + '|' + String(r['ContractNo']||'').trim();
+  const userLabel = sanitizeXpplText_(user.username || user.user || user.email || '');
+  const toInsert = rows.map(function (row) {
+    const customer = normalize(row && row['Customer Name']);
+    const contract = normalize(row && row['ContractNo']);
+    const key = customer + '|' + contract;
     if (validSet.size && !validSet.has(key)) {
       throw new Error('Sai tên khách hàng hoặc số hợp đồng: ' + key);
     }
-    const arr = XPPL_DB_HEADERS.map(h => normalizeXpplDbValue_(h, r[h]));
-    arr[0] = sanitizeXpplText_(prefix + Math.floor(Math.random()*1e7).toString().padStart(7,'0'));
-    const idxCreateUser = XPPL_DB_HEADERS.indexOf('CreateUser');
-    if (idxCreateUser !== -1) {
-      arr[idxCreateUser] = sanitizeXpplText_(user.username || user.user || user.email || '');
-    }
-    return arr;
+    const payload = buildXpplDatabasePayload_(row, { userLabel: userLabel });
+    const usernameValue = row && Object.prototype.hasOwnProperty.call(row, 'Username')
+      ? row['Username']
+      : (row && row.Username);
+    payload.username = sanitizeXpplText_(usernameValue || userLabel);
+    return payload;
   });
 
-  if (toSave.length) {
-    const startRow = lr + 1;
-    sh.getRange(startRow, 1, toSave.length, XPPL_DB_HEADERS.length).setValues(toSave);
-    applyXpplDbFormats_(sh, startRow, toSave.length);
+  if (!toInsert.length) {
+    return 'Không có dữ liệu.';
   }
-  return 'Đã lưu ' + toSave.length + ' dòng.';
+
+  const response = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT, {
+    method: 'POST',
+    payload: toInsert,
+    headers: { Prefer: 'return=representation' }
+  });
+
+  const count = Array.isArray(response) ? response.length : toInsert.length;
+  return 'Đã lưu ' + count + ' dòng.';
 }
 
 function getXpplWeighingData(filter, sessionToken) {
   requireXpplRole_(sessionToken);
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) {
-    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
-  }
   const s = v => String(v == null ? '' : v).replace(/^'+/, '').trim();
   const filterDate = s(filter && filter.date);
   const dateKey = filterDate ? _toDateKey(filterDate) : null;
@@ -4291,11 +4427,28 @@ function getXpplWeighingData(filter, sessionToken) {
     return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
   }
 
-  const data = sh.getRange(2,1,lr-1,XPPL_DB_HEADERS.length).getValues();
-  const idxDate = XPPL_DB_HEADERS.indexOf('Date Out');
-  const idxContract = XPPL_DB_HEADERS.indexOf('ContractNo');
-  const idxCustomer = XPPL_DB_HEADERS.indexOf('Customer Name');
-  const idxNet = XPPL_DB_HEADERS.indexOf('Net Weight');
+  const isoDate = toSupabaseDateString_(dateKey);
+  if (!isoDate) {
+    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
+  }
+
+  const queryParts = [
+    'select=' + encodeURIComponent('*'),
+    'date_out=eq.' + encodeURIComponent(isoDate)
+  ];
+
+  let records = [];
+  try {
+    const res = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&'));
+    records = Array.isArray(res) ? res : [];
+  } catch (e) {
+    Logger.log('getXpplWeighingData error: ' + e);
+    records = [];
+  }
+
+  if (!records.length) {
+    return { data: [], summary: { trucks:0, weight:0 }, contracts: [], customers: [] };
+  }
 
   const filterContract = s(filter && filter.contractNo);
   const filterCustomer = s(filter && filter.customerName);
@@ -4304,25 +4457,34 @@ function getXpplWeighingData(filter, sessionToken) {
   const customers = new Set();
   const rows = [];
   let totalWeight = 0;
-  data.forEach(r => {
-    const d = _toDateKey(r[idxDate]);
-    if (d !== dateKey) return;
-    const cno = s(r[idxContract]);
-    const cus = s(r[idxCustomer]);
-    const net = Number(r[idxNet]) || 0;
-    contracts.add(cno);
-    customers.add(cus);
-    if (filterContract && filterContract !== cno) return;
-    if (filterCustomer && filterCustomer !== cus) return;
-    rows.push(formatRowForClient_(r, XPPL_DB_HEADERS));
-    totalWeight += net;
+
+  records.forEach(function (record) {
+    const arr = mapXpplRecordToRowArray_(record, XPPL_DB_HEADERS);
+    const formatted = formatRowForClient_(arr, XPPL_DB_HEADERS);
+    const contractValue = s(formatted['ContractNo']);
+    const customerValue = s(formatted['Customer Name']);
+    contracts.add(contractValue);
+    customers.add(customerValue);
+    if (filterContract && filterContract !== contractValue) return;
+    if (filterCustomer && filterCustomer !== customerValue) return;
+    rows.push(formatted);
+    const netRaw = record && record.net_weight;
+    if (netRaw !== null && netRaw !== undefined && netRaw !== '') {
+      let net = netRaw;
+      if (typeof net === 'string') {
+        net = Number(net.replace(/,/g, ''));
+      }
+      if (typeof net === 'number' && isFinite(net)) {
+        totalWeight += net;
+      }
+    }
   });
 
   return {
     data: rows,
     summary: { trucks: rows.length, weight: totalWeight },
-    contracts: Array.from(contracts).sort(),
-    customers: Array.from(customers).sort()
+    contracts: Array.from(contracts).filter(Boolean).sort(),
+    customers: Array.from(customers).filter(Boolean).sort()
   };
 }
 
@@ -4344,63 +4506,54 @@ function matchTransportionCompanies(filter, sessionToken) {
     });
   }
 
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) return 'Không có dữ liệu.';
-
-  const headers = XPPL_DB_HEADERS;
-  const idxTruck = headers.indexOf('Truck No');
-  const idxComp = headers.indexOf('Transportation Company');
-  const idxDate = headers.indexOf('Changed Date');
-  const idxTime = headers.indexOf('Changed Time');
-  const idxUser = headers.indexOf('Username');
-  const idxDateOut = headers.indexOf('Date Out');
-
   const f = filter || {};
   const from = _toDateKey(f.dateFrom);
-  const to = _toDateKey(f.dateTo);  
+  const to = _toDateKey(f.dateTo);
+  const isoFrom = from ? toSupabaseDateString_(from) : null;
+  const isoTo = to ? toSupabaseDateString_(to) : null;
 
-  const data = sh.getRange(2,1,lr-1,headers.length).getValues();
-  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
-  const now = new Date();
-  const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const timeValue = (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400;
+  const queryParts = [
+    'select=' + encodeURIComponent(['id', 'truck_no', 'transportation_company', 'username', 'date_out'].join(','))
+  ];
+  if (isoFrom) queryParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
+  if (isoTo) queryParts.push('date_out=lte.' + encodeURIComponent(isoTo));
+
+  let records = [];
+  try {
+    const res = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&'));
+    records = Array.isArray(res) ? res : [];
+  } catch (e) {
+    Logger.log('matchTransportionCompanies error: ' + e);
+    records = [];
+  }
+
+  if (!records.length) return 'Không tìm thấy dữ liệu phù hợp.';
+
   const uname = sanitizeXpplText_(user.username || user.user || user.email || '');
-
   const updates = [];
-  data.forEach((r,i) => {
-    const dk = _toDateKey(r[idxDateOut]);
-    if (from && dk < from) return;
-    if (to && dk > to) return;
-    const plate = String(r[idxTruck]||'').replace(/\s/g,'').toUpperCase();
+
+  records.forEach(function (record) {
+    const dateKey = _toDateKey(record && record.date_out);
+    if (from && dateKey && dateKey < from) return;
+    if (to && dateKey && dateKey > to) return;
+    const plate = String(record && record.truck_no || '').replace(/\s/g, '').toUpperCase();
+    if (!plate) return;
     const compName = sanitizeXpplText_(plateMap.get(plate) || 'Unknown');
-    r[idxComp] = compName;
-    r[idxDate] = dateValue;
-    r[idxTime] = timeValue;
-    r[idxUser] = uname;
-    updates.push({row: i+2, values: r});
+    if (!record || !record.id) return;
+    updates.push({
+      id: record.id,
+      transportation_company: compName,
+      username: uname
+    });
   });
 
   if (!updates.length) return 'Không tìm thấy dữ liệu phù hợp.';
 
-  updates.sort((a,b) => a.row - b.row);
-  let start = updates[0].row;
-  let block = [updates[0].values];
-  for (let j = 1; j < updates.length; j++) {
-    const cur = updates[j];
-    const prev = updates[j-1];
-    if (cur.row === prev.row + 1) {
-      block.push(cur.values);
-    } else {
-      sh.getRange(start,1,block.length,headers.length).setValues(block);
-      applyXpplDbFormats_(sh, start, block.length);      
-      start = cur.row;
-      block = [cur.values];
-    }
-  }
-  sh.getRange(start,1,block.length,headers.length).setValues(block);
-  applyXpplDbFormats_(sh, start, block.length);
+  supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT, {
+    method: 'POST',
+    payload: updates,
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }
+  });
 
   return 'Đã đối chiếu ' + updates.length + ' dòng.';
 }
@@ -4429,9 +4582,7 @@ function weighResultRowMatchesQuery_(row, headers, queryLower) {
 
 function getWeighResultData(params) {
   const session = validateSession(params.sessionToken);
-  const sh = SpreadsheetApp.openById(XPPL_DB_ID).getSheetByName(XPPL_DB_SHEET);
   const headers = XPPL_DB_HEADERS;
-  const lr = sh.getLastRow();  
   const f = params.filter || {};
   const from = _toDateKey(f.dateFrom);
   const to = _toDateKey(f.dateTo);
@@ -4496,37 +4647,43 @@ function getWeighResultData(params) {
     return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
-  if (lr < 2) {
-   return buildEmpty(isUser ? assignedCustomerNames : null);
-  }
-
   const idxDateOut = headers.indexOf('Date Out');
   const idxContract = headers.indexOf('ContractNo');
   const idxCompany = headers.indexOf('Transportation Company');
   const idxCustomer = headers.indexOf('Customer Name');
   const idxNetWeight = headers.indexOf('Net Weight');
   if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
-   return buildEmpty(isUser ? assignedCustomerNames : null);
+    return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
-  let rows = [];
-
-  if (from || to) {
-    const dateValues = sh.getRange(2, idxDateOut + 1, lr - 1, 1).getValues();
-    let start = 0;
-    let end = dateValues.length - 1;
-    if (from) {
-      while (start <= end && _toDateKey(dateValues[start][0]) < from) start++;
-    }
-    if (to) {
-      while (end >= start && _toDateKey(dateValues[end][0]) > to) end--;
-    }
-    if (end >= start) {
-      rows = sh.getRange(start + 2, 1, end - start + 1, headers.length).getValues();
-    }
-  } else {
-    rows = sh.getRange(2, 1, lr - 1, headers.length).getValues();    
+  const queryParts = ['select=' + encodeURIComponent('*')];
+  if (from) {
+    const isoFrom = toSupabaseDateString_(from);
+    if (isoFrom) queryParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
   }
+  if (to) {
+    const isoTo = toSupabaseDateString_(to);
+    if (isoTo) queryParts.push('date_out=lte.' + encodeURIComponent(isoTo));
+  }
+  const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
+  if (contractIn) queryParts.push(contractIn);
+  const customerIn = buildSupabaseInFilter_('customer_name', customerFilter);
+  if (customerIn) queryParts.push(customerIn);
+  queryParts.push('order=date_out.desc');
+
+  let records = [];
+  try {
+    const res = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&'));
+    records = Array.isArray(res) ? res : [];
+  } catch (e) {
+    Logger.log('getWeighResultData error: ' + e);
+    records = [];
+  }
+
+  const rows = records.map(function (record) {
+    return mapXpplRecordToRowArray_(record, headers);
+  });
+
 
   if (!rows.length) {
     var fallbackCustomers = null;
@@ -4555,7 +4712,7 @@ function getWeighResultData(params) {
     } else {
       return buildEmpty(assignedCustomerNames);
     }
-  }    
+  }
 
   let filterCustomerLowerSet = null;
   if (isUser) {
@@ -4632,7 +4789,7 @@ function getWeighResultData(params) {
       recordsFiltered: 0,
       data: [],
       counts: { unassigned: 0, unknown: 0, assigned: 0 },
-      summary: { trucks: 0, weight: 0 },      
+      summary: { trucks: 0, weight: 0 },
       options: { contracts: availableContracts, customers: availableCustomers }
     };
   }
@@ -4649,7 +4806,7 @@ function getWeighResultData(params) {
   }
 
   const counts = { unassigned: 0, unknown: 0, assigned: 0 };
-  let totalWeight = 0;  
+  let totalWeight = 0;
   for (var k = 0; k < filteredForSearch.length; k++) {
     var comp = String(stripLeadingApostrophe(filteredForSearch[k][idxCompany]) || '').trim();
     if (!comp) counts.unassigned++;
@@ -4665,7 +4822,7 @@ function getWeighResultData(params) {
       if (Number.isFinite(weightNum)) {
         totalWeight += weightNum;
       }
-    }    
+    }
   }
 
   let filtered = filteredForSearch;
@@ -4708,7 +4865,7 @@ function getWeighResultData(params) {
     recordsFiltered: filtered.length,
     data: data,
     counts: counts,
-    summary: { trucks: filteredForSearch.length, weight: totalWeight },    
+    summary: { trucks: filteredForSearch.length, weight: totalWeight },
     options: { contracts: availableContracts, customers: availableCustomers }
   };
 }
@@ -4718,32 +4875,23 @@ function updateWeighResultCompany(payload, sessionToken) {
   const { ID, 'Transportation Company': company } = payload || {};
   if (!ID) throw new Error('Thiếu ID.');
 
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) throw new Error('Không có dữ liệu.');
-
-  const ids = sh.getRange(2,1,lr-1,1).getValues().flat();
-  const rowIdx = ids.indexOf(ID);
-  if (rowIdx === -1) throw new Error('Không tìm thấy ID.');
-
-  const idxComp = XPPL_DB_HEADERS.indexOf('Transportation Company') + 1;
-  const idxDate = XPPL_DB_HEADERS.indexOf('Changed Date') + 1;
-  const idxTime = XPPL_DB_HEADERS.indexOf('Changed Time') + 1;
-  const idxUser = XPPL_DB_HEADERS.indexOf('Username') + 1;
-  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Ho_Chi_Minh';
-  const now = new Date();
-
   const sanitizedCompany = sanitizeXpplText_(company);
   const userLabel = sanitizeXpplText_(user.username || user.user || user.email || '');
-  const dateValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const timeValue = (now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400;
+  const response = supabaseRequest_(
+    SUPABASE_XPPL_DATABASE_ENDPOINT + '?id=eq.' + encodeURIComponent(ID),
+    {
+      method: 'PATCH',
+      payload: {
+        transportation_company: sanitizedCompany,
+        username: userLabel
+      },
+      headers: { Prefer: 'return=representation' }
+    }
+  );
 
-  sh.getRange(rowIdx + 2, idxComp).setValue(sanitizedCompany);
-  sh.getRange(rowIdx + 2, idxDate).setValue(dateValue);
-  sh.getRange(rowIdx + 2, idxTime).setValue(timeValue);
-  sh.getRange(rowIdx + 2, idxUser).setValue(userLabel);
-  applyXpplDbFormats_(sh, rowIdx + 2, 1);
+  if (!Array.isArray(response) || !response.length) {
+    throw new Error('Không tìm thấy ID.');
+  }
 
   return 'Đã cập nhật.';
 }
@@ -4751,14 +4899,20 @@ function updateWeighResultCompany(payload, sessionToken) {
 function deleteWeighResults(ids, sessionToken) {
   const user = requireAdmin_(sessionToken);
   if (!Array.isArray(ids) || !ids.length) return 'Không có ID.';
-  const ss = SpreadsheetApp.openById(XPPL_DB_ID);
-  const sh = ss.getSheetByName(XPPL_DB_SHEET);
-  const lr = sh.getLastRow();
-  if (lr < 2) return 'Không có dữ liệu.';
-  const idList = sh.getRange(2,1,lr-1,1).getValues().flat();
-  const rows = ids.map(id => idList.indexOf(id)).filter(i => i !== -1).map(i => i + 2).sort((a,b) => b - a);
-  rows.forEach(r => sh.deleteRow(r));
-  return 'Đã xoá ' + rows.length + ' dòng.';
+  const sanitized = ids
+    .map(function(id) { return String(id == null ? '' : id).trim(); })
+    .filter(function(id) { return id; });
+  if (!sanitized.length) return 'Không có ID.';
+
+  const filter = buildSupabaseInFilter_('id', sanitized);
+  if (!filter) return 'Không có ID.';
+
+  supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + filter, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' }
+  });
+
+  return 'Đã xoá ' + sanitized.length + ' dòng.';
 }
 
 /*** END ***/
