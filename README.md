@@ -5,9 +5,9 @@ Google Apps Script WebApp cho dự án XPPL của PSVN
 
 Ứng dụng tự động bảo đảm có tài khoản giám sát với thông tin sau:
 
-- **Username:** `LA`
-- **Password:** `CRLF@LA111`
-- **Role:** `User-Supervision`
+- **Username:** 
+- **Password:**
+- **Role:**
 
 Tài khoản này được thiết kế cho bên thứ ba chỉ giám sát và trích xuất dữ liệu, nên không thể sửa, xoá hay thao tác gây ảnh hưởng đến dữ liệu nguồn. Các giới hạn chính gồm:
 
