@@ -3924,7 +3924,6 @@ function getContractorOptions() {
 }
 
 
-
 //Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
 function getTransportCompanies() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -4511,21 +4510,11 @@ function getXpplWeighingData(filter, sessionToken) {
 // ===== WEIGHING RESULT HELPERS =====
 function matchTransportionCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
-  const main = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const totalSh = main.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
-  const totalLast = totalSh.getLastRow();
-  const totalHead = totalLast > 0 ? totalSh.getRange(1,1,1,totalSh.getLastColumn()).getValues()[0] : [];
-  const idxPlateTL = totalHead.indexOf('Truck Plate');
-  const idxCompTL = totalHead.indexOf('Transportion Company');
-  const plateMap = new Map();
-  if (idxPlateTL > -1 && idxCompTL > -1 && totalLast > 1) {
-    const vals = totalSh.getRange(2,1,totalLast-1,totalSh.getLastColumn()).getValues();
-    vals.forEach(r => {
-      const plate = String(r[idxPlateTL]||'').replace(/\s/g,'').toUpperCase();
-      if (plate) plateMap.set(plate, String(r[idxCompTL]||'').trim());
-    });
-  }
-
+  const normalizePlate = function (value) {
+    return String(value == null ? '' : value)
+      .replace(/\s/g, '')
+      .toUpperCase();
+  };
   const f = filter || {};
   const from = _toDateKey(f.dateFrom);
   const to = _toDateKey(f.dateTo);
@@ -4549,6 +4538,37 @@ function matchTransportionCompanies(filter, sessionToken) {
 
   if (!records.length) return 'Không tìm thấy dữ liệu phù hợp.';
 
+  const targetPlates = new Set();
+  records.forEach(function (record) {
+    const plate = normalizePlate(record && record.truck_no);
+    if (plate) targetPlates.add(plate);
+  });
+
+  const plateMap = new Map();
+  if (targetPlates.size) {
+    const vehicleQuery = ['select=' + encodeURIComponent(['truck_plate', 'transportation_company'].join(','))];
+    if (isoFrom) vehicleQuery.push('register_date=gte.' + encodeURIComponent(isoFrom));
+    if (isoTo) vehicleQuery.push('register_date=lte.' + encodeURIComponent(isoTo));
+    vehicleQuery.push('transportation_company=not.is.null');
+
+    try {
+      const vehicleRows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + vehicleQuery.join('&'));
+      if (Array.isArray(vehicleRows)) {
+        vehicleRows.forEach(function (row) {
+          const plate = normalizePlate(row && row.truck_plate);
+          if (!plate || !targetPlates.has(plate)) return;
+          const company = sanitizeXpplText_(row && row.transportation_company);
+          if (!company) return;
+          if (!plateMap.has(plate)) {
+            plateMap.set(plate, company);
+          }
+        });
+      }
+    } catch (err) {
+      Logger.log('matchTransportionCompanies vehicle registration fetch error: ' + err);
+    }
+  }
+
   const uname = sanitizeXpplText_(user.username || user.user || user.email || '');
   const updates = [];
 
@@ -4556,10 +4576,15 @@ function matchTransportionCompanies(filter, sessionToken) {
     const dateKey = _toDateKey(record && record.date_out);
     if (from && dateKey && dateKey < from) return;
     if (to && dateKey && dateKey > to) return;
-    const plate = String(record && record.truck_no || '').replace(/\s/g, '').toUpperCase();
-    if (!plate) return;
-    const compName = sanitizeXpplText_(plateMap.get(plate) || 'Unknown');
-    if (!record || !record.id) return;
+    const plate = normalizePlate(record && record.truck_no);
+    if (!plate || !record || !record.id) return;
+    let compName = plateMap.get(plate);
+    if (compName) {
+      compName = sanitizeXpplText_(compName);
+    } else {
+      compName = 'Unknown';
+    }
+    compName = sanitizeXpplText_(compName || 'Unknown');
     updates.push({
       id: record.id,
       transportation_company: compName,
