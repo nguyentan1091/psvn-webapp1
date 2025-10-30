@@ -2363,7 +2363,7 @@ function handleManualAdd(e) {
     return;
   }
 
-  // GỬI ĐỦ CÁC CỘT giống header của sheet VehicleData
+  // GỬI ĐỦ CÁC CỘT giống header dữ liệu đăng ký xe
   const record = {
     'Register Date'       : registerDate,          // Gửi dạng "DD/MM/YYYY" bình thường
     'Contract No'         : contractNo,
@@ -3236,7 +3236,7 @@ function handleExportExcel() {
       ws['!cols'] = colWidths;
     })();
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "VehicleData");
+    XLSX.utils.book_append_sheet(wb, ws, "VehicleRegistration");
     var fileName = `${safeContractLabel}-Registration Trucklist-${fileDatePart}.xlsx`;
     XLSX.writeFile(wb, fileName);
   }
