@@ -3651,12 +3651,17 @@ function handleDeleteSelected() {
 
 function handleEdit(rowData) {
     const createOptions = (items, selectedValue) => items.map(item => `<option value="${item}" ${item === selectedValue ? 'selected' : ''}>${item}</option>`).join('');
-    const t = translations[currentLang];    
+    const t = translations[currentLang];
+    const isAdmin = isRole('admin');
+
+    const registerDateInput = isAdmin
+        ? `<input type="text" id="editRegisterDate" class="form-control" value="${rowData['Register Date'] || ''}" required>`
+        : `<input type="text" class="form-control" value="${rowData['Register Date']}" readonly>`;
 
     const formHtml = `
         <form id="editForm" class="edit-form-grid">
             <div class="form-group"><label>${t.col_id || 'ID'}</label><input type="text" class="form-control" value="${rowData.ID}" readonly></div>
-            <div class="form-group"><label>${t.col_register_date || 'Register Date'}</label><input type="text" class="form-control" value="${rowData['Register Date']}" readonly></div>
+            <div class="form-group"><label>${t.col_register_date || 'Register Date'}</label>${registerDateInput}</div>
             <div class="form-group"><label>${t.col_contract_no || 'Contract No'}</label><input type="text" id="editContractNo" class="form-control" value="${rowData['Contract No'] || ''}" required></div>
             <div class="form-group"><label>${t.col_truck_plate || 'Truck Plate'}</label><input type="text" id="editTruckPlate" class="form-control" value="${rowData['Truck Plate'] || ''}" maxlength="11" required></div>
             <div class="form-group"><label>${t.col_country || 'Country'}</label>
@@ -3699,6 +3704,9 @@ function handleEdit(rowData) {
                 return false;
             }
             const updatedRecord = { ...rowData };
+            if (isAdmin) {
+                updatedRecord['Register Date'] = $('#editRegisterDate').val();
+            }
             updatedRecord['Contract No'] = $('#editContractNo').val();
             updatedRecord['Truck Plate'] = $('#editTruckPlate').val().replace(/\s/g, '').toUpperCase();
             updatedRecord['Country'] = $('#editCountry').val();
