@@ -1,7 +1,7 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
 const SPREADSHEET_ID = '1LbR9ZDepGrV9xBzOLQGyhtbDfPLvsdGxIJ-Iw9bkZa4'; 
-const DATA_SHEET = 'VehicleData';
+const VEHICLE_REGISTRATION_CACHE_KEY = 'vehicle_registration_supabase';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 // === XPPL Weighing Station database ===
 const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
@@ -1398,7 +1398,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   params = params || {};
   const userSession = validateSession(params.sessionToken);
   const userRole = String(userSession.role || '').toLowerCase();
-  const includeSummary = sheetName === DATA_SHEET;
+  const includeSummary = sheetName === VEHICLE_REGISTRATION_CACHE_KEY;
 
   const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
   const cachedResult = cacheKey ? safeScriptCacheGetJSON_(cacheKey) : null;
@@ -1413,7 +1413,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     return result;
   };
 
-  if (sheetName === DATA_SHEET) {
+  if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
     const result = processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary);
     return respondWithCache(result);
   }  
@@ -1544,7 +1544,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   // === SUMMARY (for 'Xe đã đăng ký') ===
   var summary = null;
   try {
-    if (sheetName === DATA_SHEET) {
+    if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
       var statusIdx = headers.indexOf('Registration Status');
       if (statusIdx !== -1) {
         var total = filteredData.length;
@@ -1686,7 +1686,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
 }
 
 function getRegisteredDataServerSide(params) {
-  return processServerSide(params, DATA_SHEET, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
+  return processServerSide(params, VEHICLE_REGISTRATION_CACHE_KEY, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
 }
 
 function getRegisteredContractOptions(filter, sessionToken) {
@@ -1842,7 +1842,7 @@ function getXpplExportData(filter, sessionToken) {
   // 2) Lọc dữ liệu từ Supabase vehicle_registration
   const isoDate = toSupabaseDateString_(dateKey);
   if (!isoDate) {
-    return { ok:false, errors:['Thiếu cột bắt buộc trong VehicleData (Register Date / Contract No).'] };
+  return { ok:false, errors:['Thiếu cột bắt buộc trong dữ liệu đăng ký xe (Register Date / Contract No).'] };
   }
 
   const vehicleRows = supabaseRequest_(
@@ -2615,7 +2615,8 @@ function getAllLoginHistoryForExport(filters, sessionToken, searchQuery) {
   return data.map(mapLoginHistoryRow_);
 }
 
-function buildVehicleHistoryQueryParts_(filters, searchValue) {
+function buildVehicleHistoryQueryParts_(filters, searchValue, options) {
+  const opts = options || {};
   const parts = ['select=' + encodeURIComponent('*')];
   const fromIso = parseHistoryDateFilter_(filters && filters.dateFrom, false);
   if (fromIso) parts.push('action_time=gte.' + encodeURIComponent(fromIso));
@@ -2637,16 +2638,23 @@ function buildVehicleHistoryQueryParts_(filters, searchValue) {
     const likeValue = `%${sanitized}%`;
     const orConditions = [
       `action_type.ilike.${likeValue}`,
-      `contract_no.ilike.${likeValue}`,
       `truck_plate.ilike.${likeValue}`,
       `driver_name.ilike.${likeValue}`,
       `id_passport.ilike.${likeValue}`,
       `phone_number.ilike.${likeValue}`,
-      `transportation_comp.ilike.${likeValue}`,
       `subcontractor.ilike.${likeValue}`,
       `created_by.ilike.${likeValue}`
     ];
-    parts.push('or=' + encodeURIComponent('(' + orConditions.join(',') + ')'));
+    if (!opts.skipContractSearch) {
+      orConditions.splice(1, 0, `contract_no.ilike.${likeValue}`);
+    }
+    if (!opts.skipCompanySearch) {
+      orConditions.push(`transportation_comp.ilike.${likeValue}`);
+    }
+
+    if (orConditions.length) {
+      parts.push('or=' + encodeURIComponent('(' + orConditions.join(',') + ')'));
+    }
   }
 
   return parts;
@@ -2728,15 +2736,34 @@ function getVehicleRegistrationHistoryServerSide(params) {
     }
   }
 
-  const queryParts = buildVehicleHistoryQueryParts_(params.filters || {}, params.search && params.search.value);
-  queryParts.push('limit=' + Math.max(length, 10));
-  queryParts.push('offset=' + start);
-  queryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+  const filters = params.filters || {};
+  const searchValue = params.search && params.search.value;
 
-  const response = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&'), {
-    headers: { Prefer: 'count=exact' },
-    returnResponse: true
-  });
+  function buildQueryParts(extraOptions) {
+    const parts = buildVehicleHistoryQueryParts_(filters, searchValue, extraOptions);
+    parts.push('limit=' + Math.max(length, 10));
+    parts.push('offset=' + start);
+    parts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+    return parts;
+  }
+
+  function executeQuery(parts) {
+    return supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + parts.join('&'), {
+      headers: { Prefer: 'count=exact' },
+      returnResponse: true
+    });
+  }
+
+  let response;
+  try {
+    response = executeQuery(buildQueryParts());
+  } catch (error) {
+    if (error && /operator does not exist: uuid/i.test(error.message || '')) {
+      response = executeQuery(buildQueryParts({ skipContractSearch: true, skipCompanySearch: true }));
+    } else {
+      throw error;
+    }
+  }
   const rows = Array.isArray(response.data) ? response.data : [];
   const total = parseContentRangeTotal_(response.headers);
 
@@ -2750,8 +2777,23 @@ function getVehicleRegistrationHistoryServerSide(params) {
 
 function getAllVehicleHistoryForExport(filters, sessionToken, searchQuery) {
   requireAdmin_(sessionToken);
-  const queryParts = buildVehicleHistoryQueryParts_(filters || {}, searchQuery);
-  const rows = supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  const paramsFilters = filters || {};
+
+  function fetchRows(extraOptions) {
+    const queryParts = buildVehicleHistoryQueryParts_(paramsFilters, searchQuery, extraOptions);
+    return supabaseRequest_(SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
+  }
+
+  let rows;
+  try {
+    rows = fetchRows();
+  } catch (error) {
+    if (error && /operator does not exist: uuid/i.test(error.message || '')) {
+      rows = fetchRows({ skipContractSearch: true, skipCompanySearch: true });
+    } else {
+      throw error;
+    }
+  }
   const data = Array.isArray(rows) ? rows : [];
   return data.map(mapVehicleHistoryRow_);
 }
@@ -2877,7 +2919,7 @@ function saveData(dataToSave, sessionToken, language) {
       payload: payloads
     });
 
-    bumpSheetCacheVersion_(DATA_SHEET);
+    bumpSheetCacheVersion_(VEHICLE_REGISTRATION_CACHE_KEY);
     return pickMessage('Dữ liệu đã được lưu thành công!', 'Data saved successfully!');
   } catch (error) {
     Logger.log(error);
@@ -2947,7 +2989,7 @@ function updateData(rowData, sessionToken) {
       payload: payload
     });
 
-    bumpSheetCacheVersion_(DATA_SHEET);
+    bumpSheetCacheVersion_(VEHICLE_REGISTRATION_CACHE_KEY);
     return 'Dữ liệu đã được cập nhật thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật dữ liệu: ' + error.message); }
 }
@@ -3011,7 +3053,7 @@ function deleteMultipleData(ids,sessionToken) {
       });
     });
 
-    bumpSheetCacheVersion_(DATA_SHEET);
+    bumpSheetCacheVersion_(VEHICLE_REGISTRATION_CACHE_KEY);
     return `Đã xóa thành công ${existing.length} mục.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa dữ liệu: ' + error.message); }
 }
@@ -3910,7 +3952,7 @@ function addManualVehicle(record, sessionToken, language) {
       headers: { Prefer: 'return=minimal' },
       payload: [payload]
     });
-    bumpSheetCacheVersion_(DATA_SHEET);
+    bumpSheetCacheVersion_(VEHICLE_REGISTRATION_CACHE_KEY);
 
     return pickMessage('Đăng ký xe thành công!', 'Vehicle registered successfully!');
   } catch (e) {
@@ -4077,7 +4119,7 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
     });
   });
 
-  bumpSheetCacheVersion_(DATA_SHEET);
+  bumpSheetCacheVersion_(VEHICLE_REGISTRATION_CACHE_KEY);
   _bust(['SNAP_'+dateString+'_ALL']);
   return 'Đã cập nhật ' + changedIds.length + ' dòng.';
 }
