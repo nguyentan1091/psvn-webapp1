@@ -856,12 +856,32 @@ function toXpplSupabaseDate_(value) {
   if (normalized) {
     return Utilities.formatDate(normalized, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
   }
+  if (typeof value === 'number' && isFinite(value)) {
+    const excelDate = parseExcelDate_(value);
+    if (excelDate) {
+      return Utilities.formatDate(excelDate, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
+    }
+  }
   const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(value));
   if (parsed) {
     return Utilities.formatDate(parsed, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
   }
   const str = sanitizeXpplText_(value);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if (!str) return '';
+  const dmyMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const dateObj = new Date(year, month, day);
+    if (!isNaN(dateObj)) {
+      return Utilities.formatDate(dateObj, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
+    }
+  }
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return isoMatch.slice(1, 4).join('-');
+  }
   return str;
 }
 
