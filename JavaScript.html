@@ -46,6 +46,35 @@ let serverBusyToastTimer = null;
 let vietnamTimeState = null;
 let vietnamTimePromise = null;
 
+const serverDataCache = new Map();
+const SERVER_CACHE_DEFAULT_TTL = 60 * 1000;
+const BROWSER_CACHE_PREFIX = 'psvn_cache::';
+const REGISTER_FORM_DRAFT_KEY = 'psvn_register_form_draft';
+const REGISTER_FORM_FIELDS = [
+    'formRegisterDate',
+    'manual-contractNo',
+    'formTruckPlate',
+    'formCountry',
+    'formWheel',
+    'formTrailerPlate',
+    'formTruckWeight',
+    'formPayLoad',
+    'formContainerNo1',
+    'formContainerNo2',
+    'formDriverName',
+    'formIdPassport',
+    'formPhoneNumber',
+    'formDestinationEST',
+    'formTransportionCompany',
+    'formSubcontractor',
+    'formVehicleStatus'
+];
+const REGISTRATION_STATUS_CACHE_KEY = 'psvn_registration_status';
+const REGISTRATION_STATUS_CACHE_TTL = 15 * 1000;
+let registrationTimerIntervalId = null;
+let registrationTimerResyncId = null;
+let registrationTimerState = null;
+
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('storage', handleStorageEvent);
 }
@@ -193,7 +222,105 @@ function handleStorageEvent(event) {
 
     if (event.key === SESSION_FLAG_KEY && !event.newValue) {
         clearSessionFlag({ persistLocal: false });
-    }    
+    }
+}
+
+function appsScriptPromise(methodName, ...args) {
+    return new Promise((resolve, reject) => {
+        try {
+            const runner = google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(err => reject(err));
+            if (typeof runner[methodName] !== 'function') {
+                reject(new Error(`Method ${methodName} is not available.`));
+                return;
+            }
+            runner[methodName](...args);
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+function getBrowserCacheKey(key) {
+    return BROWSER_CACHE_PREFIX + key;
+}
+
+function readBrowserCache(key) {
+    if (typeof sessionStorage === 'undefined') return null;
+    try {
+        const raw = sessionStorage.getItem(getBrowserCacheKey(key));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && parsed.value !== undefined) {
+            return parsed;
+        }
+    } catch (err) {
+        try { sessionStorage.removeItem(getBrowserCacheKey(key)); } catch (_) {}
+    }
+    return null;
+}
+
+function writeBrowserCache(key, entry) {
+    if (typeof sessionStorage === 'undefined') return;
+    try {
+        sessionStorage.setItem(getBrowserCacheKey(key), JSON.stringify(entry));
+    } catch (err) {
+        try { sessionStorage.removeItem(getBrowserCacheKey(key)); } catch (_) {}
+    }
+}
+
+function clearBrowserCache(key) {
+    if (typeof sessionStorage === 'undefined') return;
+    try {
+        sessionStorage.removeItem(getBrowserCacheKey(key));
+    } catch (_) {}
+}
+
+function fetchCachedServerData(key, ttlMs = SERVER_CACHE_DEFAULT_TTL, fetcher) {
+    const now = Date.now();
+    const cached = serverDataCache.get(key);
+    if (cached && (ttlMs <= 0 || (now - cached.timestamp) < ttlMs)) {
+        return Promise.resolve(cached.value);
+    }
+    const browserCached = readBrowserCache(key);
+    if (browserCached && (ttlMs <= 0 || (now - browserCached.timestamp) < ttlMs)) {
+        serverDataCache.set(key, browserCached);
+        return Promise.resolve(browserCached.value);
+    }
+    return Promise.resolve()
+        .then(() => fetcher())
+        .then(result => {
+            const entry = { value: result, timestamp: Date.now() };
+            serverDataCache.set(key, entry);
+            writeBrowserCache(key, entry);
+            return result;
+        });
+}
+
+function invalidateServerCache(...keys) {
+    keys.forEach(key => {
+        serverDataCache.delete(key);
+        clearBrowserCache(key);
+    });
+}
+
+function getTransportCompaniesCached() {
+    return fetchCachedServerData('transport_companies', SERVER_CACHE_DEFAULT_TTL, () =>
+        appsScriptPromise('getTransportCompanies')
+    );
+}
+
+function getActiveContractNosCached() {
+    return fetchCachedServerData('active_contract_nos', SERVER_CACHE_DEFAULT_TTL, () =>
+        appsScriptPromise('getActiveContractNos', userSession.token)
+    );
+}
+
+function getExistingTruckPlatesCached() {
+    return fetchCachedServerData('existing_truck_plates', SERVER_CACHE_DEFAULT_TTL, () =>
+        appsScriptPromise('getExistingTruckPlates', userSession.token)
+    );
 }
 
 function ensureToastContainer() {
@@ -1530,7 +1657,14 @@ function loadDashboard() {
 }
 
 function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
-    if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
+    if (registrationTimerIntervalId) {
+        clearInterval(registrationTimerIntervalId);
+        registrationTimerIntervalId = null;
+    }
+    if (registrationTimerResyncId) {
+        clearTimeout(registrationTimerResyncId);
+        registrationTimerResyncId = null;
+    }
 
     $('.page-title').text(translations[currentLang][pageTitleKey] || pageTitleKey);
     if (!isInitialLoad) showLoading(translations[currentLang].loading_page);
@@ -2203,6 +2337,69 @@ function handleChangePassword(e) {
         .changePassword({ currentPassword, newPassword }, userSession.token);
 }
 
+function getRegisterDraft() {
+    if (typeof sessionStorage === 'undefined') return null;
+    try {
+        const raw = sessionStorage.getItem(REGISTER_FORM_DRAFT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            return parsed;
+        }
+    } catch (err) {
+        try { sessionStorage.removeItem(REGISTER_FORM_DRAFT_KEY); } catch (_) {}
+    }
+    return null;
+}
+
+function setRegisterDraft(draft) {
+    if (typeof sessionStorage === 'undefined') return;
+    const sanitized = {};
+    REGISTER_FORM_FIELDS.forEach(id => {
+        if (Object.prototype.hasOwnProperty.call(draft, id)) {
+            sanitized[id] = draft[id];
+        }
+    });
+    try {
+        sessionStorage.setItem(REGISTER_FORM_DRAFT_KEY, JSON.stringify(sanitized));
+    } catch (err) {
+        try { sessionStorage.removeItem(REGISTER_FORM_DRAFT_KEY); } catch (_) {}
+    }
+}
+
+function updateRegisterDraftField(fieldId, value) {
+    if (!fieldId || REGISTER_FORM_FIELDS.indexOf(fieldId) === -1) return;
+    const draft = getRegisterDraft() || {};
+    draft[fieldId] = value;
+    setRegisterDraft(draft);
+}
+
+function clearRegisterDraftStorage() {
+    if (typeof sessionStorage === 'undefined') return;
+    try { sessionStorage.removeItem(REGISTER_FORM_DRAFT_KEY); } catch (_) {}
+}
+
+function applyRegisterDraftToForm() {
+    const draft = getRegisterDraft();
+    if (!draft) return;
+    REGISTER_FORM_FIELDS.forEach(id => {
+        if (!Object.prototype.hasOwnProperty.call(draft, id)) return;
+        const value = draft[id];
+        const $el = $('#' + id);
+        if ($el.length) {
+            $el.val(value);
+        }
+    });
+}
+
+function bindRegisterDraftEvents() {
+    const selector = REGISTER_FORM_FIELDS.map(id => `#${id}`).join(',');
+    if (!selector) return;
+    $(selector).off('.registerDraft').on('input.registerDraft change.registerDraft', function () {
+        updateRegisterDraftField(this.id, $(this).val());
+    });
+}
+
 function initRegisterPage() {
   ensureVietnamTime().then(() => {
     const nowVietnam = getVietnamNowClient();
@@ -2239,8 +2436,10 @@ function initRegisterPage() {
         } else {
           $('#upload-date-note').text('');
         }
-        startRegistrationTimer();        
+        startRegistrationTimer();
       }
+      applyRegisterDraftToForm();
+      bindRegisterDraftEvents();
     }).checkRegistrationTime();
 
     $('#manualEntryForm').off('submit').on('submit', handleManualAdd);
@@ -2248,87 +2447,225 @@ function initRegisterPage() {
     $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
 
     // === NẠP "Đơn vị vận chuyển" từ TruckListTotal ===
-    google.script.run
-      .withSuccessHandler(list => {
+    getTransportCompaniesCached()
+      .then(list => {
         allowedCompanies = (list || []).filter(Boolean);
         const $sel = $('#formTransportionCompany');
 
-        if (isRole('user')) {//đã làm đến đây lúc 15:28
-          // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
+        if (isRole('user')) {
           const me = String((userSession.contractor || '')).trim();
           if (me) {
             $sel.html(`<option value="${me}">${me}</option>`)
                 .val(me)
                 .prop('disabled', true)
-                .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
+                .addClass('bg-light');
           } else {
-            // Không có contractor → vẫn cho chọn (ít gặp)
             const firstOption = t.select_company_option || 'Chọn đơn vị';
             const html = [`<option value="">${firstOption}</option>`,
                           ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
             $sel.html(html).prop('disabled', false).removeClass('bg-light');
           }
         } else {
-          // Admin: danh sách đầy đủ
-            const firstOption = t.select_company_option || 'Chọn đơn vị';
+          const firstOption = t.select_company_option || 'Chọn đơn vị';
           const html = [`<option value="">${firstOption}</option>`,
                         ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
           $sel.html(html).prop('disabled', false).removeClass('bg-light');
         }
+        applyRegisterDraftToForm();
       })
-      .withFailureHandler(showError)
-      .getTransportCompanies();   // <-- đang đọc từ ContractData như bạn yêu cầu
+      .catch(showError);
 
     loadActiveContractNosForRegister();
+    applyRegisterDraftToForm();
+    bindRegisterDraftEvents();
   });
 }
 
 
 
 function startRegistrationTimer() {
-    if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
-																					
-    const updateCountdown = () => {
-        google.script.run
-            .withSuccessHandler(status => {
-                const openNotice = $('#registration-open-notice');
-                const closedNotice = $('#registration-closed-notice');
-                const contentCards = $('#registration-content .card');
+    if (registrationTimerIntervalId) {
+        clearInterval(registrationTimerIntervalId);
+        registrationTimerIntervalId = null;
+    }
+    if (registrationTimerResyncId) {
+        clearTimeout(registrationTimerResyncId);
+        registrationTimerResyncId = null;
+    }
+    registrationTimerState = null;
 
-                if (status.isOpen) {
-                    openNotice.removeClass('d-none');
-                    closedNotice.addClass('d-none');
-                    contentCards.removeClass('opacity-50 disabled-card');
-                    contentCards.find('input, select, button').prop('disabled', false);
-                    if (isRole('user')) {
-                        $('#formTransportionCompany').prop('disabled', true);
-                    }
-                    openNotice.find('#open-message').text(translations[currentLang].reg_open_message_text);
-                    const timeToClose = status.timeToClose;
-                    const hours = Math.floor(timeToClose / (1000 * 60 * 60));
-                    const minutes = Math.floor((timeToClose % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((timeToClose % (1000 * 60)) / 1000);
-                    openNotice.find('#countdown-timer-open').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+    const openNotice = $('#registration-open-notice');
+    const closedNotice = $('#registration-closed-notice');
+    const contentCards = $('#registration-content .card');
+    const RESYNC_INTERVAL_MS = 12000;
+    const REGISTRATION_APP_TIMEZONE = 'Asia/Ho_Chi_Minh';
+    const REGISTRATION_SLOTS = [
+        { open: { hour: 8, minute: 0 }, close: { hour: 16, minute: 0 } },
+        { open: { hour: 20, minute: 0 }, close: { hour: 22, minute: 0 } }
+    ];
 
-                } else {
-                    closedNotice.removeClass('d-none');
-                    openNotice.addClass('d-none');
-                    contentCards.addClass('opacity-50 disabled-card');
-                    contentCards.find('input, select, button').prop('disabled', true);
-                    closedNotice.find('#closed-message').text(translations[currentLang].reg_closed_message_text);
-                    const timeToOpen = status.timeToOpen;
-                    const hours = Math.floor(timeToOpen / (1000 * 60 * 60));
-                    const minutes = Math.floor((timeToOpen % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((timeToOpen % (1000 * 60)) / 1000);
-                    closedNotice.find('#countdown-timer-closed').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
-                } 
+    function estimateLocalRegistrationStatus() {
+        try {
+            const now = new Date();
+            const timezoneDate = new Date(now.toLocaleString('en-US', { timeZone: REGISTRATION_APP_TIMEZONE }));
+            const offsetMs = now.getTime() - timezoneDate.getTime();
+
+            function buildDate(base, spec) {
+                const date = new Date(base.getTime());
+                date.setHours(spec.hour, spec.minute, 0, 0);
+                return date;
+            }
+
+            let currentSlot = null;
+            let nextOpen = null;
+            let nextClose = null;
+
+            REGISTRATION_SLOTS.forEach(slot => {
+                const openAt = buildDate(timezoneDate, slot.open);
+                const closeAt = buildDate(timezoneDate, slot.close);
+                if (timezoneDate >= openAt && timezoneDate < closeAt) {
+                    currentSlot = { openAt, closeAt };
+                    nextClose = closeAt;
+                }
+                if (!nextOpen && timezoneDate < openAt) {
+                    nextOpen = openAt;
+                }
+            });
+
+            if (!nextOpen) {
+                const tomorrow = new Date(timezoneDate.getTime() + 24 * 60 * 60 * 1000);
+                tomorrow.setHours(0, 0, 0, 0);
+                nextOpen = buildDate(tomorrow, REGISTRATION_SLOTS[0].open);
+            }
+
+            if (currentSlot && !nextClose) {
+                nextClose = currentSlot.closeAt;
+            }
+
+            const status = {
+                isOpen: !!currentSlot,
+                serverTimestamp: now.getTime()
+            };
+
+            if (nextOpen) {
+                status.nextOpenTimestamp = nextOpen.getTime() + offsetMs;
+            }
+            if (nextClose) {
+                status.nextCloseTimestamp = nextClose.getTime() + offsetMs;
+            }
+
+            return status;
+        } catch (err) {
+            console.warn('Failed to estimate registration status locally', err);
+            return null;
+        }
+    }
+
+    function applyStatus(status, options = {}) {
+        if (!status) return;
+        const isOpen = !!status.isOpen;
+        const serverTimestamp = typeof status.serverTimestamp === 'number'
+            ? status.serverTimestamp
+            : Date.now();
+        const nextOpen = typeof status.nextOpenTimestamp === 'number'
+            ? status.nextOpenTimestamp
+            : (serverTimestamp + Math.max(0, status.timeToOpen || 0));
+        const nextClose = typeof status.nextCloseTimestamp === 'number'
+            ? status.nextCloseTimestamp
+            : (serverTimestamp + Math.max(0, status.timeToClose || 0));
+        const targetTimestamp = isOpen ? nextClose : nextOpen;
+
+        registrationTimerState = {
+            isOpen,
+            targetTimestamp,
+            offsetMs: serverTimestamp - Date.now(),
+            pendingRefresh: false
+        };
+
+        if (isOpen) {
+            openNotice.removeClass('d-none');
+            closedNotice.addClass('d-none');
+            contentCards.removeClass('opacity-50 disabled-card');
+            contentCards.find('input, select, button').prop('disabled', false);
+            if (isRole('user')) {
+                $('#formTransportionCompany').prop('disabled', true);
+            }
+            openNotice.find('#open-message').text(translations[currentLang].reg_open_message_text);
+        } else {
+            closedNotice.removeClass('d-none');
+            openNotice.addClass('d-none');
+            contentCards.addClass('opacity-50 disabled-card');
+            contentCards.find('input, select, button').prop('disabled', true);
+            closedNotice.find('#closed-message').text(translations[currentLang].reg_closed_message_text);
+        }
+
+        renderCountdown();
+
+        if (!options.fromCache) {
+            writeBrowserCache(REGISTRATION_STATUS_CACHE_KEY, {
+                value: status,
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    function renderCountdown() {
+        if (!registrationTimerState) return;
+        const now = Date.now() + (registrationTimerState.offsetMs || 0);
+        let remaining = registrationTimerState.targetTimestamp - now;
+        if (remaining <= 0) {
+            remaining = 0;
+            if (!registrationTimerState.pendingRefresh) {
+                registrationTimerState.pendingRefresh = true;
+                fetchStatus();
+            }
+        }
+        const hours = Math.floor(remaining / 3600000);
+        const minutes = Math.floor((remaining % 3600000) / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        const formatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        if (registrationTimerState.isOpen) {
+            openNotice.find('#countdown-timer-open').text(formatted);
+        } else {
+            closedNotice.find('#countdown-timer-closed').text(formatted);
+        }
+    }
+
+    function scheduleResync(delay = RESYNC_INTERVAL_MS) {
+        if (registrationTimerResyncId) {
+            clearTimeout(registrationTimerResyncId);
+        }
+        registrationTimerResyncId = setTimeout(fetchStatus, delay);
+    }
+
+    function fetchStatus() {
+        appsScriptPromise('checkRegistrationTime')
+            .then(status => {
+                registrationTimerState = null;
+                applyStatus(status);
+                scheduleResync();
             })
-            .withFailureHandler(showError)
-            .checkRegistrationTime();
-    };
+            .catch(err => {
+                console.error('Failed to sync registration time:', err);
+                if (typeof showError === 'function') {
+                    showError(err);
+                }
+                scheduleResync(RESYNC_INTERVAL_MS * 2);
+            });
+    }
 
-    updateCountdown();
-    registrationTimerInterval = setInterval(updateCountdown, 1000);
+    const cachedStatus = readBrowserCache(REGISTRATION_STATUS_CACHE_KEY);
+    if (cachedStatus && (Date.now() - cachedStatus.timestamp) < REGISTRATION_STATUS_CACHE_TTL) {
+        applyStatus(cachedStatus.value, { fromCache: true });
+    } else {
+        const estimatedStatus = estimateLocalRegistrationStatus();
+        if (estimatedStatus) {
+            applyStatus(estimatedStatus, { fromCache: true, estimated: true });
+        }
+    }
+
+    registrationTimerIntervalId = setInterval(renderCountdown, 200);
+    fetchStatus();
 }
 
 // === THAY TOÀN BỘ HÀM NÀY ===
@@ -2392,6 +2729,8 @@ function handleManualAdd(e) {
                 msg || t.register_success_message || 'Đăng ký xe thành công!',
                 'success');
       $('#manualEntryForm')[0].reset();
+      clearRegisterDraftStorage();
+      bindRegisterDraftEvents();
       if (typeof registeredVehicleTable !== 'undefined') {
         registeredVehicleTable.ajax.reload(null, false);
       }
@@ -4012,15 +4351,13 @@ function handleTotalListFileUpload() {
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
 
           // Lấy danh sách biển số đang có trong Danh sách tổng để đánh dấu trùng
-          google.script.run
-            .withSuccessHandler(existingList => {
+          getExistingTruckPlatesCached()
+            .then(existingList => {
               const existingPlates = new Set(Array.isArray(existingList) ? existingList : []);
 
-              // Bạn đã có hàm validateAndTransformTotalListData(rows, existingPlates)
               const result = validateAndTransformTotalListData(jsonData.slice(1), existingPlates);
               const validationErrors = Array.isArray(result.errors) ? result.errors : [];
 
-              // Chuẩn hoá record để luôn có đủ key DataTable cần
               totalListPreviewData = (result.data || []).map(r => ({
                 ID: r.ID || (typeof generateRandomId === 'function' ? generateRandomId(12) : String(Date.now())),
                 'Truck Plate': r['Truck Plate'] || '',
@@ -4046,11 +4383,10 @@ function handleTotalListFileUpload() {
                 errors: r.errors || null
               }));
 
-              // Huỷ DataTable cũ nếu có
               if ($.fn.DataTable.isDataTable('#total-list-previewDataTable')) {
                 $('#total-list-previewDataTable').DataTable().clear().destroy();
               }
-              $('#total-list-previewDataTable').addClass('table-sm dt-compact'); // thu nhỏ giống bảng dưới
+              $('#total-list-previewDataTable').addClass('table-sm dt-compact');
 
               const columns = [
                 { data: 'ID', title: 'ID', defaultContent: '' },
@@ -4159,8 +4495,7 @@ function handleTotalListFileUpload() {
               // Khoá nút lưu nếu còn trùng hoặc còn lỗi
               $('#total-list-saveUploadBtn').prop('disabled', hasErrors || hasDup);
             })
-            .withFailureHandler(err => { Swal.close(); showError(err); })
-            .getExistingTruckPlates(userSession.token);
+            .catch(err => { Swal.close(); showError(err); });
 
         } catch (err) {
           Swal.close();
@@ -4425,7 +4760,9 @@ function handleSaveTotalListUploadedData() {
       if ($.fn.DataTable.isDataTable('#totalListTable')) {
         $('#totalListTable').DataTable().ajax.reload(null, false);
       }
-      fetchTotalListSummary();      
+      fetchTotalListSummary();
+
+      invalidateServerCache('existing_truck_plates', 'transport_companies');
 
       // Dọn preview
       totalListPreviewData = [];
@@ -4468,6 +4805,7 @@ function handleDeleteTotalList() {
                     Swal.fire('Đã xóa!', message, 'success');
                     totalListTable.draw(false);
                     fetchTotalListSummary();
+                    invalidateServerCache('existing_truck_plates', 'transport_companies');
                 })
                 .withFailureHandler(showError)
                 .deleteTotalListVehicles(selectedIds, userSession.token);
@@ -4553,7 +4891,8 @@ function handleEditTotalListVehicle(rowData) {
                 .withSuccessHandler(message => {
                     Swal.fire('Thành công!', message, 'success');
                     totalListTable.draw(false);
-                    fetchTotalListSummary();                    
+                    fetchTotalListSummary();
+                    invalidateServerCache('existing_truck_plates', 'transport_companies');
                 })
                 .withFailureHandler(showError)
                 .updateTotalListVehicle(result.value, userSession.token);
@@ -5573,18 +5912,15 @@ function bindContractToolbar(isAdmin) {
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 //nạp Số HĐ cho trang Đăng ký xe
-function loadActiveContractNosForRegister() { 
-  google.script.run
-    .withSuccessHandler(arr => {
-      // vẫn nạp datalist để fallback (không bắt buộc, nhưng giữ như cũ)
+function loadActiveContractNosForRegister() {
+  getActiveContractNosCached()
+    .then(arr => {
+      const list = arr || [];
       const $dl = $('#contractNoList').empty();
-      (arr || []).forEach(no => $dl.append(`<option value="${esc(no)}"></option>`));
-
-      // ✅ khởi tạo combobox nhìn & dùng như select
-      initComboBox('#manual-contractNo', arr || []);
+      list.forEach(no => $dl.append(`<option value="${esc(no)}"></option>`));
+      initComboBox('#manual-contractNo', list);
     })
-    .withFailureHandler(showError)
-    .getActiveContractNos(userSession.token);
+    .catch(showError);
 }
 
 
@@ -6221,34 +6557,76 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
     Swal.fire('Chưa xác nhận', 'Vui lòng bấm “Xác nhận” trước.', 'info');
     return;
   }
-  const filter = xpplExportState.filter;
 
-  showLoading('Đang tạo file…');
-  google.script.run
-    .withSuccessHandler(function (res) {
-      Swal.close();
-      if (!res || !res.ok) {
-        Swal.fire('Không thể xuất', (res && res.message) || 'Lỗi không xác định.', 'error');
-        return;
+  const filter = xpplExportState.filter || {};
+  const rows = xpplExportState.rows || [];
+  if (!rows.length) {
+    Swal.fire('Không thể xuất', 'Không có dữ liệu Approved để xuất.', 'info');
+    return;
+  }
+
+  const headers = ['No', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Driver Name', 'ID/Passport', 'Phone number', 'Transportion Company', 'Subcontractor'];
+  const aoa = [headers];
+  rows.forEach((row, idx) => {
+    aoa.push([
+      idx + 1,
+      row['Truck Plate'] || '',
+      row['Country'] || '',
+      row['Wheel'] || '',
+      row['Trailer Plate'] || '',
+      row['Driver Name'] || '',
+      row['ID/Passport'] || '',
+      row['Phone number'] || '',
+      row['Transportion Company'] || '',
+      row['Subcontractor'] || ''
+    ]);
+  });
+
+  try {
+    showLoading('Đang tạo file…');
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const borderSide = { style: 'thin', color: { rgb: '000000' } };
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const ref = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[ref];
+          if (!cell) continue;
+          cell.s = cell.s || {};
+          cell.s.border = {
+            top: borderSide,
+            right: borderSide,
+            bottom: borderSide,
+            left: borderSide
+          };
+          if (R === range.s.r) {
+            cell.s.font = Object.assign({}, cell.s.font, { bold: true });
+          }
+        }
       }
+      const colWidths = [];
+      for (let cIdx = 0; cIdx < headers.length; ++cIdx) {
+        let maxLen = headers[cIdx].length;
+        for (let rIdx = 1; rIdx < aoa.length; ++rIdx) {
+          const text = aoa[rIdx][cIdx] == null ? '' : String(aoa[rIdx][cIdx]);
+          maxLen = Math.max(maxLen, text.length);
+        }
+        colWidths.push({ wch: Math.min(Math.max(maxLen + 2, 10), 60) });
+      }
+      ws['!cols'] = colWidths;
+    }
 
-      // Đặt tên file tải về (ưu tiên server trả về fileName)
-      var filename = (res.fileName || res.name || ('XPPL_' + (filter.contractNo || '') + '_' + (filter.dateString || '') + '.xlsx'))
-        .replace(/[\\\/:\*\?"<>\|]/g, '_'); // sanitize ký tự cấm
-
-      // Tải về từ base64
-      var a = document.createElement('a');
-      a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + res.base64;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    })
-    .withFailureHandler(function (err) {
-      Swal.close();
-      showError(err && err.message ? err.message : err);
-    })
-    .exportXpplAsXlsx(filter, userSession.token);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'XPPL');
+    const baseName = `XPPL_${filter.contractNo || 'Contract'}_${(filter.dateString || '').replace(/\//g, '-') || 'Date'}`;
+    const sanitized = baseName.replace(/[\\\/:\*\?"<>\|]/g, '_') + '.xlsx';
+    Swal.close();
+    XLSX.writeFile(wb, sanitized);
+  } catch (err) {
+    Swal.close();
+    showError(err && err.message ? err.message : err);
+  }
 });
 
 
