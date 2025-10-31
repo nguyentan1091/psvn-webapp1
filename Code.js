@@ -122,10 +122,10 @@ const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
 const SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT = '/rest/v1/history_vehicle_registration';
 const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
 const SUPABASE_XPPL_DATABASE_ENDPOINT = '/rest/v1/xppl_database';
-const SUPABASE_TOTAL_LIST_ENDPOINT = '/rest/v1/vehicle_total_list';
+const SUPABASE_TOTAL_LIST_ENDPOINT = '/rest/v1/truck_list_total';
 const SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES = Object.freeze([
   SUPABASE_TOTAL_LIST_ENDPOINT,
-  '/rest/v1/truck_list_total',
+  '/rest/v1/vehicle_total_list',
   '/rest/v1/total_vehicle_list'
 ]);
 const SUPABASE_DYNAMIC_ENDPOINT_MAP = {};
@@ -138,14 +138,14 @@ const SUPABASE_ENDPOINT_TABLE_MAP = (function () {
   map[SUPABASE_CONTRACT_DATA_ENDPOINT] = ['contract_data'];
   map[SUPABASE_XPPL_DATABASE_ENDPOINT] = ['xppl_database'];
   SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES.forEach(function (endpoint) {
-    map[endpoint] = ['vehicle_total_list'];
+    map[endpoint] = ['truck_list_total'];
   });
   return Object.freeze(map);
 })();
 const SUPABASE_TABLE_CACHE_CONFIG = Object.freeze({
   vehicle_registration: { ttl: 30 },
   history_vehicle_registration: { ttl: 30 },
-  vehicle_total_list: { ttl: 45 },
+  truck_list_total: { ttl: 45 },
   contract_data: { ttl: 60 },
   xppl_database: { ttl: 60 },
   auth_login_history: { ttl: 30 },
@@ -282,7 +282,7 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'ID/Passport': 'id_passport',
   'Phone number': 'phone_number',
   'Destination EST': 'destination_est',
-  'Transportion Company': 'transportation_company',
+  'Transportation Company': 'transportation_company',
   'Subcontractor': 'subcontractor',
   'Vehicle Status': 'vehicle_status',
   'Registration Status': 'registration_status',
@@ -325,7 +325,7 @@ const TOTAL_LIST_COLUMN_MAP = {
   'Driver Name': 'driver_name',
   'ID/Passport': 'id_passport',
   'Phone number': 'phone_number',
-  'Transportion Company': 'transportation_company',
+  'Transportation Company': 'transportation_company',
   'Subcontractor': 'subcontractor',
   'Vehicle Status': 'vehicle_status',
   'Activity Status': 'activity_status',
@@ -581,7 +581,7 @@ function discoverSupabaseTableNames_(patterns) {
 }
 
 function getSupabaseTotalListEndpoints_() {
-  const cacheKey = SUPABASE_SCHEMA_CACHE_PREFIX + 'vehicle_total_list_endpoints';
+  const cacheKey = SUPABASE_SCHEMA_CACHE_PREFIX + 'truck_list_total_endpoints';
   const cached = safeScriptCacheGetJSON_(cacheKey);
   if (Array.isArray(cached) && cached.length) {
     return cached;
@@ -589,7 +589,7 @@ function getSupabaseTotalListEndpoints_() {
 
   const endpoints = SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES.slice();
   try {
-    const patterns = ['vehicle_total_list*', 'total_vehicle_list*', 'truck_list_total*', 'vehicle_list_total*'];
+    const patterns = ['truck_list_total*', 'vehicle_total_list*', 'total_vehicle_list*', 'vehicle_list_total*'];
     const names = discoverSupabaseTableNames_(patterns)
       .filter(function (name) {
         return typeof name === 'string' && name.trim();
@@ -603,7 +603,7 @@ function getSupabaseTotalListEndpoints_() {
       if (endpoints.indexOf(endpoint) === -1) {
         endpoints.push(endpoint);
       }
-      registerSupabaseDynamicEndpoint_(endpoint, 'vehicle_total_list');
+      registerSupabaseDynamicEndpoint_(endpoint, 'truck_list_total');
     });
   } catch (e) {
     Logger.log('getSupabaseTotalListEndpoints_ discovery error: ' + e);
@@ -755,13 +755,7 @@ function buildVehicleRegistrationPayload_(record, options) {
       }
       return;
     }
-    if (header === 'Register Date') {
-      const iso = toSupabaseDateString_(value);
-      if (iso) payload[column] = iso;
-      return;
-    }
-    if (header === 'Time') {
-      if (value) payload[column] = value instanceof Date ? value.toISOString() : String(value);
+    if (header === 'Register Date' || header === 'Time') {
       return;
     }
     if (value === '' || value === null || value === undefined) {
@@ -803,13 +797,7 @@ function buildTotalListPayload_(record, options) {
     if (!column || header === 'ID') return;
     const value = record[header];
 
-    if (header === 'Register Date') {
-      const iso = toSupabaseDateString_(value);
-      if (iso) payload[column] = iso;
-      return;
-    }
-    if (header === 'Time') {
-      if (value) payload[column] = value instanceof Date ? value.toISOString() : String(value);
+    if (header === 'Register Date' || header === 'Time') {
       return;
     }
     if (value === '' || value === null || value === undefined) {
@@ -839,9 +827,9 @@ function fetchTotalListRows_(selectFields, filterParams, options) {
     if (endpoints.length > 1) {
       cacheParts.push('endpoints=' + endpoints.join('|'));
     }
-    const rows = fetchSupabaseCached_('vehicle_total_list', cacheParts, function () {
+    const rows = fetchSupabaseCached_('truck_list_total', cacheParts, function () {
       const { result } = requestSupabaseWithEndpointFallback_(
-        'vehicle_total_list',
+        'truck_list_total',
         endpoints,
         function (endpoint) {
           const queryString = queryParts.join('&');
@@ -858,7 +846,7 @@ function fetchTotalListRows_(selectFields, filterParams, options) {
 }
 
 function fetchTotalListValidationData_() {
-  const version = getSupabaseCacheVersion_('vehicle_total_list');
+  const version = getSupabaseCacheVersion_('truck_list_total');
   const cacheKey = 'total_list_validation::' + version;
   const cached = safeScriptCacheGetJSON_(cacheKey);
   if (cached) return cached;
@@ -1473,13 +1461,13 @@ const HEADERS_REGISTER = [
   'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel',
   'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2',
   'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST',
-  'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
+  'Transportation Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
 ];
 const NUMERIC_REGISTER_FIELDS = ['Wheel', 'Truck weight', 'Pay load'];
 const HEADERS_TOTAL_LIST = [
   'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
   'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
-  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
+  'Phone number', 'Transportation Company', 'Subcontractor', 'Vehicle Status',
   'Activity Status', 'Register Date', 'Time'
 ];
 
@@ -2183,7 +2171,7 @@ function processTotalListServerSide_(params, headers, userSession, defaultSortCo
   );
 
   const endpoints = getSupabaseTotalListEndpoints_();
-  const recordsTotal = fetchSupabaseCount_('vehicle_total_list', endpoints, baseFilters);
+  const recordsTotal = fetchSupabaseCount_('truck_list_total', endpoints, baseFilters);
 
   const queryParts = [
     'select=' + encodeURIComponent(TOTAL_LIST_SELECT_FIELDS.join(',')),
@@ -2195,7 +2183,7 @@ function processTotalListServerSide_(params, headers, userSession, defaultSortCo
   }
   Array.prototype.push.apply(queryParts, filtersForPage);
 
-  const page = fetchSupabasePaged_('vehicle_total_list', endpoints, queryParts);
+  const page = fetchSupabasePaged_('truck_list_total', endpoints, queryParts);
   const rows = page.rows || [];
   const recordsFiltered = page.count || 0;
 
@@ -2429,7 +2417,7 @@ function getXpplExportData(filter, sessionToken) {
       'Driver Name':          s(row.driver_name),
       'ID/Passport':          s(row.id_passport),
       'Phone number':         s(row.phone_number),
-      'Transportion Company': s(row.transportation_company),
+      'Transportation Company': s(row.transportation_company),
       'Subcontractor':        s(row.subcontractor)
     };
   });
@@ -2511,7 +2499,7 @@ function checkVehiclesAgainstTotalList(vehicles) {
   for (let i = 0; i < list.length; i++) {
     const vehicle = list[i] || {};
     const plate    = normalizeTruckPlate_(vehicle['Truck Plate']);
-    const company  = String(vehicle['Transportion Company'] || '').trim();
+    const company  = String(vehicle['Transportation Company'] || '').trim();
 
     if (!plate) continue;
 
@@ -3107,7 +3095,7 @@ function saveData(dataToSave, sessionToken, language) {
     dataToSave.forEach(rec => {
       const cno = String(rec['Contract No'] || '').trim();
       const comp = String(
-        (userSession.role === 'user' ? userSession.contractor : rec['Transportion Company']) || ''
+        (userSession.role === 'user' ? userSession.contractor : rec['Transportation Company']) || ''
       ).trim().toUpperCase();
 
       if (!cno || !comp || !activeMap.has(comp) || !activeMap.get(comp).has(cno)) {
@@ -3126,7 +3114,7 @@ function saveData(dataToSave, sessionToken, language) {
   const dupCheckRecords = dataToSave.map(r => {
     const obj = Object.assign({}, r);
     if (userSession.role === 'user') {
-      obj['Transportion Company'] = userSession.contractor;
+      obj['Transportation Company'] = userSession.contractor;
     }
     return obj;
   });
@@ -3142,7 +3130,7 @@ function saveData(dataToSave, sessionToken, language) {
   try {
     const payloads = dataToSave.map(function (obj) {
       if (userSession.role === 'user') {
-        obj['Transportion Company'] = userSession.contractor;
+        obj['Transportation Company'] = userSession.contractor;
       }
       coerceNumericRegisterFields_(obj);
       const normalizedDate = normalizeDate(obj['Register Date']);
@@ -3213,7 +3201,7 @@ function updateData(rowData, sessionToken) {
 
 
     if (userSession.role === 'user') {
-      rowData['Transportion Company'] = userSession.contractor;
+      rowData['Transportation Company'] = userSession.contractor;
     }
     
     if (rowData['Register Date']) {
@@ -3314,7 +3302,7 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
       const regDate = normalizeDate(rec['Register Date']);
       const isoDate = toSupabaseDateString_(regDate) || '';
       const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-      const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
+      const company = String(rec['Transportation Company'] || '').trim().toUpperCase();
       if (!isoDate || !plate || !company) return;
       normalizedRecords.push({ date: isoDate, plate: plate, company: company });
       uniqueDates.add(isoDate);
@@ -3396,11 +3384,6 @@ function saveTotalTruckData(dataToSave, sessionToken) {
       if (plate) existingPlates.add(plate);
     });
 
-    const timezone = getAppTimeZone_();
-    const now = new Date();
-    const defaultDate = Utilities.formatDate(now, timezone, 'dd/MM/yyyy');
-    const defaultTime = Utilities.formatDate(now, timezone, 'HH:mm:ss');
-
     const inFileSeen = {};
     const skippedInFile = [];
     const skippedExisting = [];
@@ -3411,7 +3394,7 @@ function saveTotalTruckData(dataToSave, sessionToken) {
       const normalizedPlate = normalizeTruckPlate_(obj['Truck Plate']);
       if (!normalizedPlate) return;
 
-      const company = obj['Transportion Company'] || '';
+      const company = obj['Transportation Company'] || '';
 
       if (inFileSeen[normalizedPlate]) {
         skippedInFile.push({ plate: normalizedPlate, company: company });
@@ -3429,8 +3412,6 @@ function saveTotalTruckData(dataToSave, sessionToken) {
       if (record['Trailer Plate']) {
         record['Trailer Plate'] = normalizeTruckPlate_(record['Trailer Plate']);
       }
-      record['Register Date'] = record['Register Date'] || defaultDate;
-      record['Time'] = record['Time'] || defaultTime;
       payload.push(buildTotalListPayload_(record));
     });
 
@@ -3445,7 +3426,7 @@ function saveTotalTruckData(dataToSave, sessionToken) {
 
     const endpoints = getSupabaseTotalListEndpoints_();
     const { result } = requestSupabaseWithEndpointFallback_(
-      'vehicle_total_list',
+      'truck_list_total',
       endpoints,
       function (endpoint) { return endpoint; },
       {
@@ -3484,7 +3465,7 @@ function deleteTotalListVehicles(ids, sessionToken) {
 
     const endpoints = getSupabaseTotalListEndpoints_();
     const { result } = requestSupabaseWithEndpointFallback_(
-      'vehicle_total_list',
+      'truck_list_total',
       endpoints,
       function (endpoint) {
         return endpoint + (filter ? '?' + filter : '');
@@ -3516,21 +3497,16 @@ function updateTotalListVehicle(rowData, sessionToken) {
 
   try {
     const id = rowData.ID;
-    const timezone = getAppTimeZone_();
-    const now = new Date();
-
     const record = Object.assign({}, rowData);
     record['Truck Plate'] = normalizeTruckPlate_(record['Truck Plate']);
     if (record['Trailer Plate']) {
       record['Trailer Plate'] = normalizeTruckPlate_(record['Trailer Plate']);
     }
-    record['Register Date'] = Utilities.formatDate(now, timezone, 'dd/MM/yyyy');
-    record['Time'] = Utilities.formatDate(now, timezone, 'HH:mm:ss');
 
     const payload = buildTotalListPayload_(record, { includeNulls: true });
     const endpoints = getSupabaseTotalListEndpoints_();
     const { result } = requestSupabaseWithEndpointFallback_(
-      'vehicle_total_list',
+      'truck_list_total',
       endpoints,
       function (endpoint) {
         return endpoint + '?id=eq.' + encodeURIComponent(id);
@@ -3821,7 +3797,7 @@ function fetchTotalListSummary_(filters) {
   if (endpoints.length > 1) {
     cacheParts.push('endpoints=' + endpoints.join('|'));
   }
-  const summary = fetchSupabaseCached_('vehicle_total_list', cacheParts, function () {
+  const summary = fetchSupabaseCached_('truck_list_total', cacheParts, function () {
     const queryParts = [
       'select=' + encodeURIComponent('activity_status,count:activity_status'),
       'group=activity_status'
@@ -3830,7 +3806,7 @@ function fetchTotalListSummary_(filters) {
       Array.prototype.push.apply(queryParts, filters);
     }
     const { result } = requestSupabaseWithEndpointFallback_(
-      'vehicle_total_list',
+      'truck_list_total',
       endpoints,
       function (endpoint) {
         const queryString = queryParts.join('&');
@@ -3865,7 +3841,7 @@ function getSheetCacheVersion_(sheetName) {
     return getSupabaseCacheVersion_('vehicle_registration');
   }
   if (sheetName === TRUCK_LIST_TOTAL_SHEET) {
-    return getSupabaseCacheVersion_('vehicle_total_list');
+    return getSupabaseCacheVersion_('truck_list_total');
   }
   try {
     const props = PropertiesService.getScriptProperties();
@@ -3889,7 +3865,7 @@ function bumpSheetCacheVersion_(sheetName) {
     return;
   }
   if (sheetName === TRUCK_LIST_TOTAL_SHEET) {
-    bumpSupabaseCacheVersion_('vehicle_total_list');
+    bumpSupabaseCacheVersion_('truck_list_total');
     return;
   }
   try {
@@ -4146,7 +4122,7 @@ function getContractDataServerSide(params) {
       'ID': String(row.id == null ? '' : row.id).trim(),
       'Contract No': String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim(),
       'Customer Name': String(row.customer_name == null ? '' : row.customer_name).trim(),
-      'Transportion Company': String(row.transportation_company == null ? '' : row.transportation_company).trim(),
+      'Transportation Company': String(row.transportation_company == null ? '' : row.transportation_company).trim(),
       'Status': String(row.status == null ? '' : row.status).trim(),
       'Created At': createdAtDisplay,
       'Created At Sort': createdAtSort,
@@ -4158,7 +4134,7 @@ function getContractDataServerSide(params) {
     const contractor = String(session.contractor == null ? '' : session.contractor).trim();
     if (contractor) {
       data = data.filter(function (item) {
-        return String(item['Transportion Company'] || '') === contractor;
+        return String(item['Transportation Company'] || '') === contractor;
       });
     } else {
       data = [];
@@ -4166,7 +4142,7 @@ function getContractDataServerSide(params) {
   }
 
   const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
-  const searchKeys = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];  
+  const searchKeys = ['ID','Contract No','Customer Name','Transportation Company','Status','Created At','Created By'];  
   let filtered = q
     ? data.filter(function (item) {
         return searchKeys.some(function (key) {
@@ -4177,7 +4153,7 @@ function getContractDataServerSide(params) {
 
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
-    const dataColumns = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];
+    const dataColumns = ['ID','Contract No','Customer Name','Transportation Company','Status','Created At','Created By'];
     let idx = Number(order.column);
     if (isNaN(idx)) idx = 0;
     idx -= 2; // Bỏ qua 2 cột Select & Action
@@ -4213,7 +4189,7 @@ function upsertContract(contract, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
 
   const { ID, 'Contract No': contractNo, 'Customer Name': customerName,
-          'Transportion Company': tc, 'Status': status } = contract;
+          'Transportation Company': tc, 'Status': status } = contract;
 
   const payload = {
     contract_no: String(contractNo == null ? '' : contractNo).trim(),
@@ -4284,7 +4260,7 @@ function deleteContracts(ids, sessionToken) {
   return `Đã xoá ${count} hợp đồng.`;
 }
 
-//Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
+//Lấy danh sách Contractor từ Supabase (dropdown “Transportation Company” ở trang Hợp đồng)
 function getContractorOptions() {
   try {
     const data = supabaseRequest_(
@@ -4304,7 +4280,7 @@ function getContractorOptions() {
 }
 
 
-//Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
+//Lấy danh sách "Đơn vị vận chuyển" từ Supabase truck_list_total
 function getTransportCompanies() {
   const rows = fetchTotalListRows_(['transportation_company']);
   const companies = new Set();
@@ -4371,11 +4347,6 @@ function saveTotalListAppend(rows, sessionToken) {
 
   if (!rows || !rows.length) return 'Không có dữ liệu để lưu.';
 
-  const timezone = getAppTimeZone_();
-  const now = new Date();
-  const defaultDate = Utilities.formatDate(now, timezone, 'dd/MM/yyyy');
-  const defaultTime = Utilities.formatDate(now, timezone, 'HH:mm:ss');
-
   const payload = rows.map(function (obj) {
     if (!obj) return null;
     const record = Object.assign({}, obj);
@@ -4384,8 +4355,6 @@ function saveTotalListAppend(rows, sessionToken) {
     if (record['Trailer Plate']) {
       record['Trailer Plate'] = normalizeTruckPlate_(record['Trailer Plate']);
     }
-    record['Register Date'] = record['Register Date'] || defaultDate;
-    record['Time'] = record['Time'] || defaultTime;
     return buildTotalListPayload_(record);
   }).filter(function (payloadItem) { return payloadItem != null; });
 
@@ -4395,7 +4364,7 @@ function saveTotalListAppend(rows, sessionToken) {
 
   const endpoints = getSupabaseTotalListEndpoints_();
   const { result } = requestSupabaseWithEndpointFallback_(
-    'vehicle_total_list',
+    'truck_list_total',
     endpoints,
     function (endpoint) { return endpoint; },
     {
@@ -4424,7 +4393,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: khóa Contractor cho user thường
     if (userSession.role === 'user') {
-      rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
+      rowObj['Transportation Company'] = userSession.contractor || rowObj['Transportation Company'];
     }
 
     coerceNumericRegisterFields_(rowObj);
@@ -4437,7 +4406,7 @@ function addManualVehicle(record, sessionToken, language) {
     // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
     const precheck = checkVehiclesAgainstTotalList([{
       'Truck Plate'         : String(rowObj['Truck Plate'] || '').toUpperCase().replace(/\s/g, ''),
-      'Transportion Company': rowObj['Transportion Company']
+      'Transportation Company': rowObj['Transportation Company']
     }]);
     if (!precheck.isValid) {
       throw new Error(pickMessage(precheck.message, precheck.messageEn));
@@ -4445,7 +4414,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: kiểm tra Contract No thuộc đúng Contractor & Active
     const contractNo = String(rowObj['Contract No'] || '').trim();
-    const company    = String(rowObj['Transportion Company'] || '').trim();
+    const company    = String(rowObj['Transportation Company'] || '').trim();
     if (!isContractActiveForCompany_(contractNo, company)) {
       throw new Error(pickMessage(
         'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).',
@@ -4457,7 +4426,7 @@ function addManualVehicle(record, sessionToken, language) {
     const dup = checkForExistingRegistrations([{
       'Register Date'       : rowObj['Register Date'],
       'Truck Plate'         : rowObj['Truck Plate'],
-      'Transportion Company': rowObj['Transportion Company']
+      'Transportation Company': rowObj['Transportation Company']
     }], sessionToken);
     if (dup && dup.length > 0) {
       throw new Error(pickMessage(
@@ -4550,7 +4519,7 @@ function getXpplSnapshot(payload, sessionToken){
   for (var i=0;i<rowsRaw.length;i++){
     var r=rowsRaw[i];
     var obj = formatRowForClient_(r, headers);
-    if (scope !== 'ALL' && String(obj['Transportion Company']||'').trim() !== scope) continue;
+    if (scope !== 'ALL' && String(obj['Transportation Company']||'').trim() !== scope) continue;
     rows.push(obj);
 
     var st = String(obj['Registration Status']||'');
@@ -4818,7 +4787,7 @@ function getXpplWeighingData(filter, sessionToken) {
 }
 
 // ===== WEIGHING RESULT HELPERS =====
-function matchTransportionCompanies(filter, sessionToken) {
+function matchTransportationCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
   const normalizePlate = function (value) {
     return String(value == null ? '' : value)
@@ -4842,7 +4811,7 @@ function matchTransportionCompanies(filter, sessionToken) {
     const res = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&'));
     records = Array.isArray(res) ? res : [];
   } catch (e) {
-    Logger.log('matchTransportionCompanies error: ' + e);
+    Logger.log('matchTransportationCompanies error: ' + e);
     records = [];
   }
 
@@ -4875,7 +4844,7 @@ function matchTransportionCompanies(filter, sessionToken) {
         });
       }
     } catch (err) {
-      Logger.log('matchTransportionCompanies vehicle registration fetch error: ' + err);
+      Logger.log('matchTransportationCompanies vehicle registration fetch error: ' + err);
     }
   }
 
