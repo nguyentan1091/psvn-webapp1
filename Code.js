@@ -111,6 +111,7 @@ const SUPABASE_CACHE_DEFAULT_TTL_SECONDS = 45;
 const SUPABASE_TABLE_VERSION_PREFIX = 'supabase_table_version::';
 const SUPABASE_TABLE_CACHE_PREFIX = 'supabase_table_cache::';
 const SUPABASE_ENDPOINT_HINT_PREFIX = 'supabase_endpoint_hint::';
+const SUPABASE_SCHEMA_CACHE_PREFIX = 'supabase_schema_cache::';
 
 // ================= SUPABASE CONFIGURATION =================
 const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
@@ -122,11 +123,12 @@ const SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT = '/rest/v1/history_vehicle_registra
 const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
 const SUPABASE_XPPL_DATABASE_ENDPOINT = '/rest/v1/xppl_database';
 const SUPABASE_TOTAL_LIST_ENDPOINT = '/rest/v1/vehicle_total_list';
-const SUPABASE_TOTAL_LIST_ENDPOINTS = Object.freeze([
+const SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES = Object.freeze([
   SUPABASE_TOTAL_LIST_ENDPOINT,
   '/rest/v1/truck_list_total',
   '/rest/v1/total_vehicle_list'
 ]);
+const SUPABASE_DYNAMIC_ENDPOINT_MAP = {};
 const SUPABASE_ENDPOINT_TABLE_MAP = (function () {
   const map = {};
   map[SUPABASE_APP_USERS_ENDPOINT] = ['app_users'];
@@ -135,7 +137,7 @@ const SUPABASE_ENDPOINT_TABLE_MAP = (function () {
   map[SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT] = ['history_vehicle_registration'];
   map[SUPABASE_CONTRACT_DATA_ENDPOINT] = ['contract_data'];
   map[SUPABASE_XPPL_DATABASE_ENDPOINT] = ['xppl_database'];
-  SUPABASE_TOTAL_LIST_ENDPOINTS.forEach(function (endpoint) {
+  SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES.forEach(function (endpoint) {
     map[endpoint] = ['vehicle_total_list'];
   });
   return Object.freeze(map);
@@ -177,6 +179,8 @@ const SUPABASE_USER_SELECT_FIELDS = [
   'password_last_updated'
 ];
 
+const VEHICLE_REGISTRATION_STATUS_CANDIDATES = Object.freeze(['registration_status', 'status']);
+
 const TOTAL_LIST_SELECT_FIELDS = [
   'id',
   'truck_plate',
@@ -198,7 +202,7 @@ const TOTAL_LIST_SELECT_FIELDS = [
   'time'
 ];
 
-const VEHICLE_REGISTRATION_SELECT_FIELDS = [
+const VEHICLE_REGISTRATION_SELECT_FIELDS_BASE = [
   'id',
   'register_date',
   'contract_no',
@@ -285,6 +289,29 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'Time': 'time'
 };
 
+function getVehicleRegistrationSelectFields_() {
+  const statusExpression = getVehicleRegistrationStatusSelectExpression_();
+  return VEHICLE_REGISTRATION_SELECT_FIELDS_BASE.map(function (field) {
+    if (field === 'registration_status') {
+      return statusExpression;
+    }
+    return field;
+  });
+}
+
+function getVehicleRegistrationAliasColumnMap_() {
+  return VEHICLE_REGISTRATION_COLUMN_MAP;
+}
+
+function getVehicleRegistrationOrderingColumnMap_() {
+  const map = Object.assign({}, VEHICLE_REGISTRATION_COLUMN_MAP);
+  const statusColumn = getVehicleRegistrationStatusColumnName_();
+  if (statusColumn) {
+    map['Registration Status'] = statusColumn;
+  }
+  return map;
+}
+
 const TOTAL_LIST_COLUMN_MAP = {
   'ID': 'id',
   'Truck Plate': 'truck_plate',
@@ -322,15 +349,19 @@ const SupabaseService = (function () {
     if (!path) return [];
     const normalized = String(path).split('?')[0];
     const matches = [];
-    Object.keys(SUPABASE_ENDPOINT_TABLE_MAP).forEach(function (endpoint) {
-      if (!endpoint) return;
-      if (normalized.indexOf(endpoint) === 0) {
-        const tables = SUPABASE_ENDPOINT_TABLE_MAP[endpoint] || [];
-        tables.forEach(function (table) {
-          if (table && matches.indexOf(table) === -1) matches.push(table);
-        });
-      }
-    });
+    function collect(map) {
+      Object.keys(map || {}).forEach(function (endpoint) {
+        if (!endpoint) return;
+        if (normalized.indexOf(endpoint) === 0) {
+          const tables = map[endpoint] || [];
+          tables.forEach(function (table) {
+            if (table && matches.indexOf(table) === -1) matches.push(table);
+          });
+        }
+      });
+    }
+    collect(SUPABASE_ENDPOINT_TABLE_MAP);
+    collect(SUPABASE_DYNAMIC_ENDPOINT_MAP);
     return matches;
   }
 
@@ -440,6 +471,148 @@ function shouldRetrySupabaseEndpoint_(error) {
   return /(\(404\))/.test(message) || /schema cache/i.test(message) || /Could not find the table/i.test(message);
 }
 
+function isSupabaseMissingColumnError_(error) {
+  if (!error) return false;
+  const message = String(error && error.message ? error.message : error);
+  return /column .* does not exist/i.test(message)
+    || /Failed to parse (filter|select)/i.test(message)
+    || /unknown column/i.test(message);
+}
+
+function resolveSupabaseColumnName_(tableName, endpoint, candidates, defaultName) {
+  const list = Array.isArray(candidates) && candidates.length ? candidates.slice() : [];
+  const fallback = defaultName || (list.length ? list[0] : '');
+  if (fallback && list.indexOf(fallback) === -1) {
+    list.push(fallback);
+  }
+  const cacheKey = SUPABASE_SCHEMA_CACHE_PREFIX
+    + 'column::'
+    + String(tableName || '')
+    + '::'
+    + list.join('|');
+  const cached = safeScriptCacheGetJSON_(cacheKey);
+  if (typeof cached === 'string' && cached) {
+    return cached;
+  }
+
+  for (let i = 0; i < list.length; i++) {
+    const column = list[i];
+    if (!column) continue;
+    try {
+      const query = String(endpoint || '') + '?select=' + encodeURIComponent(column) + '&limit=1';
+      supabaseRequest_(query);
+      safeScriptCachePutJSON_(cacheKey, column, 10 * 60);
+      return column;
+    } catch (error) {
+      if (!isSupabaseMissingColumnError_(error)) {
+        Logger.log('resolveSupabaseColumnName_ unexpected error for ' + tableName + '.' + column + ': ' + error);
+        break;
+      }
+    }
+  }
+
+  safeScriptCachePutJSON_(cacheKey, fallback, 60);
+  return fallback;
+}
+
+function getVehicleRegistrationStatusColumnName_() {
+  return resolveSupabaseColumnName_(
+    'vehicle_registration',
+    SUPABASE_VEHICLE_REG_ENDPOINT,
+    VEHICLE_REGISTRATION_STATUS_CANDIDATES,
+    'registration_status'
+  );
+}
+
+function getHistoryVehicleRegistrationStatusColumnName_() {
+  return resolveSupabaseColumnName_(
+    'history_vehicle_registration',
+    SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT,
+    VEHICLE_REGISTRATION_STATUS_CANDIDATES,
+    getVehicleRegistrationStatusColumnName_()
+  );
+}
+
+function getVehicleRegistrationStatusSelectExpression_() {
+  const column = getVehicleRegistrationStatusColumnName_();
+  if (!column || column === 'registration_status') {
+    return 'registration_status';
+  }
+  return 'registration_status:' + column;
+}
+
+function registerSupabaseDynamicEndpoint_(endpoint, tableName) {
+  if (!endpoint || !tableName) return;
+  const tables = Array.isArray(tableName) ? tableName : [tableName];
+  if (!SUPABASE_DYNAMIC_ENDPOINT_MAP[endpoint]) {
+    SUPABASE_DYNAMIC_ENDPOINT_MAP[endpoint] = [];
+  }
+  const list = SUPABASE_DYNAMIC_ENDPOINT_MAP[endpoint];
+  tables.forEach(function (table) {
+    if (table && list.indexOf(table) === -1) {
+      list.push(table);
+    }
+  });
+}
+
+function discoverSupabaseTableNames_(patterns) {
+  const list = Array.isArray(patterns) ? patterns : [];
+  if (!list.length) return [];
+  const discovered = new Set();
+  list.forEach(function (pattern) {
+    if (!pattern) return;
+    try {
+      const query = '/rest/v1/information_schema.tables'
+        + '?select=' + encodeURIComponent('table_name')
+        + '&table_schema=eq.' + encodeURIComponent('public')
+        + '&table_name=ilike.' + encodeURIComponent(pattern);
+      const rows = supabaseRequest_(query, { headers: { 'Accept-Profile': 'postgres' } }) || [];
+      if (Array.isArray(rows)) {
+        rows.forEach(function (row) {
+          const name = row && row.table_name;
+          if (name) discovered.add(String(name));
+        });
+      }
+    } catch (e) {
+      Logger.log('discoverSupabaseTableNames_ error for pattern ' + pattern + ': ' + e);
+    }
+  });
+  return Array.from(discovered);
+}
+
+function getSupabaseTotalListEndpoints_() {
+  const cacheKey = SUPABASE_SCHEMA_CACHE_PREFIX + 'vehicle_total_list_endpoints';
+  const cached = safeScriptCacheGetJSON_(cacheKey);
+  if (Array.isArray(cached) && cached.length) {
+    return cached;
+  }
+
+  const endpoints = SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES.slice();
+  try {
+    const patterns = ['vehicle_total_list*', 'total_vehicle_list*', 'truck_list_total*', 'vehicle_list_total*'];
+    const names = discoverSupabaseTableNames_(patterns)
+      .filter(function (name) {
+        return typeof name === 'string' && name.trim();
+      })
+      .sort(function (a, b) {
+        if (a.length !== b.length) return a.length - b.length;
+        return a.localeCompare(b);
+      });
+    names.forEach(function (name) {
+      const endpoint = '/rest/v1/' + name;
+      if (endpoints.indexOf(endpoint) === -1) {
+        endpoints.push(endpoint);
+      }
+      registerSupabaseDynamicEndpoint_(endpoint, 'vehicle_total_list');
+    });
+  } catch (e) {
+    Logger.log('getSupabaseTotalListEndpoints_ discovery error: ' + e);
+  }
+
+  safeScriptCachePutJSON_(cacheKey, endpoints, 10 * 60);
+  return endpoints;
+}
+
 function getSupabaseEndpointHint_(tableName) {
   if (!tableName) return '';
   try {
@@ -545,8 +718,9 @@ function toSupabaseDateString_(value) {
 
 function mapVehicleRegistrationRowToArray_(row, headers) {
   if (!row) return headers.map(() => '');
+  const columnMap = getVehicleRegistrationAliasColumnMap_();
   return headers.map(function (header) {
-    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
+    const column = columnMap[header];
     if (!column) return '';
     const value = row[column];
     if (value == null) return '';
@@ -565,9 +739,14 @@ function mapVehicleRegistrationRowToArray_(row, headers) {
 function buildVehicleRegistrationPayload_(record, options) {
   const opts = options || {};
   const payload = {};
-  Object.keys(VEHICLE_REGISTRATION_COLUMN_MAP).forEach(function (header) {
-    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
+  const columnMap = getVehicleRegistrationAliasColumnMap_();
+  Object.keys(columnMap).forEach(function (header) {
+    let column = columnMap[header];
     if (!column) return;
+    if (header === 'Registration Status') {
+      column = getVehicleRegistrationStatusColumnName_();
+      if (!column) return;
+    }
     const value = record[header];
 
     if (header === 'ID') {
@@ -655,14 +834,15 @@ function fetchTotalListRows_(selectFields, filterParams, options) {
     queryParts.push('order=' + encodeURIComponent(opts.order));
   }
   try {
+    const endpoints = getSupabaseTotalListEndpoints_();
     const cacheParts = queryParts.slice();
-    if (SUPABASE_TOTAL_LIST_ENDPOINTS.length > 1) {
-      cacheParts.push('endpoints=' + SUPABASE_TOTAL_LIST_ENDPOINTS.join('|'));
+    if (endpoints.length > 1) {
+      cacheParts.push('endpoints=' + endpoints.join('|'));
     }
     const rows = fetchSupabaseCached_('vehicle_total_list', cacheParts, function () {
       const { result } = requestSupabaseWithEndpointFallback_(
         'vehicle_total_list',
-        SUPABASE_TOTAL_LIST_ENDPOINTS,
+        endpoints,
         function (endpoint) {
           const queryString = queryParts.join('&');
           return endpoint + (queryString ? '?' + queryString : '');
@@ -1899,6 +2079,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   const userRole = String(userSession.role || '').toLowerCase();
 
   const baseFilters = [];
+  const statusColumn = getVehicleRegistrationStatusColumnName_();
   const dateFilter = params.dateString ? String(params.dateString).trim() : '';
   if (dateFilter) {
     const iso = toSupabaseDateString_(dateFilter);
@@ -1916,7 +2097,9 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     if (!contractor) return buildEmptyResult_(params.draw, includeSummary);
     baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (userRole === 'user-supervision') {
-    baseFilters.push('registration_status=eq.' + encodeURIComponent('Approved'));
+    if (statusColumn) {
+      baseFilters.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
+    }
   }
 
   const searchFilter = buildSupabaseSearchFilter_(VEHICLE_REGISTRATION_SEARCH_COLUMNS, params.search && params.search.value);
@@ -1931,14 +2114,14 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     params.order,
     headers,
     defaultSortColumnIndex,
-    VEHICLE_REGISTRATION_COLUMN_MAP,
+    getVehicleRegistrationOrderingColumnMap_(),
     'time.desc.nullslast'
   );
 
   const recordsTotal = fetchSupabaseCount_('vehicle_registration', SUPABASE_VEHICLE_REG_ENDPOINT, baseFilters);
 
   const queryParts = [
-    'select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(',')),
+    'select=' + encodeURIComponent(getVehicleRegistrationSelectFields_().join(',')),
     'limit=' + Math.max(length, 1),
     'offset=' + start
   ];
@@ -1999,7 +2182,8 @@ function processTotalListServerSide_(params, headers, userSession, defaultSortCo
     'time.desc.nullslast'
   );
 
-  const recordsTotal = fetchSupabaseCount_('vehicle_total_list', SUPABASE_TOTAL_LIST_ENDPOINTS, baseFilters);
+  const endpoints = getSupabaseTotalListEndpoints_();
+  const recordsTotal = fetchSupabaseCount_('vehicle_total_list', endpoints, baseFilters);
 
   const queryParts = [
     'select=' + encodeURIComponent(TOTAL_LIST_SELECT_FIELDS.join(',')),
@@ -2011,7 +2195,7 @@ function processTotalListServerSide_(params, headers, userSession, defaultSortCo
   }
   Array.prototype.push.apply(queryParts, filtersForPage);
 
-  const page = fetchSupabasePaged_('vehicle_total_list', SUPABASE_TOTAL_LIST_ENDPOINTS, queryParts);
+  const page = fetchSupabasePaged_('vehicle_total_list', endpoints, queryParts);
   const rows = page.rows || [];
   const recordsFiltered = page.count || 0;
 
@@ -2040,10 +2224,14 @@ function getRegisteredContractOptions(filter, sessionToken) {
   const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
   if (!dateString) return { contracts: [] };
   const iso = toSupabaseDateString_(dateString);
-  if (!iso) return { contracts: [] };  
+  if (!iso) return { contracts: [] };
 
+  const statusColumn = getVehicleRegistrationStatusColumnName_();
+  const statusSelect = getVehicleRegistrationStatusSelectExpression_();
+  const selectFields = ['contract_no', 'transportation_company'];
+  if (statusSelect) selectFields.push(statusSelect);
   const queryParts = [
-    'select=' + encodeURIComponent(['contract_no', 'transportation_company', 'registration_status'].join(',')),
+    'select=' + encodeURIComponent(selectFields.join(',')),
     'register_date=eq.' + encodeURIComponent(iso)
   ];
 
@@ -2052,7 +2240,9 @@ function getRegisteredContractOptions(filter, sessionToken) {
     if (!contractor) return { contracts: [] };
     queryParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (role === 'user-supervision') {
-    queryParts.push('registration_status=eq.' + encodeURIComponent('Approved'));
+    if (statusColumn) {
+      queryParts.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
+    }
   }
 
   const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
@@ -2089,11 +2279,19 @@ function getXpplExportOptions(filter, sessionToken) {
   const isoDate = toSupabaseDateString_(dateKey);
   if (!isoDate) return { contracts: [], customersByContract: {} };
 
+  const statusColumn = getVehicleRegistrationStatusColumnName_();
+  const statusSelect = getVehicleRegistrationStatusSelectExpression_();
+  const vehicleSelectFields = ['contract_no', 'register_date'];
+  if (statusSelect) vehicleSelectFields.push(statusSelect);
+  const vehicleQuery = [
+    'select=' + encodeURIComponent(vehicleSelectFields.join(',')),
+    'register_date=eq.' + encodeURIComponent(isoDate)
+  ];
+  if (statusColumn) {
+    vehicleQuery.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
+  }
   const vehicleRows = supabaseRequest_(
-    SUPABASE_VEHICLE_REG_ENDPOINT
-      + '?select=' + encodeURIComponent(['contract_no', 'register_date', 'registration_status'].join(','))
-      + '&register_date=eq.' + encodeURIComponent(isoDate)
-      + '&registration_status=eq.' + encodeURIComponent('Approved')
+    SUPABASE_VEHICLE_REG_ENDPOINT + '?' + vehicleQuery.join('&')
   ) || [];
 
   if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
@@ -2190,25 +2388,32 @@ function getXpplExportData(filter, sessionToken) {
   return { ok:false, errors:['Thiếu cột bắt buộc trong dữ liệu đăng ký xe (Register Date / Contract No).'] };
   }
 
+  const statusColumn = getVehicleRegistrationStatusColumnName_();
+  const statusSelect = getVehicleRegistrationStatusSelectExpression_();
+  const selectFields = [
+    'truck_plate',
+    'country',
+    'wheel',
+    'trailer_plate',
+    'driver_name',
+    'id_passport',
+    'phone_number',
+    'transportation_company',
+    'subcontractor',
+    'contract_no',
+    'register_date'
+  ];
+  if (statusSelect) selectFields.push(statusSelect);
+  const requestParts = [
+    'select=' + encodeURIComponent(selectFields.join(',')),
+    'register_date=eq.' + encodeURIComponent(isoDate),
+    'contract_no=eq.' + encodeURIComponent(contractNo)
+  ];
+  if (statusColumn) {
+    requestParts.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
+  }
   const vehicleRows = supabaseRequest_(
-    SUPABASE_VEHICLE_REG_ENDPOINT
-      + '?select=' + encodeURIComponent([
-        'truck_plate',
-        'country',
-        'wheel',
-        'trailer_plate',
-        'driver_name',
-        'id_passport',
-        'phone_number',
-        'transportation_company',
-        'subcontractor',
-        'contract_no',
-        'register_date',
-        'registration_status'
-      ].join(','))
-      + '&register_date=eq.' + encodeURIComponent(isoDate)
-      + '&contract_no=eq.' + encodeURIComponent(contractNo)
-      + '&registration_status=eq.' + encodeURIComponent('Approved')
+    SUPABASE_VEHICLE_REG_ENDPOINT + '?' + requestParts.join('&')
   ) || [];
 
   if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
@@ -2398,7 +2603,8 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
   const userSession = validateSession(sessionToken);
   const role = String(userSession.role || '').toLowerCase();
   try {
-    const params = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
+    const selectFields = getVehicleRegistrationSelectFields_().join(',');
+    const params = ['select=' + encodeURIComponent(selectFields)];
     const headers = HEADERS_REGISTER;
 
     if (dateString) {
@@ -2412,12 +2618,16 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
       if (contract) params.push('contract_no=eq.' + encodeURIComponent(contract));
     }
 
+    const statusColumn = getVehicleRegistrationStatusColumnName_();
+
     if (role === 'user') {
       const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
       if (!contractor) return [];
       params.push('transportation_company=eq.' + encodeURIComponent(contractor));
     } else if (role === 'user-supervision') {
-      params.push('registration_status=eq.' + encodeURIComponent('Approved'));
+      if (statusColumn) {
+        params.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
+      }
     }
 
     const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
@@ -2686,6 +2896,8 @@ function buildVehicleHistoryQueryParts_(filters, searchValue, options) {
 }
 
 function mapVehicleHistoryRow_(row) {
+  const statusColumn = getHistoryVehicleRegistrationStatusColumnName_();
+  const statusValue = row && (row.registration_status != null ? row.registration_status : row[statusColumn]);
   return {
     action_type: toDisplayString_(row && row.action_type),
     action_time: formatTimeForClient(row && row.action_time),
@@ -2706,7 +2918,7 @@ function mapVehicleHistoryRow_(row) {
     transportation_comp: toDisplayString_(row && row.transportation_comp),
     subcontractor: toDisplayString_(row && row.subcontractor),
     vehicle_status: toDisplayString_(row && row.vehicle_status),
-    registration_status: toDisplayString_(row && row.registration_status),
+    registration_status: toDisplayString_(statusValue),
     time: formatTimeForClient(row && row.time),
     created_by: toDisplayString_(row && row.created_by),
     created_at: formatTimeForClient(row && row.created_at)
@@ -2722,6 +2934,7 @@ function getVehicleRegistrationHistoryServerSide(params) {
   let length = parseInt(params.length, 10);
   if (!isFinite(length) || length <= 0) length = 50;
 
+  const historyStatusColumn = getHistoryVehicleRegistrationStatusColumnName_();
   const columns = [
     'action_type',
     'action_time',
@@ -2749,12 +2962,18 @@ function getVehicleRegistrationHistoryServerSide(params) {
   ];
 
   let sortColumn = columns[1];
+  if (sortColumn === 'registration_status' && historyStatusColumn) {
+    sortColumn = historyStatusColumn;
+  }
   let sortDir = 'desc';
   if (Array.isArray(params.order) && params.order.length) {
     const orderInfo = params.order[0] || {};
     const idx = parseInt(orderInfo.column, 10);
     if (!isNaN(idx) && idx >= 0 && idx < columns.length) {
-      sortColumn = columns[idx];
+      const resolved = columns[idx];
+      sortColumn = (resolved === 'registration_status' && historyStatusColumn)
+        ? historyStatusColumn
+        : resolved;
     }
     if (String(orderInfo.dir).toLowerCase() === 'asc') {
       sortDir = 'asc';
@@ -2957,7 +3176,7 @@ function updateData(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const selectFields = encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','));
+    const selectFields = encodeURIComponent(getVehicleRegistrationSelectFields_().join(','));
     const existingRows = supabaseRequest_(
       SUPABASE_VEHICLE_REG_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID) + '&select=' + selectFields
     );
@@ -3224,9 +3443,10 @@ function saveTotalTruckData(dataToSave, sessionToken) {
       };
     }
 
+    const endpoints = getSupabaseTotalListEndpoints_();
     const { result } = requestSupabaseWithEndpointFallback_(
       'vehicle_total_list',
-      SUPABASE_TOTAL_LIST_ENDPOINTS,
+      endpoints,
       function (endpoint) { return endpoint; },
       {
         method: 'POST',
@@ -3262,9 +3482,10 @@ function deleteTotalListVehicles(ids, sessionToken) {
     const filter = buildSupabaseInFilter_('id', ids);
     if (!filter) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
 
+    const endpoints = getSupabaseTotalListEndpoints_();
     const { result } = requestSupabaseWithEndpointFallback_(
       'vehicle_total_list',
-      SUPABASE_TOTAL_LIST_ENDPOINTS,
+      endpoints,
       function (endpoint) {
         return endpoint + (filter ? '?' + filter : '');
       },
@@ -3307,9 +3528,10 @@ function updateTotalListVehicle(rowData, sessionToken) {
     record['Time'] = Utilities.formatDate(now, timezone, 'HH:mm:ss');
 
     const payload = buildTotalListPayload_(record, { includeNulls: true });
+    const endpoints = getSupabaseTotalListEndpoints_();
     const { result } = requestSupabaseWithEndpointFallback_(
       'vehicle_total_list',
-      SUPABASE_TOTAL_LIST_ENDPOINTS,
+      endpoints,
       function (endpoint) {
         return endpoint + '?id=eq.' + encodeURIComponent(id);
       },
@@ -3554,9 +3776,14 @@ function fetchVehicleRegistrationSummary_(filters) {
     Array.prototype.push.apply(cacheParts, filters);
   }
   const summary = fetchSupabaseCached_('vehicle_registration', cacheParts, function () {
+    const statusColumn = getVehicleRegistrationStatusColumnName_() || 'registration_status';
+    const statusSelect = getVehicleRegistrationStatusSelectExpression_();
+    const countSelect = statusColumn === 'registration_status'
+      ? 'count:registration_status'
+      : 'count:' + statusColumn;
     const queryParts = [
-      'select=' + encodeURIComponent('registration_status,count:registration_status'),
-      'group=registration_status'
+      'select=' + encodeURIComponent([statusSelect, countSelect].join(',')),
+      'group=' + encodeURIComponent(statusColumn)
     ];
     if (Array.isArray(filters) && filters.length) {
       Array.prototype.push.apply(queryParts, filters);
@@ -3565,7 +3792,8 @@ function fetchVehicleRegistrationSummary_(filters) {
     const result = { total: 0, pending: 0, approved: 0 };
     if (!Array.isArray(rows)) return result;
     rows.forEach(function (row) {
-      const status = String(row && row.registration_status || '').trim().toLowerCase();
+      const rawStatus = row && (row.registration_status != null ? row.registration_status : row[statusColumn]);
+      const status = String(rawStatus == null ? '' : rawStatus).trim().toLowerCase();
       const count = Number(row && row.count);
       if (!isNaN(count)) {
         result.total += count;
@@ -3589,8 +3817,9 @@ function fetchTotalListSummary_(filters) {
   if (Array.isArray(filters) && filters.length) {
     Array.prototype.push.apply(cacheParts, filters);
   }
-  if (SUPABASE_TOTAL_LIST_ENDPOINTS.length > 1) {
-    cacheParts.push('endpoints=' + SUPABASE_TOTAL_LIST_ENDPOINTS.join('|'));
+  const endpoints = getSupabaseTotalListEndpoints_();
+  if (endpoints.length > 1) {
+    cacheParts.push('endpoints=' + endpoints.join('|'));
   }
   const summary = fetchSupabaseCached_('vehicle_total_list', cacheParts, function () {
     const queryParts = [
@@ -3602,7 +3831,7 @@ function fetchTotalListSummary_(filters) {
     }
     const { result } = requestSupabaseWithEndpointFallback_(
       'vehicle_total_list',
-      SUPABASE_TOTAL_LIST_ENDPOINTS,
+      endpoints,
       function (endpoint) {
         const queryString = queryParts.join('&');
         return endpoint + (queryString ? '?' + queryString : '');
@@ -4164,9 +4393,10 @@ function saveTotalListAppend(rows, sessionToken) {
     return 'Không có dữ liệu hợp lệ để lưu.';
   }
 
+  const endpoints = getSupabaseTotalListEndpoints_();
   const { result } = requestSupabaseWithEndpointFallback_(
     'vehicle_total_list',
-    SUPABASE_TOTAL_LIST_ENDPOINTS,
+    endpoints,
     function (endpoint) { return endpoint; },
     {
       method: 'POST',
@@ -4305,7 +4535,7 @@ function getXpplSnapshot(payload, sessionToken){
   var headers = HEADERS_REGISTER;
   var response = supabaseRequest_(
     SUPABASE_VEHICLE_REG_ENDPOINT
-      + '?select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))
+      + '?select=' + encodeURIComponent(getVehicleRegistrationSelectFields_().join(','))
       + '&register_date=eq.' + encodeURIComponent(isoDate)
   ) || [];
 
@@ -4378,8 +4608,13 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   var isoDate = toSupabaseDateString_(dateString);
   if (!isoDate) throw new Error('Ngày đăng ký không hợp lệ.');
 
+  var statusColumn = getVehicleRegistrationStatusColumnName_();
+  var statusSelect = getVehicleRegistrationStatusSelectExpression_();
+  var selectFields = ['id', 'contract_no'];
+  if (statusSelect) selectFields.push(statusSelect);
+  selectFields.push('transportation_company');
   var baseParams = [
-    'select=' + encodeURIComponent(['id','contract_no','registration_status','transportation_company'].join(',')),
+    'select=' + encodeURIComponent(selectFields.join(',')),
     'register_date=eq.' + encodeURIComponent(isoDate)
   ];
 
@@ -4402,8 +4637,9 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
 
   var changedIdsSet = {};
   rows.forEach(function (row) {
+    var statusValue = row && (row.registration_status != null ? row.registration_status : (statusColumn ? row[statusColumn] : undefined));
     if (Object.keys(set).length && !set[String(row.contract_no || '').trim()]) return;
-    if (String(row.registration_status || '') === newStatus) return;
+    if (String(statusValue || '') === newStatus) return;
     if (row.id != null) changedIdsSet[String(row.id)] = true;
   });
 
@@ -4414,10 +4650,12 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   updateBatches.forEach(function (batch) {
     var updateFilter = buildSupabaseInFilter_('id', batch);
     if (!updateFilter) return;
+    var payload = {};
+    payload[statusColumn || 'registration_status'] = newStatus;
     supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + updateFilter, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
-      payload: { registration_status: newStatus }
+      payload: payload
     });
   });
 
@@ -4433,7 +4671,7 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
  */
 function exportRegisteredVehicles(params) {
   const headers = HEADERS_REGISTER;
-  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
+  const queryParams = ['select=' + encodeURIComponent(getVehicleRegistrationSelectFields_().join(','))];
 
   if (params && params.dateString) {
     const iso = toSupabaseDateString_(params.dateString);
