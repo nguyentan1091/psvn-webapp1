@@ -1,8 +1,11 @@
 // =================================================================
 // CẤU HÌNH GOOGLE SHEETS
+const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
 const VEHICLE_REGISTRATION_CACHE_KEY = 'vehicle_registration_supabase';
 const TRUCK_LIST_TOTAL_SHEET = 'TruckListTotal';
 // === XPPL Weighing Station database ===
+const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
+const XPPL_DB_SHEET = 'XPPL-Database';
 const XPPL_DB_HEADERS = [
   'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
   'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
@@ -52,6 +55,9 @@ const XPPL_DB_FIELD_MAP = {
   'Changed Time': 'changed_time',
   'Username': 'username'
 };
+// === XPPL TEMPLATE (Google Sheet chứa mẫu in) ===
+// ID của file mẫu bạn gửi: https://docs.google.com/spreadsheets/d/18tVwSBr7tLU3uekL8Ay6gyrc4YFIFlS2/...
+const XPPL_TEMPLATE_ID = '1p8n8ffm81NaxSWB5F7Wn1GhsaBrQ21XttaWmX5yvBl4';
 const XPPL_DB_COLUMN_TYPES = {
   'ID': 'text',
   'No.': 'text',
@@ -95,6 +101,34 @@ const XPPL_DB_COLUMN_TYPES = {
   'Username': 'text'
 };
 
+/** ================== XPPL EXPORT – constants ================== **/
+const XPPL_TEMP_PREFIX = 'XPPL_TMP_'; // prefix cho file tạm
+
+// Các alias cho Named Range / Marker
+const XPPL_NR_ALIASES = {
+  SHEET:        ['Data','DATA','Sheet1'],
+  REG_DATE:     ['NR_REG_DATE','REG_DATE'],
+  CUSTOMER:     ['NR_CUSTOMER','CUSTOMER','CUSTOMER_CODE','CustomerCode'],
+  CONTRACT_NO:  ['NR_CONTRACT_NO','CONTRACT_NO','Contract no'],
+  TOTAL_TRUCK:  ['NR_TOTAL_TRUCK','TOTAL_TRUCK'],
+  TABLE_START:  ['NR_TABLE_START','TABLE_START']
+};
+
+
+// Thứ tự cột cần đổ vào bảng (sau cột No)
+const XPPL_TABLE_COLUMNS = [
+  'Truck Plate',           // B
+  'Country',               // C
+  'Wheel',                 // D
+  'Trailer Plate',         // E
+  'Driver Name',           // F
+  'ID/Passport',           // G
+  'Phone number',          // H
+  'Transportion Company',  // I
+  'Subcontractor'          // J
+];
+
+
 const MAX_LOGIN_ATTEMPTS = 10;
 const LOCKOUT_DURATION_1 = 10 * 60 * 1000; // 10 minutes
 const LOCKOUT_DURATION_2 = 60 * 60 * 1000; // 1 hour
@@ -107,11 +141,6 @@ const SUPERVISION_DEFAULT_ROLE = 'User-Supervision';
 
 const SERVER_SIDE_CACHE_TTL_SECONDS = 45;
 const SHEET_CACHE_VERSION_PREFIX = 'sheet_cache_version::';
-const SUPABASE_CACHE_DEFAULT_TTL_SECONDS = 45;
-const SUPABASE_TABLE_VERSION_PREFIX = 'supabase_table_version::';
-const SUPABASE_TABLE_CACHE_PREFIX = 'supabase_table_cache::';
-const SUPABASE_ENDPOINT_HINT_PREFIX = 'supabase_endpoint_hint::';
-const SUPABASE_SCHEMA_CACHE_PREFIX = 'supabase_schema_cache::';
 
 // ================= SUPABASE CONFIGURATION =================
 const SUPABASE_URL = 'https://mbyrruczihniewdvxokj.supabase.co';
@@ -122,35 +151,6 @@ const SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT = '/rest/v1/auth_login_history';
 const SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT = '/rest/v1/history_vehicle_registration';
 const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
 const SUPABASE_XPPL_DATABASE_ENDPOINT = '/rest/v1/xppl_database';
-const SUPABASE_TOTAL_LIST_ENDPOINT = '/rest/v1/truck_list_total';
-const SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES = Object.freeze([
-  SUPABASE_TOTAL_LIST_ENDPOINT,
-  '/rest/v1/vehicle_total_list',
-  '/rest/v1/total_vehicle_list'
-]);
-const SUPABASE_DYNAMIC_ENDPOINT_MAP = {};
-const SUPABASE_ENDPOINT_TABLE_MAP = (function () {
-  const map = {};
-  map[SUPABASE_APP_USERS_ENDPOINT] = ['app_users'];
-  map[SUPABASE_VEHICLE_REG_ENDPOINT] = ['vehicle_registration', 'history_vehicle_registration'];
-  map[SUPABASE_AUTH_LOGIN_HISTORY_ENDPOINT] = ['auth_login_history'];
-  map[SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT] = ['history_vehicle_registration'];
-  map[SUPABASE_CONTRACT_DATA_ENDPOINT] = ['contract_data'];
-  map[SUPABASE_XPPL_DATABASE_ENDPOINT] = ['xppl_database'];
-  SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES.forEach(function (endpoint) {
-    map[endpoint] = ['truck_list_total'];
-  });
-  return Object.freeze(map);
-})();
-const SUPABASE_TABLE_CACHE_CONFIG = Object.freeze({
-  vehicle_registration: { ttl: 30 },
-  history_vehicle_registration: { ttl: 30 },
-  truck_list_total: { ttl: 45 },
-  contract_data: { ttl: 60 },
-  xppl_database: { ttl: 60 },
-  auth_login_history: { ttl: 30 },
-  app_users: { ttl: 30 }
-});
 const CONTRACT_DATA_SELECT_FIELDS = [
   'id',
   'contract_no',
@@ -179,30 +179,7 @@ const SUPABASE_USER_SELECT_FIELDS = [
   'password_last_updated'
 ];
 
-const VEHICLE_REGISTRATION_STATUS_CANDIDATES = Object.freeze(['registration_status', 'status']);
-
-const TOTAL_LIST_SELECT_FIELDS = [
-  'id',
-  'truck_plate',
-  'country',
-  'wheel',
-  'trailer_plate',
-  'truck_weight',
-  'pay_load',
-  'container_no1',
-  'container_no2',
-  'driver_name',
-  'id_passport',
-  'phone_number',
-  'transportation_company',
-  'subcontractor',
-  'vehicle_status',
-  'activity_status',
-  'register_date',
-  'time'
-];
-
-const VEHICLE_REGISTRATION_SELECT_FIELDS_BASE = [
+const VEHICLE_REGISTRATION_SELECT_FIELDS = [
   'id',
   'register_date',
   'contract_no',
@@ -227,44 +204,6 @@ const VEHICLE_REGISTRATION_SELECT_FIELDS_BASE = [
   'updated_at',
   'created_by'
 ];
-const VEHICLE_REGISTRATION_SEARCH_COLUMNS = [
-  'contract_no',
-  'truck_plate',
-  'country',
-  'wheel',
-  'trailer_plate',
-  'truck_weight',
-  'pay_load',
-  'container_no1',
-  'container_no2',
-  'driver_name',
-  'id_passport',
-  'phone_number',
-  'destination_est',
-  'transportation_company',
-  'subcontractor',
-  'vehicle_status',
-  'registration_status',
-  'created_by'
-];
-const TOTAL_LIST_SEARCH_COLUMNS = [
-  'truck_plate',
-  'country',
-  'wheel',
-  'trailer_plate',
-  'truck_weight',
-  'pay_load',
-  'container_no1',
-  'container_no2',
-  'driver_name',
-  'id_passport',
-  'phone_number',
-  'transportation_company',
-  'subcontractor',
-  'vehicle_status',
-  'activity_status'
-];
-const DEFAULT_APP_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'ID': 'id',
@@ -282,408 +221,86 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'ID/Passport': 'id_passport',
   'Phone number': 'phone_number',
   'Destination EST': 'destination_est',
-  'Transportation Company': 'transportation_company',
+  'Transportion Company': 'transportation_company',
   'Subcontractor': 'subcontractor',
   'Vehicle Status': 'vehicle_status',
   'Registration Status': 'registration_status',
   'Time': 'time'
 };
 
-function getVehicleRegistrationSelectFields_() {
-  const statusExpression = getVehicleRegistrationStatusSelectExpression_();
-  return VEHICLE_REGISTRATION_SELECT_FIELDS_BASE.map(function (field) {
-    if (field === 'registration_status') {
-      return statusExpression;
-    }
-    return field;
-  });
-}
-
-function getVehicleRegistrationAliasColumnMap_() {
-  return VEHICLE_REGISTRATION_COLUMN_MAP;
-}
-
-function getVehicleRegistrationOrderingColumnMap_() {
-  const map = Object.assign({}, VEHICLE_REGISTRATION_COLUMN_MAP);
-  const statusColumn = getVehicleRegistrationStatusColumnName_();
-  if (statusColumn) {
-    map['Registration Status'] = statusColumn;
-  }
-  return map;
-}
-
-const TOTAL_LIST_COLUMN_MAP = {
-  'ID': 'id',
-  'Truck Plate': 'truck_plate',
-  'Country': 'country',
-  'Wheel': 'wheel',
-  'Trailer Plate': 'trailer_plate',
-  'Truck weight': 'truck_weight',
-  'Pay load': 'pay_load',
-  'Container No1': 'container_no1',
-  'Container No2': 'container_no2',
-  'Driver Name': 'driver_name',
-  'ID/Passport': 'id_passport',
-  'Phone number': 'phone_number',
-  'Transportation Company': 'transportation_company',
-  'Subcontractor': 'subcontractor',
-  'Vehicle Status': 'vehicle_status',
-  'Activity Status': 'activity_status',
-  'Register Date': 'register_date',
-  'Time': 'time'
-};
-
-const SupabaseService = (function () {
-  const baseUrl = SUPABASE_URL.replace(/\/$/, '');
-  const defaultHeaders = {
-    apikey: SUPABASE_KEY,
-    Authorization: 'Bearer ' + SUPABASE_KEY
-  };
-
-  function buildUrl(path) {
-    if (!path) return baseUrl;
-    return baseUrl + (path[0] === '/' ? path : '/' + path);
-  }
-
-  function resolveTables(path) {
-    if (!path) return [];
-    const normalized = String(path).split('?')[0];
-    const matches = [];
-    function collect(map) {
-      Object.keys(map || {}).forEach(function (endpoint) {
-        if (!endpoint) return;
-        if (normalized.indexOf(endpoint) === 0) {
-          const tables = map[endpoint] || [];
-          tables.forEach(function (table) {
-            if (table && matches.indexOf(table) === -1) matches.push(table);
-          });
-        }
-      });
-    }
-    collect(SUPABASE_ENDPOINT_TABLE_MAP);
-    collect(SUPABASE_DYNAMIC_ENDPOINT_MAP);
-    return matches;
-  }
-
-  function request(path, options) {
-    const opts = options || {};
-    const method = (opts.method || 'GET').toUpperCase();
-    const headers = Object.assign({}, defaultHeaders, opts.headers || {});
-
-    if (method !== 'GET' && !headers['Content-Type'] && !headers['content-type']) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    const req = {
-      method: method,
-      headers: headers,
-      muteHttpExceptions: true
-    };
-
-    if (opts.payload != null) {
-      req.payload = typeof opts.payload === 'string' ? opts.payload : JSON.stringify(opts.payload);
-    }
-
-    if (opts.timeout != null) {
-      req.timeout = opts.timeout;
-    }
-
-    const url = buildUrl(path);
-    const returnResponse = !!opts.returnResponse;
-    let response;
-    try {
-      response = UrlFetchApp.fetch(url, req);
-    } catch (fetchError) {
-      throw new Error('Supabase request failed: ' + fetchError);
-    }
-
-    const status = response.getResponseCode();
-    const text = response.getContentText();
-    let data = null;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch (parseError) {
-        data = text;
-      }
-    }
-
-    if (status >= 200 && status < 300) {
-      if (method !== 'GET') {
-        invalidateSupabaseCaches_(resolveTables(path));
-      }
-      if (returnResponse) {
-        return {
-          data: data,
-          status: status,
-          headers: response.getAllHeaders(),
-          raw: response
-        };
-      }
-      return data;
-    }
-
-    const message = data && data.message ? data.message : text;
-    const error = new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
-    if (returnResponse) {
-      error.response = response;
-    }
-    throw error;
-  }
-
-  return {
-    request: request,
-    buildUrl: buildUrl
-  };
-})();
-
-function getAppTimeZone_() {
-  try {
-    const tz = Session.getScriptTimeZone && Session.getScriptTimeZone();
-    if (tz) return tz;
-  } catch (e) {
-    Logger.log('getAppTimeZone_ error: ' + e);
-  }
-  return DEFAULT_APP_TIMEZONE;
-}
-
-function formatAppDate_(date, pattern) {
-  if (!date || !pattern) return '';
-  try {
-    return Utilities.formatDate(date, getAppTimeZone_(), pattern);
-  } catch (e) {
-    Logger.log('formatAppDate_ error: ' + e);
-    return '';
-  }
-}
-
 function buildSupabaseUrl_(path) {
-  return SupabaseService.buildUrl(path);
+  const base = SUPABASE_URL.replace(/\/$/, '');
+  if (!path) return base;
+  return base + (path[0] === '/' ? path : '/' + path);
 }
 
 function supabaseRequest_(path, options) {
-  return SupabaseService.request(path, options);
-}
-
-function shouldRetrySupabaseEndpoint_(error) {
-  if (!error) return false;
-  const message = String(error && error.message ? error.message : error);
-  return /(\(404\))/.test(message) || /schema cache/i.test(message) || /Could not find the table/i.test(message);
-}
-
-function isSupabaseMissingColumnError_(error) {
-  if (!error) return false;
-  const message = String(error && error.message ? error.message : error);
-  return /column .* does not exist/i.test(message)
-    || /Failed to parse (filter|select)/i.test(message)
-    || /unknown column/i.test(message);
-}
-
-function resolveSupabaseColumnName_(tableName, endpoint, candidates, defaultName) {
-  const list = Array.isArray(candidates) && candidates.length ? candidates.slice() : [];
-  const fallback = defaultName || (list.length ? list[0] : '');
-  if (fallback && list.indexOf(fallback) === -1) {
-    list.push(fallback);
-  }
-  const cacheKey = SUPABASE_SCHEMA_CACHE_PREFIX
-    + 'column::'
-    + String(tableName || '')
-    + '::'
-    + list.join('|');
-  const cached = safeScriptCacheGetJSON_(cacheKey);
-  if (typeof cached === 'string' && cached) {
-    return cached;
-  }
-
-  for (let i = 0; i < list.length; i++) {
-    const column = list[i];
-    if (!column) continue;
-    try {
-      const query = String(endpoint || '') + '?select=' + encodeURIComponent(column) + '&limit=1';
-      supabaseRequest_(query);
-      safeScriptCachePutJSON_(cacheKey, column, 10 * 60);
-      return column;
-    } catch (error) {
-      if (!isSupabaseMissingColumnError_(error)) {
-        Logger.log('resolveSupabaseColumnName_ unexpected error for ' + tableName + '.' + column + ': ' + error);
-        break;
-      }
-    }
-  }
-
-  safeScriptCachePutJSON_(cacheKey, fallback, 60);
-  return fallback;
-}
-
-function getVehicleRegistrationStatusColumnName_() {
-  return resolveSupabaseColumnName_(
-    'vehicle_registration',
-    SUPABASE_VEHICLE_REG_ENDPOINT,
-    VEHICLE_REGISTRATION_STATUS_CANDIDATES,
-    'registration_status'
+  const opts = options || {};
+  const method = (opts.method || 'GET').toUpperCase();
+  const headers = Object.assign(
+    {
+      apikey: SUPABASE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_KEY
+    },
+    opts.headers || {}
   );
-}
 
-function getHistoryVehicleRegistrationStatusColumnName_() {
-  return resolveSupabaseColumnName_(
-    'history_vehicle_registration',
-    SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT,
-    VEHICLE_REGISTRATION_STATUS_CANDIDATES,
-    getVehicleRegistrationStatusColumnName_()
-  );
-}
-
-function getVehicleRegistrationStatusSelectExpression_() {
-  const column = getVehicleRegistrationStatusColumnName_();
-  if (!column || column === 'registration_status') {
-    return 'registration_status';
+  if (method !== 'GET' && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
   }
-  return 'registration_status:' + column;
-}
 
-function registerSupabaseDynamicEndpoint_(endpoint, tableName) {
-  if (!endpoint || !tableName) return;
-  const tables = Array.isArray(tableName) ? tableName : [tableName];
-  if (!SUPABASE_DYNAMIC_ENDPOINT_MAP[endpoint]) {
-    SUPABASE_DYNAMIC_ENDPOINT_MAP[endpoint] = [];
+  const request = {
+    method: method,
+    headers: headers,
+    muteHttpExceptions: true
+  };
+
+  if (opts.payload != null) {
+    request.payload = typeof opts.payload === 'string' ? opts.payload : JSON.stringify(opts.payload);
   }
-  const list = SUPABASE_DYNAMIC_ENDPOINT_MAP[endpoint];
-  tables.forEach(function (table) {
-    if (table && list.indexOf(table) === -1) {
-      list.push(table);
-    }
-  });
-}
 
-function discoverSupabaseTableNames_(patterns) {
-  const list = Array.isArray(patterns) ? patterns : [];
-  if (!list.length) return [];
-  const discovered = new Set();
-  list.forEach(function (pattern) {
-    if (!pattern) return;
+  if (opts.timeout != null) {
+    request.timeout = opts.timeout;
+  }
+
+  const url = buildSupabaseUrl_(path);
+  const returnResponse = !!opts.returnResponse;  
+  let response;
+  try {
+    response = UrlFetchApp.fetch(url, request);
+  } catch (fetchError) {
+    throw new Error('Supabase request failed: ' + fetchError);
+  }
+
+  const status = response.getResponseCode();
+  const text = response.getContentText();
+  let data = null;
+  if (text) {
     try {
-      const query = '/rest/v1/information_schema.tables'
-        + '?select=' + encodeURIComponent('table_name')
-        + '&table_schema=eq.' + encodeURIComponent('public')
-        + '&table_name=ilike.' + encodeURIComponent(pattern);
-      const rows = supabaseRequest_(query, { headers: { 'Accept-Profile': 'postgres' } }) || [];
-      if (Array.isArray(rows)) {
-        rows.forEach(function (row) {
-          const name = row && row.table_name;
-          if (name) discovered.add(String(name));
-        });
-      }
-    } catch (e) {
-      Logger.log('discoverSupabaseTableNames_ error for pattern ' + pattern + ': ' + e);
-    }
-  });
-  return Array.from(discovered);
-}
-
-function getSupabaseTotalListEndpoints_() {
-  const cacheKey = SUPABASE_SCHEMA_CACHE_PREFIX + 'truck_list_total_endpoints';
-  const cached = safeScriptCacheGetJSON_(cacheKey);
-  if (Array.isArray(cached) && cached.length) {
-    return cached;
-  }
-
-  const endpoints = SUPABASE_TOTAL_LIST_ENDPOINT_CANDIDATES.slice();
-  try {
-    const patterns = ['truck_list_total*', 'vehicle_total_list*', 'total_vehicle_list*', 'vehicle_list_total*'];
-    const names = discoverSupabaseTableNames_(patterns)
-      .filter(function (name) {
-        return typeof name === 'string' && name.trim();
-      })
-      .sort(function (a, b) {
-        if (a.length !== b.length) return a.length - b.length;
-        return a.localeCompare(b);
-      });
-    names.forEach(function (name) {
-      const endpoint = '/rest/v1/' + name;
-      if (endpoints.indexOf(endpoint) === -1) {
-        endpoints.push(endpoint);
-      }
-      registerSupabaseDynamicEndpoint_(endpoint, 'truck_list_total');
-    });
-  } catch (e) {
-    Logger.log('getSupabaseTotalListEndpoints_ discovery error: ' + e);
-  }
-
-  safeScriptCachePutJSON_(cacheKey, endpoints, 10 * 60);
-  return endpoints;
-}
-
-function getSupabaseEndpointHint_(tableName) {
-  if (!tableName) return '';
-  try {
-    const props = PropertiesService.getScriptProperties();
-    return props.getProperty(SUPABASE_ENDPOINT_HINT_PREFIX + tableName) || '';
-  } catch (e) {
-    Logger.log('getSupabaseEndpointHint_ error: ' + e);
-    return '';
-  }
-}
-
-function setSupabaseEndpointHint_(tableName, endpoint) {
-  if (!tableName || !endpoint) return;
-  try {
-    PropertiesService.getScriptProperties().setProperty(SUPABASE_ENDPOINT_HINT_PREFIX + tableName, endpoint);
-  } catch (e) {
-    Logger.log('setSupabaseEndpointHint_ error: ' + e);
-  }
-}
-
-function clearSupabaseEndpointHint_(tableName) {
-  if (!tableName) return;
-  try {
-    PropertiesService.getScriptProperties().deleteProperty(SUPABASE_ENDPOINT_HINT_PREFIX + tableName);
-  } catch (e) {
-    Logger.log('clearSupabaseEndpointHint_ error: ' + e);
-  }
-}
-
-function requestSupabaseWithEndpointFallback_(tableName, endpoints, buildPath, options) {
-  const list = Array.isArray(endpoints) ? endpoints.filter(function (endpoint) { return !!endpoint; }) : [];
-  if (!list.length) {
-    throw new Error('No Supabase endpoints configured for ' + tableName);
-  }
-
-  const hint = getSupabaseEndpointHint_(tableName);
-  const ordered = [];
-  if (hint && list.indexOf(hint) !== -1) ordered.push(hint);
-  list.forEach(function (endpoint) {
-    if (ordered.indexOf(endpoint) === -1) ordered.push(endpoint);
-  });
-
-  const errors = [];
-  let lastError = null;
-  for (let i = 0; i < ordered.length; i++) {
-    const endpoint = ordered[i];
-    const path = typeof buildPath === 'function' ? buildPath(endpoint) : endpoint;
-    try {
-      const result = supabaseRequest_(path, options);
-      if (endpoint !== hint) {
-        setSupabaseEndpointHint_(tableName, endpoint);
-      }
-      return { endpoint: endpoint, result: result };
-    } catch (error) {
-      lastError = error;
-      const retry = shouldRetrySupabaseEndpoint_(error);
-      if (!retry) {
-        error.endpoint = endpoint;
-        throw error;
-      }
-      errors.push(String(error && error.message ? error.message : error));
-      if (hint === endpoint) {
-        clearSupabaseEndpointHint_(tableName);
-      }
+      data = JSON.parse(text);
+    } catch (parseError) {
+      data = text;
     }
   }
 
-  const aggregated = new Error('Supabase request failed for ' + tableName + ': ' + errors.join(' | '));
-  aggregated.cause = lastError;
-  aggregated.errors = errors;
-  throw aggregated;
+  if (status >= 200 && status < 300) {
+    if (returnResponse) {
+      return {
+        data: data,
+        status: status,
+        headers: response.getAllHeaders(),
+        raw: response
+      };
+    }    
+    return data;
+  }
+
+  const message = data && data.message ? data.message : text;
+  const error = new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error'));
+  if (returnResponse) {
+    error.response = response;
+  }
+  throw error;
 }
 
 function fetchContractDataRows_(selectFields, filterParams) {
@@ -694,14 +311,8 @@ function fetchContractDataRows_(selectFields, filterParams) {
   if (Array.isArray(filterParams) && filterParams.length) {
     query += '&' + filterParams.join('&');
   }
-  const cacheParts = [fields];
-  if (Array.isArray(filterParams) && filterParams.length) {
-    Array.prototype.push.apply(cacheParts, filterParams);
-  }
   try {
-    const rows = fetchSupabaseCached_('contract_data', cacheParts, function () {
-      return supabaseRequest_(query);
-    });
+    const rows = supabaseRequest_(query);
     return Array.isArray(rows) ? rows : [];
   } catch (e) {
     Logger.log('fetchContractDataRows_ error: ' + e);
@@ -712,15 +323,14 @@ function fetchContractDataRows_(selectFields, filterParams) {
 function toSupabaseDateString_(value) {
   const normalized = normalizeDate(value);
   if (!normalized) return null;
-  const formatted = formatAppDate_(normalized, 'yyyy-MM-dd');
-  return formatted || null;
+  const timezone = Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh';
+  return Utilities.formatDate(normalized, timezone, 'yyyy-MM-dd');
 }
 
 function mapVehicleRegistrationRowToArray_(row, headers) {
   if (!row) return headers.map(() => '');
-  const columnMap = getVehicleRegistrationAliasColumnMap_();
   return headers.map(function (header) {
-    const column = columnMap[header];
+    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
     if (!column) return '';
     const value = row[column];
     if (value == null) return '';
@@ -739,14 +349,9 @@ function mapVehicleRegistrationRowToArray_(row, headers) {
 function buildVehicleRegistrationPayload_(record, options) {
   const opts = options || {};
   const payload = {};
-  const columnMap = getVehicleRegistrationAliasColumnMap_();
-  Object.keys(columnMap).forEach(function (header) {
-    let column = columnMap[header];
+  Object.keys(VEHICLE_REGISTRATION_COLUMN_MAP).forEach(function (header) {
+    const column = VEHICLE_REGISTRATION_COLUMN_MAP[header];
     if (!column) return;
-    if (header === 'Registration Status') {
-      column = getVehicleRegistrationStatusColumnName_();
-      if (!column) return;
-    }
     const value = record[header];
 
     if (header === 'ID') {
@@ -755,7 +360,13 @@ function buildVehicleRegistrationPayload_(record, options) {
       }
       return;
     }
-    if (header === 'Register Date' || header === 'Time') {
+    if (header === 'Register Date') {
+      const iso = toSupabaseDateString_(value);
+      if (iso) payload[column] = iso;
+      return;
+    }
+    if (header === 'Time') {
+      if (value) payload[column] = value instanceof Date ? value.toISOString() : String(value);
       return;
     }
     if (value === '' || value === null || value === undefined) {
@@ -765,103 +376,6 @@ function buildVehicleRegistrationPayload_(record, options) {
     payload[column] = value;
   });
   return payload;
-}
-
-function normalizeTruckPlate_(value) {
-  return String(value == null ? '' : value)
-    .toUpperCase()
-    .replace(/\s+/g, '')
-    .trim();
-}
-
-function mapTotalListRowToArray_(row, headers) {
-  if (!row) return headers.map(() => '');
-  return headers.map(function (header) {
-    const column = TOTAL_LIST_COLUMN_MAP[header];
-    if (!column) return '';
-    const value = row[column];
-    if (value == null) return '';
-    if (header === 'Register Date' || header === 'Time') {
-      const parsed = parseSupabaseTimestamp_(value);
-      return parsed || value;
-    }
-    return value;
-  });
-}
-
-function buildTotalListPayload_(record, options) {
-  const opts = options || {};
-  const payload = {};
-  Object.keys(TOTAL_LIST_COLUMN_MAP).forEach(function (header) {
-    const column = TOTAL_LIST_COLUMN_MAP[header];
-    if (!column || header === 'ID') return;
-    const value = record[header];
-
-    if (header === 'Register Date' || header === 'Time') {
-      return;
-    }
-    if (value === '' || value === null || value === undefined) {
-      if (opts.includeNulls) payload[column] = null;
-      return;
-    }
-    payload[column] = value;
-  });
-  return payload;
-}
-
-function fetchTotalListRows_(selectFields, filterParams, options) {
-  const fields = Array.isArray(selectFields) && selectFields.length
-    ? selectFields.join(',')
-    : '*';
-  const queryParts = ['select=' + encodeURIComponent(fields)];
-  if (Array.isArray(filterParams) && filterParams.length) {
-    Array.prototype.push.apply(queryParts, filterParams);
-  }
-  const opts = options || {};
-  if (opts.order) {
-    queryParts.push('order=' + encodeURIComponent(opts.order));
-  }
-  try {
-    const endpoints = getSupabaseTotalListEndpoints_();
-    const cacheParts = queryParts.slice();
-    if (endpoints.length > 1) {
-      cacheParts.push('endpoints=' + endpoints.join('|'));
-    }
-    const rows = fetchSupabaseCached_('truck_list_total', cacheParts, function () {
-      const { result } = requestSupabaseWithEndpointFallback_(
-        'truck_list_total',
-        endpoints,
-        function (endpoint) {
-          const queryString = queryParts.join('&');
-          return endpoint + (queryString ? '?' + queryString : '');
-        }
-      );
-      return result;
-    });
-    return Array.isArray(rows) ? rows : [];
-  } catch (e) {
-    Logger.log('fetchTotalListRows_ error: ' + e);
-    return [];
-  }
-}
-
-function fetchTotalListValidationData_() {
-  const version = getSupabaseCacheVersion_('truck_list_total');
-  const cacheKey = 'total_list_validation::' + version;
-  const cached = safeScriptCacheGetJSON_(cacheKey);
-  if (cached) return cached;
-  const rows = fetchTotalListRows_(['truck_plate', 'transportation_company', 'activity_status']);
-  const normalized = rows
-    .map(function (row) {
-      return {
-        plate: normalizeTruckPlate_(row.truck_plate),
-        company: String(row.transportation_company == null ? '' : row.transportation_company).trim(),
-        activity: String(row.activity_status == null ? '' : row.activity_status).trim()
-      };
-    })
-    .filter(function (row) { return row.plate.length > 0; });
-  safeScriptCachePutJSON_(cacheKey, normalized, SERVER_SIDE_CACHE_TTL_SECONDS);
-  return normalized;
 }
 
 function chunkArray_(array, size) {
@@ -1150,7 +664,7 @@ function parseHistoryDateFilter_(value, endOfDay) {
   const day = parseInt(match[3], 10);
   const date = createUtcDate_(year, month, day);
   if (!date) return null;
-  const tz = getAppTimeZone_();
+  const tz = 'Asia/Ho_Chi_Minh';
   const timePart = endOfDay ? "23:59:59" : "00:00:00";
   try {
     return Utilities.formatDate(date, tz, "yyyy-MM-dd'T'" + timePart + "XXX");
@@ -1276,10 +790,9 @@ function parseExcelDate_(v) {
 function parseExcelTime_(v) {
   if (v == null || v === '') return '';
   if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
-    const formatted = formatAppDate_(v, 'HH:mm:ss');
-    if (formatted) return formatted;
+    return Utilities.formatDate(v, "Asia/Ho_Chi_Minh", "HH:mm:ss");
     var hh=v.getHours(), mm=v.getMinutes(), ss=v.getSeconds();
-    return (hh*3600+mm*60+ss)/86400;
+    return (hh*3600+mm*60+ss)/86400;    
   }
   if (typeof v === 'number') {
     var frac = v % 1;
@@ -1300,7 +813,7 @@ function sanitizeXpplText_(value) {
   if (value == null || value === '') return '';
   if (typeof value === 'number') return String(value);
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
-    return formatAppDate_(value, 'dd/MM/yyyy HH:mm:ss') || '';
+    return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
   }
   var str = String(value);
   if (!str) return '';
@@ -1324,21 +837,34 @@ function normalizeXpplDbValue_(header, value) {
   return sanitizeXpplText_(value);
 }
 
+function applyXpplDbFormats_(sheet, startRow, numRows) {
+  if (numRows <= 0) return;
+  for (var i = 0; i < XPPL_DB_HEADERS.length; i++) {
+    var header = XPPL_DB_HEADERS[i];
+    var type = XPPL_DB_COLUMN_TYPES[header] || 'text';
+    var format;
+    if (type === 'date') format = 'dd/MM/yyyy';
+    else if (type === 'time') format = 'HH:mm:ss';
+    else format = '@';
+    sheet.getRange(startRow, i + 1, numRows, 1).setNumberFormat(format);
+  }
+}
+
 function toXpplSupabaseDate_(value) {
   if (value === '' || value === null || value === undefined) return '';
   const normalized = normalizeDate(value);
   if (normalized) {
-    return formatAppDate_(normalized, 'yyyy-MM-dd') || '';
+    return Utilities.formatDate(normalized, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
   }
   if (typeof value === 'number' && isFinite(value)) {
     const excelDate = parseExcelDate_(value);
     if (excelDate) {
-      return formatAppDate_(excelDate, 'yyyy-MM-dd') || '';
+      return Utilities.formatDate(excelDate, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
     }
   }
   const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(value));
   if (parsed) {
-    return formatAppDate_(parsed, 'yyyy-MM-dd') || '';
+    return Utilities.formatDate(parsed, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
   }
   const str = sanitizeXpplText_(value);
   if (!str) return '';
@@ -1349,7 +875,7 @@ function toXpplSupabaseDate_(value) {
     const year = parseInt(dmyMatch[3], 10);
     const dateObj = new Date(year, month, day);
     if (!isNaN(dateObj)) {
-      return formatAppDate_(dateObj, 'yyyy-MM-dd') || '';
+      return Utilities.formatDate(dateObj, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
     }
   }
   const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -1362,7 +888,7 @@ function toXpplSupabaseDate_(value) {
 function toXpplSupabaseTime_(value) {
   if (value === '' || value === null || value === undefined) return '';
   if (value instanceof Date && !isNaN(value)) {
-    return formatAppDate_(value, 'HH:mm:ss') || '';
+    return Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'HH:mm:ss');
   }
   let fraction = null;
   if (typeof value === 'number' && isFinite(value)) {
@@ -1380,7 +906,7 @@ function toXpplSupabaseTime_(value) {
   }
   const parsed = parseSupabaseTimestamp_(stripLeadingApostrophe(value));
   if (parsed) {
-    return formatAppDate_(parsed, 'HH:mm:ss') || '';
+    return Utilities.formatDate(parsed, 'Asia/Ho_Chi_Minh', 'HH:mm:ss');
   }
   const str = sanitizeXpplText_(value);
   const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -1438,6 +964,13 @@ function mapXpplRecordToRowArray_(record, headers) {
   });
 }
 
+function ensureDateTimeFormats(sheet, headers) {
+  var dateCol = headers.indexOf('Register Date') + 1;
+  var timeCol = headers.indexOf('Time') + 1;
+  if (dateCol>0) sheet.getRange(2, dateCol, Math.max(1, sheet.getMaxRows()-1), 1).setNumberFormat("dd/MM/yyyy");
+  if (timeCol>0) sheet.getRange(2, timeCol, Math.max(1, sheet.getMaxRows()-1), 1).setNumberFormat("HH:mm:ss");
+}
+
 function formatRowForClient_(rowArray, headers) {
   var out = {};
   for (var i=0;i<headers.length;i++){
@@ -1461,13 +994,13 @@ const HEADERS_REGISTER = [
   'ID', 'Register Date', 'Contract No', 'Truck Plate', 'Country', 'Wheel',
   'Trailer Plate', 'Truck weight', 'Pay load', 'Container No1', 'Container No2',
   'Driver Name', 'ID/Passport', 'Phone number', 'Destination EST',
-  'Transportation Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
+  'Transportion Company', 'Subcontractor', 'Vehicle Status', 'Registration Status', 'Time'
 ];
 const NUMERIC_REGISTER_FIELDS = ['Wheel', 'Truck weight', 'Pay load'];
 const HEADERS_TOTAL_LIST = [
   'ID', 'Truck Plate', 'Country', 'Wheel', 'Trailer Plate', 'Truck weight',
   'Pay load', 'Container No1', 'Container No2', 'Driver Name', 'ID/Passport',
-  'Phone number', 'Transportation Company', 'Subcontractor', 'Vehicle Status',
+  'Phone number', 'Transportion Company', 'Subcontractor', 'Vehicle Status',
   'Activity Status', 'Register Date', 'Time'
 ];
 
@@ -1895,78 +1428,42 @@ function deleteUser(username, sessionToken) {
 // =================================================================
 
 function checkRegistrationTime() {
-  const timezone = getAppTimeZone_();
-  const nowUtc = new Date();
-  const nowVn = new Date(nowUtc.toLocaleString('en-US', { timeZone: timezone }));
-  const slots = [
-    { period: 1, open: { hour: 8, minute: 0 }, close: { hour: 16, minute: 0 } },
-    { period: 2, open: { hour: 20, minute: 0 }, close: { hour: 22, minute: 0 } }
-  ];
-
-  function buildDate(base, time) {
-    const date = new Date(base.getTime());
-    date.setHours(time.hour, time.minute, 0, 0);
-    return date;
+  const now = new Date();
+  const nowVn = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+  const hour = nowVn.getHours();
+  const minute = nowVn.getMinutes();
+  const currentTimeInMinutes = hour * 60 + minute;
+  const open1 = 8 * 60, close1 = 16 * 60, open2 = 20 * 60, close2 = 22 * 60;
+  let status = { isOpen: false, period: 0, message: '', timeToOpen: 0, timeToClose: 0 };
+  
+  if ((currentTimeInMinutes >= open1 && currentTimeInMinutes < close1)) {
+    status.isOpen = true;
+    status.period = 1;
+    status.message = 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
+    status.timeToClose = (close1 - currentTimeInMinutes) * 60 * 1000;
+  } else if (currentTimeInMinutes >= open2 && currentTimeInMinutes < close2) {
+    status.isOpen = true;
+    status.period = 2;
+    status.message = 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
+    status.timeToClose = (close2 - currentTimeInMinutes) * 60 * 1000;
+  } else {
+    status.isOpen = false;
+    status.message = 'Hệ thống đăng ký bốc hàng đang đóng.';
+    if (currentTimeInMinutes < open1) status.timeToOpen = (open1 - currentTimeInMinutes) * 60 * 1000;
+    else if (currentTimeInMinutes < open2) status.timeToOpen = (open2 - currentTimeInMinutes) * 60 * 1000;
+    else status.timeToOpen = ((24 * 60 - currentTimeInMinutes) + open1) * 60 * 1000;
   }
-
-  let currentSlot = null;
-  let nextOpen = null;
-  let nextClose = null;
-
-  slots.forEach(function (slot) {
-    const openAt = buildDate(nowVn, slot.open);
-    const closeAt = buildDate(nowVn, slot.close);
-    if (nowVn >= openAt && nowVn < closeAt) {
-      currentSlot = Object.assign({}, slot, { openAt: openAt, closeAt: closeAt });
-      nextClose = closeAt;
-    }
-    if (!nextOpen && nowVn < openAt) {
-      nextOpen = openAt;
-    }
-  });
-
-  if (!nextOpen) {
-    const tomorrow = new Date(nowVn.getTime() + 24 * 60 * 60 * 1000);
-    tomorrow.setHours(0, 0, 0, 0);
-    nextOpen = buildDate(tomorrow, slots[0].open);
-  }
-
-  if (currentSlot && !nextClose) {
-    nextClose = currentSlot.closeAt;
-  }
-
-  const result = {
-    isOpen: !!currentSlot,
-    period: currentSlot ? currentSlot.period : 0,
-    serverTimestamp: nowVn.getTime(),
-    nextOpenTimestamp: nextOpen ? nextOpen.getTime() : null,
-    nextCloseTimestamp: nextClose ? nextClose.getTime() : null,
-    timeToOpen: nextOpen ? Math.max(0, nextOpen.getTime() - nowVn.getTime()) : 0,
-    timeToClose: nextClose && currentSlot ? Math.max(0, nextClose.getTime() - nowVn.getTime()) : 0,
-    message: currentSlot
-      ? 'Hệ thống đăng ký bốc hàng sẽ đóng sau:'
-      : 'Hệ thống đăng ký bốc hàng đang đóng.'
-  };
-
-  if (currentSlot) {
-    result.currentWindow = {
-      openTimestamp: currentSlot.openAt.getTime(),
-      closeTimestamp: currentSlot.closeAt.getTime()
-    };
-  }
-
-  return result;
+  return status;
 }
 
 function getVietnamCurrentTime() {
-  const timezone = getAppTimeZone_();
-  const nowUtc = new Date();
-  const nowLocal = new Date(nowUtc.toLocaleString('en-US', { timeZone: timezone }));
+  const timezone = 'Asia/Ho_Chi_Minh';
+  const now = new Date();
   return {
-    epochMillis: nowLocal.getTime(),
-    isoDate: formatAppDate_(nowLocal, 'yyyy-MM-dd') || Utilities.formatDate(nowLocal, timezone, 'yyyy-MM-dd'),
-    dateString: formatAppDate_(nowLocal, 'dd/MM/yyyy') || Utilities.formatDate(nowLocal, timezone, 'dd/MM/yyyy'),
-    timeString: formatAppDate_(nowLocal, 'HH:mm:ss') || Utilities.formatDate(nowLocal, timezone, 'HH:mm:ss')
+    epochMillis: now.getTime(),
+    isoDate: Utilities.formatDate(now, timezone, 'yyyy-MM-dd'),
+    dateString: Utilities.formatDate(now, timezone, 'dd/MM/yyyy'),
+    timeString: Utilities.formatDate(now, timezone, 'HH:mm:ss')
   };
 }
 
@@ -2031,6 +1528,37 @@ function buildEmptyResult_(draw, includeSummary) {
   return result;
 }
 
+function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
+  if (!Array.isArray(rowIndices) || !rowIndices.length) return [];
+
+  const sorted = rowIndices.slice().sort((a, b) => a - b);
+  const collected = [];
+
+  const pushBlock = (startIdx, length) => {
+    if (length <= 0) return;
+    const startRow = startIdx + 2; // +2 vì dữ liệu bắt đầu từ dòng 2
+    const values = sheet.getRange(startRow, 1, length, columnCount).getValues();
+    for (var i = 0; i < values.length; i++) {
+      collected.push(values[i]);
+    }
+  };
+
+  var blockStart = sorted[0];
+  var blockLength = 1;
+  for (var i = 1; i < sorted.length; i++) {
+    if (sorted[i] === sorted[i - 1] + 1) {
+      blockLength++;
+    } else {
+      pushBlock(blockStart, blockLength);
+      blockStart = sorted[i];
+      blockLength = 1;
+    }
+  }
+  pushBlock(blockStart, blockLength);
+
+  return collected;
+}
+
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   params = params || {};
   const userSession = validateSession(params.sessionToken);
@@ -2053,153 +1581,273 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
     const result = processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary);
     return respondWithCache(result);
+  }  
+
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
   }
 
-  if (sheetName === TRUCK_LIST_TOTAL_SHEET) {
-    const result = processTotalListServerSide_(params, headers, userSession, defaultSortColumnIndex);
-    return respondWithCache(result);
+  const totalRows = lastRow - 1;
+  const columnCount = headers.length;
+
+  const idxRegisterDate = headers.indexOf('Register Date');
+  const idxContract = headers.indexOf('Contract No');
+  const idxCompany = headers.indexOf('Transportion Company');
+  const idxActivity = headers.indexOf('Activity Status');
+  const idxStatus = headers.indexOf('Registration Status');
+
+  if (params.dateString && idxRegisterDate === -1) {
+    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
   }
 
-  throw new Error('Unsupported dataset: ' + sheetName);
+  const columnCache = {};
+  function getColumnValues(idx) {
+    if (idx === -1) return null;
+    if (!(idx in columnCache)) {
+      if (totalRows <= 0) {
+        columnCache[idx] = [];
+      } else {
+        const rangeValues = sheet.getRange(2, idx + 1, totalRows, 1).getValues();
+        columnCache[idx] = rangeValues.map(function (row) { return row[0]; });
+      }
+    }
+    return columnCache[idx];
+  }
+
+  const valuesRegisterDate = (params.dateString && idxRegisterDate !== -1)
+    ? getColumnValues(idxRegisterDate)
+    : null;
+  const valuesContract = (params.contractNo && idxContract !== -1)
+    ? getColumnValues(idxContract)
+    : null;
+  const valuesCompany = (userRole === 'user' && idxCompany !== -1)
+    ? getColumnValues(idxCompany)
+    : null;
+  const valuesActivity = (userRole === 'user' && idxActivity !== -1)
+    ? getColumnValues(idxActivity)
+    : null;
+  const valuesStatus = (userRole === 'user-supervision' && idxStatus !== -1)
+    ? getColumnValues(idxStatus)
+    : null;
+
+  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
+  const contractFilter = params.contractNo
+    ? String(params.contractNo).replace(/^'+/, '').trim().toLowerCase()
+    : '';
+  const contractorValue = String(userSession.contractor == null ? '' : userSession.contractor);
+
+  const timezone = 'Asia/Ho_Chi_Minh';
+  const matchedIndices = [];
+
+  for (var r = 0; r < totalRows; r++) {
+    if (userRole === 'user') {
+      if (valuesCompany) {
+        const rawCompany = valuesCompany[r];
+        const companyString = String(rawCompany == null ? '' : rawCompany);
+        if (companyString !== contractorValue) continue;
+      }
+      if (valuesActivity) {
+        const rawActivity = valuesActivity[r];
+        const activityString = String(rawActivity == null ? '' : rawActivity).toUpperCase();
+        if (activityString !== 'ACTIVE') continue;
+      }
+    } else if (userRole === 'user-supervision') {
+      if (valuesStatus) {
+        const rawStatus = valuesStatus[r];
+        const statusString = String(rawStatus == null ? '' : rawStatus).trim().toLowerCase();
+        if (statusString !== 'approved') continue;
+      }
+    }
+
+    if (dateFilter) {
+      const cellValue = valuesRegisterDate ? valuesRegisterDate[r] : null;
+      if (!cellValue) continue;
+      var cmp = '';
+      if (cellValue instanceof Date) {
+        cmp = Utilities.formatDate(cellValue, timezone, 'dd/MM/yyyy');
+      } else {
+        cmp = String(cellValue).trim().replace(/^'+/, '');
+      }
+      if (cmp !== dateFilter) continue;
+    }
+
+    if (contractFilter && valuesContract) {
+      const rawContract = valuesContract[r];
+      const contractString = String(rawContract == null ? '' : rawContract)
+        .replace(/^'+/, '')
+        .trim()
+        .toLowerCase();
+      if (contractString !== contractFilter) continue;
+    }
+
+    matchedIndices.push(r);
+  }
+
+  if (!matchedIndices.length) {
+    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
+  }
+
+  let allData = fetchRowsByIndices_(sheet, matchedIndices, columnCount);
+
+  const recordsTotal = allData.length;
+  let filteredData = allData;
+
+  if (params.search && params.search.value) {
+    const searchValue = params.search.value.toLowerCase();
+    filteredData = filteredData.filter(function (row) {
+      return row.some(function (cell) {
+        return String(cell).toLowerCase().includes(searchValue);
+      });
+    });
+  }
+
+  const recordsFiltered = filteredData.length;
+
+  
+  // === SUMMARY (for 'Xe đã đăng ký') ===
+  var summary = null;
+  try {
+    if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
+      var statusIdx = headers.indexOf('Registration Status');
+      if (statusIdx !== -1) {
+        var total = filteredData.length;
+        var pending = 0, approved = 0;
+        for (var i = 0; i < filteredData.length; i++) {
+          var v = filteredData[i][statusIdx];
+          v = (v instanceof Date)
+            ? Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy')
+            : String(v || '').replace(/^'/, '').trim();
+          if (/^pending approval$/i.test(v)) pending++;
+          else if (/^approved$/i.test(v)) approved++;
+        }
+        summary = { total: total, pending: pending, approved: approved };
+      }
+    }
+  } catch (e) { /* ignore summary errors */ }
+  if (params.order && params.order.length > 0) {
+    const orderInfo = params.order[0];
+    const columnIndex = orderInfo.column;
+    const direction = orderInfo.dir === 'asc' ? 1 : -1;
+    filteredData.sort(function (a, b) {
+      const valA = a[columnIndex];
+      const valB = b[columnIndex];
+      if (valA < valB) return -1 * direction;
+      if (valA > valB) return 1 * direction;
+      return 0;
+    });
+  } else if (defaultSortColumnIndex !== -1) {
+    filteredData.sort(function (a, b) {
+      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
+    });
+  }  
+
+  const start = Number(params.start || 0);
+  const length = Number(params.length || filteredData.length);
+  const paginatedData = filteredData.slice(start, start + length);
+  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
+
+  const result = {
+    draw: parseInt(params.draw, 10),
+    recordsTotal: recordsTotal,
+    recordsFiltered: recordsFiltered,
+    data: data,
+    summary: summary
+  };
+  return respondWithCache(result);
 }
 
 function processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary) {
   const userRole = String(userSession.role || '').toLowerCase();
 
-  const baseFilters = [];
-  const statusColumn = getVehicleRegistrationStatusColumnName_();
+  const filters = [];
   const dateFilter = params.dateString ? String(params.dateString).trim() : '';
   if (dateFilter) {
     const iso = toSupabaseDateString_(dateFilter);
-    if (iso) baseFilters.push('register_date=eq.' + encodeURIComponent(iso));
+    if (iso) filters.push('register_date=eq.' + encodeURIComponent(iso));
     else return buildEmptyResult_(params.draw, includeSummary);
   }
 
   if (params.contractNo) {
     const contract = String(params.contractNo).replace(/^'+/, '').trim();
-    if (contract) baseFilters.push('contract_no=eq.' + encodeURIComponent(contract));
+    if (contract) filters.push('contract_no=eq.' + encodeURIComponent(contract));
   }
 
   if (userRole === 'user') {
     const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
     if (!contractor) return buildEmptyResult_(params.draw, includeSummary);
-    baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
+    filters.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (userRole === 'user-supervision') {
-    if (statusColumn) {
-      baseFilters.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
-    }
+    filters.push('registration_status=eq.' + encodeURIComponent('Approved'));
   }
 
-  const searchFilter = buildSupabaseSearchFilter_(VEHICLE_REGISTRATION_SEARCH_COLUMNS, params.search && params.search.value);
-  const filtersForPage = baseFilters.slice();
-  if (searchFilter) filtersForPage.push(searchFilter);
+  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(',')), 'order=time.desc.nullslast'];
+  Array.prototype.push.apply(queryParams, filters);
+  const query = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParams.join('&');
 
-  const start = Math.max(parseInt(params.start, 10) || 0, 0);
-  let length = parseInt(params.length, 10);
-  if (!isFinite(length) || length <= 0) length = 50;
-
-  const orderClause = resolveSupabaseOrderClause_(
-    params.order,
-    headers,
-    defaultSortColumnIndex,
-    getVehicleRegistrationOrderingColumnMap_(),
-    'time.desc.nullslast'
-  );
-
-  const recordsTotal = fetchSupabaseCount_('vehicle_registration', SUPABASE_VEHICLE_REG_ENDPOINT, baseFilters);
-
-  const queryParts = [
-    'select=' + encodeURIComponent(getVehicleRegistrationSelectFields_().join(',')),
-    'limit=' + Math.max(length, 1),
-    'offset=' + start
-  ];
-  if (orderClause) {
-    queryParts.push('order=' + encodeURIComponent(orderClause));
+  const response = supabaseRequest_(query) || [];
+  if (!Array.isArray(response) || !response.length) {
+    return buildEmptyResult_(params.draw, includeSummary);
   }
-  Array.prototype.push.apply(queryParts, filtersForPage);
 
-  const page = fetchSupabasePaged_('vehicle_registration', SUPABASE_VEHICLE_REG_ENDPOINT, queryParts);
-  const rows = page.rows || [];
-  const recordsFiltered = page.count || 0;
+  const allData = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+  let filteredData = allData.slice();
+
+  if (params.search && params.search.value) {
+    const searchValue = params.search.value.toLowerCase();
+    filteredData = filteredData.filter(function (row) {
+      return row.some(function (cell) {
+        return String(cell).toLowerCase().includes(searchValue);
+      });
+    });
+  }
+
+  const recordsTotal = allData.length;
+  const recordsFiltered = filteredData.length;
 
   let summary = null;
   if (includeSummary) {
-    summary = fetchVehicleRegistrationSummary_(filtersForPage) || { total: 0, pending: 0, approved: 0 };
-    summary.total = recordsFiltered;
-  }
-
-  const rowArrays = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
-  const data = rowArrays.map(function (row) { return formatRowForClient_(row, headers); });
-
-  return {
-    draw: parseInt(params.draw, 10),
-    recordsTotal: Math.max(recordsTotal, recordsFiltered),
-    recordsFiltered: recordsFiltered,
-    data: data,
-    summary: summary
-  };
-}
-
-function processTotalListServerSide_(params, headers, userSession, defaultSortColumnIndex) {
-  params = params || {};
-  const userRole = String(userSession.role || '').toLowerCase();
-
-  const baseFilters = [];
-  if (userRole === 'user') {
-    const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
-    if (!contractor) {
-      return buildEmptyResult_(params.draw, false);
+    const statusIdx = headers.indexOf('Registration Status');
+    if (statusIdx !== -1) {
+      let pending = 0;
+      let approved = 0;
+      for (var i = 0; i < filteredData.length; i++) {
+        const status = String(filteredData[i][statusIdx] || '').trim().toLowerCase();
+        if (status === 'pending approval') pending++;
+        else if (status === 'approved') approved++;
+      }
+      summary = { total: filteredData.length, pending: pending, approved: approved };
     }
-    baseFilters.push('transportation_company=eq.' + encodeURIComponent(contractor));
-    baseFilters.push('activity_status=eq.' + encodeURIComponent('Active'));
   }
 
-  const searchFilter = buildSupabaseSearchFilter_(TOTAL_LIST_SEARCH_COLUMNS, params.search && params.search.value);
-  const filtersForPage = baseFilters.slice();
-  if (searchFilter) filtersForPage.push(searchFilter);
-
-  const start = Math.max(parseInt(params.start, 10) || 0, 0);
-  let length = parseInt(params.length, 10);
-  if (!isFinite(length) || length <= 0) length = 50;
-
-  const orderClause = resolveSupabaseOrderClause_(
-    params.order,
-    headers,
-    defaultSortColumnIndex,
-    TOTAL_LIST_COLUMN_MAP,
-    'time.desc.nullslast'
-  );
-
-  const endpoints = getSupabaseTotalListEndpoints_();
-  const recordsTotal = fetchSupabaseCount_('truck_list_total', endpoints, baseFilters);
-
-  const queryParts = [
-    'select=' + encodeURIComponent(TOTAL_LIST_SELECT_FIELDS.join(',')),
-    'limit=' + Math.max(length, 1),
-    'offset=' + start
-  ];
-  if (orderClause) {
-    queryParts.push('order=' + encodeURIComponent(orderClause));
+  if (params.order && params.order.length > 0) {
+    const orderInfo = params.order[0];
+    const columnIndex = orderInfo.column;
+    const direction = orderInfo.dir === 'asc' ? 1 : -1;
+    filteredData.sort(function (a, b) {
+      const valA = a[columnIndex];
+      const valB = b[columnIndex];
+      if (valA < valB) return -1 * direction;
+      if (valA > valB) return 1 * direction;
+      return 0;
+    });
+  } else if (defaultSortColumnIndex !== -1) {
+    filteredData.sort(function (a, b) {
+      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
+    });
   }
-  Array.prototype.push.apply(queryParts, filtersForPage);
 
-  const page = fetchSupabasePaged_('truck_list_total', endpoints, queryParts);
-  const rows = page.rows || [];
-  const recordsFiltered = page.count || 0;
-
-  const rowArrays = rows.map(function (row) { return mapTotalListRowToArray_(row, headers); });
-  const data = rowArrays.map(function (row) { return formatRowForClient_(row, headers); });
-
-  let summary = fetchTotalListSummary_(filtersForPage) || { total: 0, active: 0, banned: 0 };
-  summary.total = recordsFiltered;
+  const paginatedData = filteredData.slice(params.start, params.start + params.length);
+  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
 
   return {
     draw: parseInt(params.draw, 10),
-    recordsTotal: Math.max(recordsTotal, recordsFiltered),
+    recordsTotal: recordsTotal,
     recordsFiltered: recordsFiltered,
     data: data,
     summary: summary
-  };
+  };  
 }
 
 function getRegisteredDataServerSide(params) {
@@ -2212,14 +1860,10 @@ function getRegisteredContractOptions(filter, sessionToken) {
   const dateString = filter && filter.dateString ? String(filter.dateString).trim() : '';
   if (!dateString) return { contracts: [] };
   const iso = toSupabaseDateString_(dateString);
-  if (!iso) return { contracts: [] };
+  if (!iso) return { contracts: [] };  
 
-  const statusColumn = getVehicleRegistrationStatusColumnName_();
-  const statusSelect = getVehicleRegistrationStatusSelectExpression_();
-  const selectFields = ['contract_no', 'transportation_company'];
-  if (statusSelect) selectFields.push(statusSelect);
   const queryParts = [
-    'select=' + encodeURIComponent(selectFields.join(',')),
+    'select=' + encodeURIComponent(['contract_no', 'transportation_company', 'registration_status'].join(',')),
     'register_date=eq.' + encodeURIComponent(iso)
   ];
 
@@ -2228,9 +1872,7 @@ function getRegisteredContractOptions(filter, sessionToken) {
     if (!contractor) return { contracts: [] };
     queryParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (role === 'user-supervision') {
-    if (statusColumn) {
-      queryParts.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
-    }
+    queryParts.push('registration_status=eq.' + encodeURIComponent('Approved'));
   }
 
   const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
@@ -2267,19 +1909,11 @@ function getXpplExportOptions(filter, sessionToken) {
   const isoDate = toSupabaseDateString_(dateKey);
   if (!isoDate) return { contracts: [], customersByContract: {} };
 
-  const statusColumn = getVehicleRegistrationStatusColumnName_();
-  const statusSelect = getVehicleRegistrationStatusSelectExpression_();
-  const vehicleSelectFields = ['contract_no', 'register_date'];
-  if (statusSelect) vehicleSelectFields.push(statusSelect);
-  const vehicleQuery = [
-    'select=' + encodeURIComponent(vehicleSelectFields.join(',')),
-    'register_date=eq.' + encodeURIComponent(isoDate)
-  ];
-  if (statusColumn) {
-    vehicleQuery.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
-  }
   const vehicleRows = supabaseRequest_(
-    SUPABASE_VEHICLE_REG_ENDPOINT + '?' + vehicleQuery.join('&')
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent(['contract_no', 'register_date', 'registration_status'].join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+      + '&registration_status=eq.' + encodeURIComponent('Approved')
   ) || [];
 
   if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
@@ -2343,7 +1977,7 @@ function getXpplExportData(filter, sessionToken) {
   if (inputErr.length) return { ok:false, errors: inputErr };
 
   // open SS + normalize date
-  const tz = getAppTimeZone_();
+  const tz = (Session.getScriptTimeZone && Session.getScriptTimeZone()) || 'Asia/Ho_Chi_Minh';
   const toDateKey = (v) => {
     if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'dd/MM/yyyy');
     let str = String(v||'').trim().replace(/^'+/, '');
@@ -2376,32 +2010,25 @@ function getXpplExportData(filter, sessionToken) {
   return { ok:false, errors:['Thiếu cột bắt buộc trong dữ liệu đăng ký xe (Register Date / Contract No).'] };
   }
 
-  const statusColumn = getVehicleRegistrationStatusColumnName_();
-  const statusSelect = getVehicleRegistrationStatusSelectExpression_();
-  const selectFields = [
-    'truck_plate',
-    'country',
-    'wheel',
-    'trailer_plate',
-    'driver_name',
-    'id_passport',
-    'phone_number',
-    'transportation_company',
-    'subcontractor',
-    'contract_no',
-    'register_date'
-  ];
-  if (statusSelect) selectFields.push(statusSelect);
-  const requestParts = [
-    'select=' + encodeURIComponent(selectFields.join(',')),
-    'register_date=eq.' + encodeURIComponent(isoDate),
-    'contract_no=eq.' + encodeURIComponent(contractNo)
-  ];
-  if (statusColumn) {
-    requestParts.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
-  }
   const vehicleRows = supabaseRequest_(
-    SUPABASE_VEHICLE_REG_ENDPOINT + '?' + requestParts.join('&')
+    SUPABASE_VEHICLE_REG_ENDPOINT
+      + '?select=' + encodeURIComponent([
+        'truck_plate',
+        'country',
+        'wheel',
+        'trailer_plate',
+        'driver_name',
+        'id_passport',
+        'phone_number',
+        'transportation_company',
+        'subcontractor',
+        'contract_no',
+        'register_date',
+        'registration_status'
+      ].join(','))
+      + '&register_date=eq.' + encodeURIComponent(isoDate)
+      + '&contract_no=eq.' + encodeURIComponent(contractNo)
+      + '&registration_status=eq.' + encodeURIComponent('Approved')
   ) || [];
 
   if (!Array.isArray(vehicleRows) || !vehicleRows.length) {
@@ -2417,7 +2044,7 @@ function getXpplExportData(filter, sessionToken) {
       'Driver Name':          s(row.driver_name),
       'ID/Passport':          s(row.id_passport),
       'Phone number':         s(row.phone_number),
-      'Transportation Company': s(row.transportation_company),
+      'Transportion Company': s(row.transportation_company),
       'Subcontractor':        s(row.subcontractor)
     };
   });
@@ -2426,6 +2053,311 @@ function getXpplExportData(filter, sessionToken) {
 
   return { ok:true, filter:{ dateString: dateKey, contractNo, customerName }, total: rows.length, rows };
 }
+
+
+// Tìm range theo danh sách NamedRange / nếu không có thì fallback tìm marker text
+function _getRangeByAnyName_(ss, aliases){
+  const names = Array.isArray(aliases) ? aliases : [aliases];
+  const nr = ss.getNamedRanges();
+  const low = {};
+  nr.forEach(n => low[String(n.getName()).toLowerCase()] = n.getRange());
+
+  for (const n of names) {
+    const k = String(n).toLowerCase().trim();
+    if (low[k]) return low[k];
+  }
+  // fallback: tìm ô chứa đúng chuỗi marker
+  return _findMarkerCell_(ss, names);
+}
+
+/** Tìm ô có chữ 'NR_TABLE_START' trên sheet (fallback khi thiếu named-range). */
+function _findMarkerCell_(ss, names){
+  const shNames = XPPL_NR_ALIASES.SHEET;
+  for (const sn of shNames){
+    const sh = ss.getSheetByName(sn);
+    if (!sh) continue;
+    const lastR = Math.max(1, sh.getLastRow());
+    const lastC = Math.max(1, sh.getLastColumn());
+    const values = sh.getRange(1,1,lastR,lastC).getValues();
+
+    for (let r=0;r<values.length;r++){
+      for (let c=0;c<values[r].length;c++){
+        const v = String(values[r][c]||'').trim();
+        if (names.some(n => String(n).trim()===v)){
+          return sh.getRange(r+1, c+1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+
+// Copy template và ép CONVERT thành Google Sheets trước khi open
+function _copyTemplateAsGoogleSheet_(templateFileId, newTitle) {
+  var meta = Drive.Files.get(templateFileId); // cần Advanced Drive Service
+  if (meta.mimeType === 'application/vnd.google-apps.spreadsheet') {
+    // Template là Google Sheet -> copy trực tiếp
+    return DriveApp.getFileById(templateFileId).makeCopy(newTitle).getId();
+  } else {
+    // Template là .xlsx -> convert sang Google Sheet
+    var blob = DriveApp.getFileById(templateFileId).getBlob();
+    var file = Drive.Files.insert(
+      { title: newTitle, mimeType: 'application/vnd.google-apps.spreadsheet' },
+      blob,
+      { convert: true }
+    );
+    return file.id;
+  }
+}
+
+
+
+/** Ghi dữ liệu vào bản sao template (Google Sheet). Trả về {ok, fileId, name}. */
+function _exportXpplToTemplate_(sheetId, filter, rows) {
+  const ss = SpreadsheetApp.openById(sheetId);
+
+  // --- Header ---
+  const rDate = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.REG_DATE);
+  if (rDate) rDate.setValue(filter.dateString);
+  const rCus = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CUSTOMER);
+  if (rCus) rCus.setValue(filter.customerName);
+  const rCon = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CONTRACT_NO);
+  if (rCon) rCon.setValue(filter.contractNo);
+  const rTot = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TOTAL_TRUCK);
+  if (rTot) rTot.setValue(rows.length);
+
+  // --- Table ---
+  const start = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TABLE_START);
+  if (!start) throw new Error('Không tìm thấy named range TABLE_START / NR_TABLE_START');
+
+  const sh = start.getSheet();
+  const r0 = start.getRow();     // ví dụ: 9
+  const c0 = start.getColumn();  // ví dụ: 1 (cột A)
+
+  // map 10 cột A..J
+  const data = rows.map(o => ([
+    '', // A - No (đổ sau)
+    o['Truck Plate'] || '',
+    o['Country'] || '',
+    o['Wheel'] || '',
+    o['Trailer Plate'] || '',
+    o['Driver Name'] || '',
+    o['ID/Passport'] || '',
+    o['Phone number'] || '',
+    o['Transportion Company'] || '',
+    o['Subcontractor'] || ''
+  ]));
+
+  if (data.length) {
+    // Ghi ĐÈ trực tiếp tại TABLE_START để dòng 9 là bản ghi #1
+    sh.getRange(r0, c0, data.length, data[0].length).setValues(data);
+
+    // Cột A: No = 1..N
+    const nos = Array.from({ length: data.length }, (_, i) => [i + 1]);
+    sh.getRange(r0, c0, data.length, 1).setValues(nos);
+  }
+
+  // ---------- ĐỊNH DẠNG ----------
+  // Row 1 cao ~27.6px => 28px
+  sh.setRowHeight(1, 28);
+  // Row 3 cao ~31.2px => 31px
+  sh.setRowHeight(3, 31);
+
+  if (data.length) {
+    // Kẻ ALL BORDERS cho vùng dữ liệu A..J từ dòng r0
+    const tableRange = sh.getRange(r0, c0, data.length, 10);
+    tableRange
+      .setBorder(true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.SOLID)
+      .setWrap(true); // chữ xuống dòng nếu dài
+
+    // (Tuỳ chọn) Font Times New Roman cho bảng
+    // tableRange.setFontFamily('Times New Roman');
+  }
+
+  SpreadsheetApp.flush();
+}
+
+
+
+/**
+ * Xuất ra XLSX (base64) rồi xóa bản sao Google Sheet để không phình dung lượng.
+ * YÊU CẦU: bật Advanced Drive Service (Drive API v2).
+ */
+function exportXpplAsXlsx(payload, sessionToken) {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try {
+    try {
+      lock.waitLock(30 * 1000); // đảm bảo tuần tự hoá khi nhiều người cùng export
+      locked = true;
+    } catch (e) {
+      return { ok:false, message:'Hệ thống đang bận. Vui lòng thử lại sau ít phút.' };
+    }
+
+    const res = getXpplExportData(payload, sessionToken);
+    if (!res || !res.ok) {
+      return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
+    }
+    const { dateString, contractNo, customerName } = res.filter;
+    const rows = res.rows || [];
+    if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
+
+    // 1) Copy template -> Google Sheet
+    const nameSuffix = dateString.replace(/\//g, '-');
+
+    // QUAN TRỌNG: thêm prefix để sweeper tìm và xoá
+    const copyName = `${XPPL_TEMP_PREFIX}(${contractNo}_${nameSuffix})-XPPL FORM`;
+    const copiedId = _copyTemplateAsGoogleSheet_(XPPL_TEMPLATE_ID, copyName);
+
+   // 2) Ghi dữ liệu vào bản copy
+   _exportXpplToTemplate_(copiedId, { dateString, contractNo, customerName }, rows);
+
+   // 3) Flush + đợi 1 nhịp rồi export đúng bản copy
+   SpreadsheetApp.flush();
+   Utilities.sleep(800);
+
+    const url  = `https://docs.google.com/spreadsheets/d/${copiedId}/export?format=xlsx`;
+    let resp;
+    try {
+      resp = _fetchWithRetry_(url, {
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      });
+    } catch (fetchErr) {
+      return { ok:false, message:'Export lỗi: ' + (fetchErr && fetchErr.message ? fetchErr.message : fetchErr) };
+    }
+    if (resp.getResponseCode() !== 200) {
+      return { ok:false, message:'Export lỗi: ' + resp.getContentText() };
+    }
+
+   // 4) Tên file tải về -> làm sạch ký tự cấm
+   const safeName = (copyName + '.xlsx').replace(/[\\\/:\*\?"<>\|]/g, '_');
+
+   // 5) (BỎ) trigger one-shot sau 3 phút — không cần nữa
+   // try { ScriptApp.newTrigger('cleanupXpplTempFiles').timeBased().after(3*60*1000).create(); } catch(e){}
+
+   // 6) ĐẢM BẢO đã có sweeper chạy định kỳ (nếu chưa có thì tạo 1 lần)
+   try { ensureXpplSweeper(); } catch (e) { /* ignore */ }
+
+    return {
+      ok: true,
+      fileName: safeName,
+      base64: Utilities.base64Encode(resp.getBlob().getBytes())
+    };
+  } finally {
+    if (locked) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+function _fetchWithRetry_(url, options) {
+  const maxAttempts = 4;
+  const baseDelayMs = 500;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = UrlFetchApp.fetch(url, options);
+      const code = resp.getResponseCode();
+      if (code === 429 || (code >= 500 && code < 600)) {
+        throw new Error('Drive export quota hit: ' + code);
+      }
+      return resp;
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxAttempts) {
+        throw (err instanceof Error) ? err : new Error(err);
+      }
+      Utilities.sleep(baseDelayMs * Math.pow(2, attempt - 1));
+    }
+  }
+  throw (lastError instanceof Error) ? lastError : new Error(lastError);
+}
+
+
+// ====== Sweeper dọn file tạm XPPL ======
+
+// Tạo 1 time-based trigger chạy cleanupXpplTempFiles mỗi 5 phút (chỉ tạo 1 lần)
+function ensureXpplSweeper() {
+  var key = 'XPPL_SWEEPER_CREATED';
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(key)) return;
+
+  ScriptApp.newTrigger('cleanupXpplTempFiles')
+    .timeBased()
+    .everyMinutes(5)   // 5 phút/lần
+    .create();
+
+  props.setProperty(key, '1');
+}
+
+// Hàm dọn rác: xóa các file có tên bắt đầu bằng XPPL_TEMP_PREFIX và cũ > 3 phút
+function cleanupXpplTempFiles() {
+  var prefix = XPPL_TEMP_PREFIX || 'XPPL_TMP-';
+  var cutoff = new Date(Date.now() - 3 * 60 * 1000); // 3 phút trước
+
+  var it = DriveApp.searchFiles('title contains "' + prefix + '" and trashed = false');
+  var removed = 0;
+  while (it.hasNext()) {
+    try {
+      var f = it.next();
+      if (f.getName().indexOf(prefix) === 0 && f.getDateCreated() < cutoff) {
+        f.setTrashed(true);
+        removed++;
+      }
+    } catch (e) {}
+  }
+  return removed;
+}
+
+// (Khuyến nghị) Bảo đảm sweeper tồn tại ngay khi mở project
+function onOpen() {
+  try { ensureXpplSweeper(); } catch (e) {}
+}
+
+
+
+// Tạo 1 trigger một-lần chạy vào/ sau thời điểm due sớm nhất
+function _ensureCleanupTrigger_(dueTs) {
+  var exists = ScriptApp.getProjectTriggers()
+    .some(function(t){ return t.getHandlerFunction() === 'xpplCleanupDueFiles'; });
+  if (!exists) {
+    var now = Date.now();
+    var when = Math.max(dueTs, now + 60 * 1000); // luôn >= 1 phút để an toàn
+    ScriptApp.newTrigger('xpplCleanupDueFiles').timeBased().at(new Date(when)).create();
+  }
+}
+
+// Xoá vĩnh viễn tất cả file copy đã đến hạn; nếu còn file chưa đến hạn -> hẹn trigger lần sau
+function xpplCleanupDueFiles() {
+  var props = PropertiesService.getScriptProperties();
+  var all   = props.getProperties();
+  var now   = Date.now();
+  var prefix = 'xppl_delete_';
+  var nextDue = null;
+
+  for (var k in all) {
+    if (k.indexOf(prefix) !== 0) continue;
+    var fileId = k.substring(prefix.length);
+    var due = parseInt(all[k], 10) || 0;
+
+    if (now >= due) {
+      // đã đến hạn -> xoá vĩnh viễn
+      try { Drive.Files.remove(fileId); } 
+      catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (_) {} }
+      // xoá key
+      props.deleteProperty(k);
+    } else {
+      // chưa đến hạn -> giữ lại và ghi nhận mốc sớm nhất
+      if (nextDue === null || due < nextDue) nextDue = due;
+    }
+  }
+
+  // Nếu vẫn còn file cần xoá trong tương lai -> đặt lại trigger đến mốc sớm nhất
+  if (nextDue !== null) _ensureCleanupTrigger_(nextDue);
+}
+
 
 
 /** Dự phòng _toDateKey nếu dự án chưa có */
@@ -2474,8 +2406,8 @@ const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu.
 const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
 
 function checkVehiclesAgainstTotalList(vehicles) {
-  const totalListData = fetchTotalListValidationData_();
-  if (!totalListData.length) {
+  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (totalListSheet.getLastRow() < 2) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2483,10 +2415,19 @@ function checkVehiclesAgainstTotalList(vehicles) {
     };
   }
 
+  const totalListData = totalListSheet.getRange(
+    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
+  ).getValues();
+
+  const truckPlateIndex = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
+  const companyIndex    = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
+
+  // Map: PLATE -> Company (normalize biển số: uppercase & bỏ khoảng trắng)
   const totalListMap = new Map();
-  totalListData.forEach(function (row) {
-    if (row && row.plate) {
-      totalListMap.set(row.plate, row.company);
+  totalListData.forEach(row => {
+    const plate = row[truckPlateIndex];
+    if (plate) {
+      totalListMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[companyIndex]);
     }
   });
 
@@ -2495,11 +2436,10 @@ function checkVehiclesAgainstTotalList(vehicles) {
   const seenNew = new Set();
   const seenMismatch = new Set();
 
-  const list = Array.isArray(vehicles) ? vehicles : [];
-  for (let i = 0; i < list.length; i++) {
-    const vehicle = list[i] || {};
-    const plate    = normalizeTruckPlate_(vehicle['Truck Plate']);
-    const company  = String(vehicle['Transportation Company'] || '').trim();
+  for (const vehicle of vehicles) {
+    const plateRaw = vehicle['Truck Plate'] || '';
+    const plate    = String(plateRaw).toUpperCase().replace(/\s/g, '');
+    const company  = vehicle['Transportion Company'];
 
     if (!plate) continue;
 
@@ -2511,7 +2451,7 @@ function checkVehiclesAgainstTotalList(vehicles) {
       continue;
     }
 
-    const registeredCompany = String(totalListMap.get(plate) || '').trim();
+    const registeredCompany = totalListMap.get(plate);
     if (registeredCompany !== company) {
       if (!seenMismatch.has(plate)) {
         seenMismatch.add(plate);
@@ -2547,8 +2487,8 @@ function checkVehiclesAgainstTotalList(vehicles) {
 // LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
 // =================================================================
 function checkVehicleActivityStatus(vehicles) {
-  const totalListData = fetchTotalListValidationData_();
-  if (!totalListData.length) {
+  const totalListSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (totalListSheet.getLastRow() < 2) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2556,17 +2496,24 @@ function checkVehicleActivityStatus(vehicles) {
     };
   }
 
+  const totalListData = totalListSheet.getRange(
+    2, 1, totalListSheet.getLastRow() - 1, HEADERS_TOTAL_LIST.length
+  ).getValues();
+
+  const plateIdx    = HEADERS_TOTAL_LIST.indexOf('Truck Plate');
+  const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+
   const activityMap = new Map();
-  totalListData.forEach(function (row) {
-    if (row && row.plate) {
-      activityMap.set(row.plate, row.activity);
+  totalListData.forEach(row => {
+    const plate = row[plateIdx];
+    if (plate) {
+      activityMap.set(String(plate).toUpperCase().replace(/\s/g, ''), row[activityIdx]);
     }
   });
 
   const bannedPlates = [];
-  const list = Array.isArray(vehicles) ? vehicles : [];
-  list.forEach(function (v) {
-    const plate = normalizeTruckPlate_(v['Truck Plate']);
+  vehicles.forEach(v => {
+    const plate = String(v['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
     if (!plate) return;
     const status = activityMap.get(plate);
     if (status && String(status).toLowerCase() === 'banned') {
@@ -2591,8 +2538,7 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
   const userSession = validateSession(sessionToken);
   const role = String(userSession.role || '').toLowerCase();
   try {
-    const selectFields = getVehicleRegistrationSelectFields_().join(',');
-    const params = ['select=' + encodeURIComponent(selectFields)];
+    const params = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
     const headers = HEADERS_REGISTER;
 
     if (dateString) {
@@ -2606,16 +2552,12 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
       if (contract) params.push('contract_no=eq.' + encodeURIComponent(contract));
     }
 
-    const statusColumn = getVehicleRegistrationStatusColumnName_();
-
     if (role === 'user') {
       const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
       if (!contractor) return [];
       params.push('transportation_company=eq.' + encodeURIComponent(contractor));
     } else if (role === 'user-supervision') {
-      if (statusColumn) {
-        params.push(statusColumn + '=eq.' + encodeURIComponent('Approved'));
-      }
+      params.push('registration_status=eq.' + encodeURIComponent('Approved'));
     }
 
     const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
@@ -2884,8 +2826,6 @@ function buildVehicleHistoryQueryParts_(filters, searchValue, options) {
 }
 
 function mapVehicleHistoryRow_(row) {
-  const statusColumn = getHistoryVehicleRegistrationStatusColumnName_();
-  const statusValue = row && (row.registration_status != null ? row.registration_status : row[statusColumn]);
   return {
     action_type: toDisplayString_(row && row.action_type),
     action_time: formatTimeForClient(row && row.action_time),
@@ -2906,7 +2846,7 @@ function mapVehicleHistoryRow_(row) {
     transportation_comp: toDisplayString_(row && row.transportation_comp),
     subcontractor: toDisplayString_(row && row.subcontractor),
     vehicle_status: toDisplayString_(row && row.vehicle_status),
-    registration_status: toDisplayString_(statusValue),
+    registration_status: toDisplayString_(row && row.registration_status),
     time: formatTimeForClient(row && row.time),
     created_by: toDisplayString_(row && row.created_by),
     created_at: formatTimeForClient(row && row.created_at)
@@ -2922,7 +2862,6 @@ function getVehicleRegistrationHistoryServerSide(params) {
   let length = parseInt(params.length, 10);
   if (!isFinite(length) || length <= 0) length = 50;
 
-  const historyStatusColumn = getHistoryVehicleRegistrationStatusColumnName_();
   const columns = [
     'action_type',
     'action_time',
@@ -2950,18 +2889,12 @@ function getVehicleRegistrationHistoryServerSide(params) {
   ];
 
   let sortColumn = columns[1];
-  if (sortColumn === 'registration_status' && historyStatusColumn) {
-    sortColumn = historyStatusColumn;
-  }
   let sortDir = 'desc';
   if (Array.isArray(params.order) && params.order.length) {
     const orderInfo = params.order[0] || {};
     const idx = parseInt(orderInfo.column, 10);
     if (!isNaN(idx) && idx >= 0 && idx < columns.length) {
-      const resolved = columns[idx];
-      sortColumn = (resolved === 'registration_status' && historyStatusColumn)
-        ? historyStatusColumn
-        : resolved;
+      sortColumn = columns[idx];
     }
     if (String(orderInfo.dir).toLowerCase() === 'asc') {
       sortDir = 'asc';
@@ -3095,7 +3028,7 @@ function saveData(dataToSave, sessionToken, language) {
     dataToSave.forEach(rec => {
       const cno = String(rec['Contract No'] || '').trim();
       const comp = String(
-        (userSession.role === 'user' ? userSession.contractor : rec['Transportation Company']) || ''
+        (userSession.role === 'user' ? userSession.contractor : rec['Transportion Company']) || ''
       ).trim().toUpperCase();
 
       if (!cno || !comp || !activeMap.has(comp) || !activeMap.get(comp).has(cno)) {
@@ -3114,7 +3047,7 @@ function saveData(dataToSave, sessionToken, language) {
   const dupCheckRecords = dataToSave.map(r => {
     const obj = Object.assign({}, r);
     if (userSession.role === 'user') {
-      obj['Transportation Company'] = userSession.contractor;
+      obj['Transportion Company'] = userSession.contractor;
     }
     return obj;
   });
@@ -3130,7 +3063,7 @@ function saveData(dataToSave, sessionToken, language) {
   try {
     const payloads = dataToSave.map(function (obj) {
       if (userSession.role === 'user') {
-        obj['Transportation Company'] = userSession.contractor;
+        obj['Transportion Company'] = userSession.contractor;
       }
       coerceNumericRegisterFields_(obj);
       const normalizedDate = normalizeDate(obj['Register Date']);
@@ -3164,7 +3097,7 @@ function updateData(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const selectFields = encodeURIComponent(getVehicleRegistrationSelectFields_().join(','));
+    const selectFields = encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','));
     const existingRows = supabaseRequest_(
       SUPABASE_VEHICLE_REG_ENDPOINT + '?id=eq.' + encodeURIComponent(rowData.ID) + '&select=' + selectFields
     );
@@ -3181,7 +3114,7 @@ function updateData(rowData, sessionToken) {
 
       const recordTime = parseSupabaseTimestamp_(existing.time);
       const recordHour = recordTime
-        ? parseInt(formatAppDate_(recordTime, 'HH') || '', 10)
+        ? parseInt(Utilities.formatDate(recordTime, 'Asia/Ho_Chi_Minh', 'HH'), 10)
         : NaN;
 
       const recordCompany = String(existing.transportation_company == null ? '' : existing.transportation_company).trim();
@@ -3201,7 +3134,7 @@ function updateData(rowData, sessionToken) {
 
 
     if (userSession.role === 'user') {
-      rowData['Transportation Company'] = userSession.contractor;
+      rowData['Transportion Company'] = userSession.contractor;
     }
     
     if (rowData['Register Date']) {
@@ -3302,7 +3235,7 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
       const regDate = normalizeDate(rec['Register Date']);
       const isoDate = toSupabaseDateString_(regDate) || '';
       const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
-      const company = String(rec['Transportation Company'] || '').trim().toUpperCase();
+      const company = String(rec['Transportion Company'] || '').trim().toUpperCase();
       if (!isoDate || !plate || !company) return;
       normalizedRecords.push({ date: isoDate, plate: plate, company: company });
       uniqueDates.add(isoDate);
@@ -3354,17 +3287,33 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
 function getTotalListSummary(sessionToken) {
   const userSession = validateSession(sessionToken);
   try {
-    const role = String(userSession.role == null ? '' : userSession.role).toLowerCase();
-    const filters = [];
-    if (role === 'user') {
-      const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
-      if (!contractor) {
-        return { total: 0, active: 0, banned: 0 };
-      }
-      filters.push('transportation_company=eq.' + encodeURIComponent(contractor));
-      filters.push('activity_status=eq.' + encodeURIComponent('Active'));
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow < 2) {
+      return { total: 0, active: 0, banned: 0 };
     }
-    return fetchTotalListSummary_(filters) || { total: 0, active: 0, banned: 0 };
+
+    const allData = sheet.getRange(2, 1, lastRow - 1, HEADERS_TOTAL_LIST.length).getValues();
+    
+    let filteredData = allData;
+    if (userSession.role === 'user') {
+      const companyIndex = HEADERS_TOTAL_LIST.indexOf('Transportion Company');
+      const activityIndex = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+      filteredData = allData.filter(row => row[companyIndex] === userSession.contractor &&
+        String(row[activityIndex]).toUpperCase() === 'ACTIVE');
+    }
+
+    const summary = { total: filteredData.length, active: 0, banned: 0 };
+    const activityIdx = HEADERS_TOTAL_LIST.indexOf('Activity Status');
+
+    filteredData.forEach(row => {
+      const act = String(row[activityIdx]).toUpperCase();
+      if (act === 'ACTIVE') summary.active++;
+      else if (act === 'BANNED') summary.banned++;
+    });
+    
+    return summary;
   } catch (e) {
     Logger.log(e);
     throw new Error('Không thể lấy thông tin tóm tắt: ' + e.message);
@@ -3377,76 +3326,70 @@ function saveTotalTruckData(dataToSave, sessionToken) {
   if (userSession.role !== 'admin') throw new Error('Chỉ có admin mới được thực hiện chức năng này.');
   if (!dataToSave || dataToSave.length === 0) throw new Error('Không có dữ liệu để lưu.');
   try {
-    const existingRows = fetchTotalListRows_(['id', 'truck_plate']);
-    const existingPlates = new Set();
-    existingRows.forEach(function (row) {
-      const plate = normalizeTruckPlate_(row.truck_plate);
-      if (plate) existingPlates.add(plate);
-    });
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
 
+    // Chuẩn hóa biển số để so sánh
+    const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
+
+    // Lấy tất cả biển số hiện có
+    const plateIdx = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
+    const companyIdx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
+
+    let existingPlates = {};
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1 && plateIdx > 0) {
+      const plates = sheet.getRange(2, plateIdx, lastRow - 1, 1).getValues().flat();
+      plates.forEach(p => { const k = norm(p); if (k) existingPlates[k] = true; });
+    }
+
+    // Kiểm tra trùng lặp trong file và với dữ liệu hiện có
     const inFileSeen = {};
     const skippedInFile = [];
     const skippedExisting = [];
-    const payload = [];
+    const rowsToAppend = [];
 
-    dataToSave.forEach(function (obj) {
-      if (!obj) return;
-      const normalizedPlate = normalizeTruckPlate_(obj['Truck Plate']);
-      if (!normalizedPlate) return;
+    dataToSave.forEach(obj => {
+      const plate = norm(obj['Truck Plate']);
+      const company = obj['Transportion Company'] || '';
+      if (!plate) return;
 
-      const company = obj['Transportation Company'] || '';
-
-      if (inFileSeen[normalizedPlate]) {
-        skippedInFile.push({ plate: normalizedPlate, company: company });
+      if (inFileSeen[plate]) {
+        skippedInFile.push({ plate: plate, company: company });
         return;
       }
-      inFileSeen[normalizedPlate] = true;
+      inFileSeen[plate] = true;
 
-      if (existingPlates.has(normalizedPlate)) {
-        skippedExisting.push({ plate: normalizedPlate, company: company });
+      if (existingPlates[plate]) {
+        skippedExisting.push({ plate: plate, company: company });
         return;
       }
 
-      const record = Object.assign({}, obj);
-      record['Truck Plate'] = normalizedPlate;
-      if (record['Trailer Plate']) {
-        record['Trailer Plate'] = normalizeTruckPlate_(record['Trailer Plate']);
-      }
-      payload.push(buildTotalListPayload_(record));
+      // Bổ sung ngày/giờ và map theo header
+      obj['Register Date'] = normalizeDate(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "dd/MM/yyyy"));
+      obj['Time'] = normalizeTime(Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "HH:mm:ss"));
+      rowsToAppend.push(HEADERS_TOTAL_LIST.map(h => obj[h] || ""));
     });
 
-    if (!payload.length) {
-      return {
-        status: 'ok',
-        inserted: 0,
-        skippedExisting: skippedExisting,
-        skippedInFile: skippedInFile
-      };
+    // Append thay vì replace
+    let inserted = 0;
+    if (rowsToAppend.length > 0) {
+      const startRow = (lastRow || 1) + 1;
+      sheet.getRange(startRow, 1, rowsToAppend.length, HEADERS_TOTAL_LIST.length).setValues(rowsToAppend);
+      inserted = rowsToAppend.length;
     }
 
-    const endpoints = getSupabaseTotalListEndpoints_();
-    const { result } = requestSupabaseWithEndpointFallback_(
-      'truck_list_total',
-      endpoints,
-      function (endpoint) { return endpoint; },
-      {
-        method: 'POST',
-        payload: payload,
-        headers: { Prefer: 'return=representation' }
-      }
-    );
-    const response = result || [];
-
-    const inserted = Array.isArray(response) ? response.length : payload.length;
     if (inserted > 0) {
       bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
-    }
+    }    
 
+    // Trả chi tiết để client hiển thị
     return {
       status: 'ok',
       inserted: inserted,
-      skippedExisting: skippedExisting,
-      skippedInFile: skippedInFile
+      skippedExisting: skippedExisting,   // trùng với dữ liệu đang có
+      skippedInFile: skippedInFile        // trùng trong chính file upload
     };
   } catch (error) {
     Logger.log(error);
@@ -3458,35 +3401,30 @@ function deleteTotalListVehicles(ids, sessionToken) {
   const session = validateSession(sessionToken);
   if (session.role !== 'admin') throw new Error('Bạn không có quyền truy cập chức năng này.');
   if (!ids || ids.length === 0) throw new Error('Cần cung cấp ID để xóa.');
-
+  
   try {
-    const filter = buildSupabaseInFilter_('id', ids);
-    if (!filter) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
+    let rowsToDelete = [];
 
-    const endpoints = getSupabaseTotalListEndpoints_();
-    const { result } = requestSupabaseWithEndpointFallback_(
-      'truck_list_total',
-      endpoints,
-      function (endpoint) {
-        return endpoint + (filter ? '?' + filter : '');
-      },
-      {
-        method: 'DELETE',
-        headers: { Prefer: 'return=representation' }
+    ids.forEach(id => {
+      const rowIndex = idColumnValues.indexOf(id);
+      if (rowIndex !== -1) {
+        rowsToDelete.push(rowIndex + 2);
       }
-    );
-    const response = result || [];
+    });
 
-    const deletedCount = Array.isArray(response) ? response.length : ids.length;
-    if (deletedCount > 0) {
+    if (rowsToDelete.length === 0) throw new Error('Không tìm thấy xe nào với các ID đã cho.');
+    
+    rowsToDelete.sort((a, b) => b - a).forEach(rowNum => {
+      sheet.deleteRow(rowNum);
+    });
+
+    if (rowsToDelete.length > 0) {
       bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
-    }
+    }    
 
-    if (deletedCount === 0) {
-      throw new Error('Không tìm thấy xe nào với các ID đã cho.');
-    }
-
-    return `Đã xóa thành công ${deletedCount} xe.`;
+    return `Đã xóa thành công ${rowsToDelete.length} xe.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + error.message); }
 }
 
@@ -3496,34 +3434,23 @@ function updateTotalListVehicle(rowData, sessionToken) {
   if (!rowData || !rowData.ID) throw new Error('Dữ liệu không hợp lệ hoặc thiếu ID.');
 
   try {
-    const id = rowData.ID;
-    const record = Object.assign({}, rowData);
-    record['Truck Plate'] = normalizeTruckPlate_(record['Truck Plate']);
-    if (record['Trailer Plate']) {
-      record['Trailer Plate'] = normalizeTruckPlate_(record['Trailer Plate']);
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+    const idColumnValues = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
+    let rowToUpdate = -1;
+
+    const rowIndex = idColumnValues.indexOf(rowData.ID);
+    if (rowIndex !== -1) {
+        rowToUpdate = rowIndex + 2;
     }
 
-    const payload = buildTotalListPayload_(record, { includeNulls: true });
-    const endpoints = getSupabaseTotalListEndpoints_();
-    const { result } = requestSupabaseWithEndpointFallback_(
-      'truck_list_total',
-      endpoints,
-      function (endpoint) {
-        return endpoint + '?id=eq.' + encodeURIComponent(id);
-      },
-      {
-        method: 'PATCH',
-        payload: payload,
-        headers: { Prefer: 'return=representation' }
-      }
-    );
-    const response = result || [];
+    if (rowToUpdate === -1) throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
 
-    if (!Array.isArray(response) || !response.length) {
-      throw new Error('Không tìm thấy xe với ID: ' + rowData.ID);
-    }
-
-    bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
+    const now = new Date();
+    rowData['Register Date'] = Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "dd/MM/yyyy");
+    rowData['Time'] = "'" + Utilities.formatDate(now, "Asia/Ho_Chi_Minh", "HH:mm:ss");
+    const dataArray = HEADERS_TOTAL_LIST.map(header => rowData[header] || "");
+    sheet.getRange(rowToUpdate, 1, 1, HEADERS_TOTAL_LIST.length).setValues([dataArray]);
+    bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);    
     return 'Cập nhật thông tin xe thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật thông tin xe: ' + error.message); }
 }
@@ -3560,289 +3487,14 @@ function safeScriptCacheRemove_(key) {
   }
 }
 
-function buildSupabaseCacheKey_(tableName, parts) {
-  if (!tableName) return '';
-  const payload = {
-    table: tableName,
-    version: getSupabaseCacheVersion_(tableName),
-    parts: Array.isArray(parts) ? parts : []
-  };
-  return SUPABASE_TABLE_CACHE_PREFIX + Utilities.base64EncodeWebSafe(JSON.stringify(payload));
-}
-
-function fetchSupabaseCached_(tableName, parts, fetcher) {
-  const config = SUPABASE_TABLE_CACHE_CONFIG[tableName] || {};
-  const ttl = typeof config.ttl === 'number' ? config.ttl : SUPABASE_CACHE_DEFAULT_TTL_SECONDS;
-  const cacheKey = buildSupabaseCacheKey_(tableName, parts);
-  if (ttl > 0) {
-    const cached = safeScriptCacheGetJSON_(cacheKey);
-    if (cached !== null && cached !== undefined) {
-      return cached;
-    }
-  }
-  const result = typeof fetcher === 'function' ? fetcher() : null;
-  if (ttl > 0 && result !== undefined && result !== null) {
-    safeScriptCachePutJSON_(cacheKey, result, ttl);
-  }
-  return result;
-}
-
-function getSupabaseCacheVersion_(tableName) {
-  if (!tableName) return String(Date.now());
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const key = SUPABASE_TABLE_VERSION_PREFIX + tableName;
-    let version = props.getProperty(key);
-    if (!version) {
-      version = String(Date.now());
-      props.setProperty(key, version);
-    }
-    return version;
-  } catch (e) {
-    Logger.log('getSupabaseCacheVersion_ error: ' + e);
-    return String(Date.now());
-  }
-}
-
-function bumpSupabaseCacheVersion_(tableName) {
-  if (!tableName) return;
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const key = SUPABASE_TABLE_VERSION_PREFIX + tableName;
-    const newVersion = String(Date.now()) + '_' + Math.floor(Math.random() * 1000);
-    props.setProperty(key, newVersion);
-  } catch (e) {
-    Logger.log('bumpSupabaseCacheVersion_ error: ' + e);
-  }
-}
-
-function invalidateSupabaseCaches_(tables) {
-  if (!tables) return;
-  const list = Array.isArray(tables) ? tables : [tables];
-  list.forEach(function (table) {
-    if (table) bumpSupabaseCacheVersion_(table);
-  });
-}
-
 function removeSupabaseUserMissCache_(username) {
   const missKey = buildSupabaseUserMissCacheKey_(username);
   if (!missKey) return;
   safeScriptCacheRemove_(missKey);
 }
 
-function buildSupabaseSearchFilter_(columns, searchValue) {
-  if (!Array.isArray(columns) || !columns.length) return '';
-  const raw = searchValue == null ? '' : String(searchValue);
-  const sanitized = raw.replace(/["'`]/g, '').trim();
-  if (!sanitized) return '';
-  const escaped = sanitized.replace(/[\*%]/g, function (match) { return '\\' + match; });
-  const likePattern = '*' + escaped + '*';
-  const expressions = columns
-    .filter(function (column) { return column && typeof column === 'string'; })
-    .map(function (column) { return column + '.ilike.' + likePattern; });
-  if (!expressions.length) return '';
-  const clause = '(' + expressions.join(',') + ')';
-  return 'or=' + encodeURIComponent(clause);
-}
-
-function resolveSupabaseOrderClause_(orderParams, headers, defaultSortColumnIndex, columnMap, fallback) {
-  let column = '';
-  let direction = 'desc';
-
-  if (Array.isArray(orderParams) && orderParams.length) {
-    const orderInfo = orderParams[0] || {};
-    const idx = parseInt(orderInfo.column, 10);
-    if (!isNaN(idx) && idx >= 0 && idx < headers.length) {
-      const header = headers[idx];
-      const mapped = columnMap[header];
-      if (mapped) {
-        column = mapped;
-        direction = String(orderInfo.dir || '').toLowerCase() === 'asc' ? 'asc' : 'desc';
-      }
-    }
-  }
-
-  if (!column && defaultSortColumnIndex != null && defaultSortColumnIndex >= 0 && defaultSortColumnIndex < headers.length) {
-    const header = headers[defaultSortColumnIndex];
-    const mapped = columnMap[header];
-    if (mapped) {
-      column = mapped;
-      direction = 'desc';
-    }
-  }
-
-  if (!column) {
-    return fallback || '';
-  }
-
-  return column + '.' + direction + '.nullslast';
-}
-
-function fetchSupabaseCount_(tableName, endpoint, filters) {
-  if (!tableName || !endpoint) return 0;
-  const endpoints = Array.isArray(endpoint) ? endpoint.filter(function (value) { return !!value; }) : [endpoint];
-  if (!endpoints.length) return 0;
-  const cacheParts = ['count_only'];
-  if (endpoints.length > 1) {
-    cacheParts.push('endpoints=' + endpoints.join('|'));
-  }
-  if (Array.isArray(filters) && filters.length) {
-    Array.prototype.push.apply(cacheParts, filters);
-  }
-  const count = fetchSupabaseCached_(tableName, cacheParts, function () {
-    const queryParts = ['select=' + encodeURIComponent('id'), 'limit=1'];
-    if (Array.isArray(filters) && filters.length) {
-      Array.prototype.push.apply(queryParts, filters);
-    }
-    const { result } = requestSupabaseWithEndpointFallback_(tableName, endpoints, function (ep) {
-      const queryString = queryParts.join('&');
-      return ep + (queryString ? '?' + queryString : '');
-    }, {
-      headers: { Prefer: 'count=exact' },
-      returnResponse: true
-    });
-    const response = result || {};
-    const total = parseContentRangeTotal_(response.headers);
-    return total != null ? total : 0;
-  });
-  return typeof count === 'number' && isFinite(count) ? count : 0;
-}
-
-function fetchSupabasePaged_(tableName, endpoint, queryParts) {
-  if (!tableName || !endpoint) {
-    return { rows: [], count: 0 };
-  }
-  const endpoints = Array.isArray(endpoint) ? endpoint.filter(function (value) { return !!value; }) : [endpoint];
-  if (!endpoints.length) {
-    return { rows: [], count: 0 };
-  }
-  const parts = Array.isArray(queryParts) ? queryParts.slice() : [];
-  const cacheParts = ['paged'];
-  Array.prototype.push.apply(cacheParts, parts);
-  if (endpoints.length > 1) {
-    cacheParts.push('endpoints=' + endpoints.join('|'));
-  }
-  const result = fetchSupabaseCached_(tableName, cacheParts, function () {
-    const { result } = requestSupabaseWithEndpointFallback_(tableName, endpoints, function (ep) {
-      const queryString = parts.join('&');
-      return ep + (queryString ? '?' + queryString : '');
-    }, {
-      headers: { Prefer: 'count=exact' },
-      returnResponse: true
-    });
-    const response = result || {};
-    const rows = Array.isArray(response.data) ? response.data : [];
-    const total = parseContentRangeTotal_(response.headers);
-    return {
-      rows: rows,
-      count: total != null ? total : rows.length
-    };
-  });
-  if (!result || typeof result !== 'object') {
-    return { rows: [], count: 0 };
-  }
-  const count = typeof result.count === 'number' && isFinite(result.count) ? result.count : 0;
-  const rows = Array.isArray(result.rows) ? result.rows : [];
-  return { rows: rows, count: count };
-}
-
-function fetchVehicleRegistrationSummary_(filters) {
-  const cacheParts = ['summary'];
-  if (Array.isArray(filters) && filters.length) {
-    Array.prototype.push.apply(cacheParts, filters);
-  }
-  const summary = fetchSupabaseCached_('vehicle_registration', cacheParts, function () {
-    const statusColumn = getVehicleRegistrationStatusColumnName_() || 'registration_status';
-    const statusSelect = getVehicleRegistrationStatusSelectExpression_();
-    const countSelect = statusColumn === 'registration_status'
-      ? 'count:registration_status'
-      : 'count:' + statusColumn;
-    const queryParts = [
-      'select=' + encodeURIComponent([statusSelect, countSelect].join(',')),
-      'group=' + encodeURIComponent(statusColumn)
-    ];
-    if (Array.isArray(filters) && filters.length) {
-      Array.prototype.push.apply(queryParts, filters);
-    }
-    const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParts.join('&')) || [];
-    const result = { total: 0, pending: 0, approved: 0 };
-    if (!Array.isArray(rows)) return result;
-    rows.forEach(function (row) {
-      const rawStatus = row && (row.registration_status != null ? row.registration_status : row[statusColumn]);
-      const status = String(rawStatus == null ? '' : rawStatus).trim().toLowerCase();
-      const count = Number(row && row.count);
-      if (!isNaN(count)) {
-        result.total += count;
-        if (status === 'pending approval') result.pending += count;
-        else if (status === 'approved') result.approved += count;
-      }
-    });
-    return result;
-  });
-  if (summary && typeof summary === 'object') {
-    if (typeof summary.total !== 'number') summary.total = 0;
-    if (typeof summary.pending !== 'number') summary.pending = 0;
-    if (typeof summary.approved !== 'number') summary.approved = 0;
-    return summary;
-  }
-  return { total: 0, pending: 0, approved: 0 };
-}
-
-function fetchTotalListSummary_(filters) {
-  const cacheParts = ['summary'];
-  if (Array.isArray(filters) && filters.length) {
-    Array.prototype.push.apply(cacheParts, filters);
-  }
-  const endpoints = getSupabaseTotalListEndpoints_();
-  if (endpoints.length > 1) {
-    cacheParts.push('endpoints=' + endpoints.join('|'));
-  }
-  const summary = fetchSupabaseCached_('truck_list_total', cacheParts, function () {
-    const queryParts = [
-      'select=' + encodeURIComponent('activity_status,count:activity_status'),
-      'group=activity_status'
-    ];
-    if (Array.isArray(filters) && filters.length) {
-      Array.prototype.push.apply(queryParts, filters);
-    }
-    const { result } = requestSupabaseWithEndpointFallback_(
-      'truck_list_total',
-      endpoints,
-      function (endpoint) {
-        const queryString = queryParts.join('&');
-        return endpoint + (queryString ? '?' + queryString : '');
-      }
-    );
-    const rows = Array.isArray(result) ? result : [];
-    const data = { total: 0, active: 0, banned: 0 };
-    rows.forEach(function (row) {
-      const status = String(row && row.activity_status || '').trim().toLowerCase();
-      const count = Number(row && row.count);
-      if (!isNaN(count)) {
-        data.total += count;
-        if (status === 'active') data.active += count;
-        else if (status === 'banned') data.banned += count;
-      }
-    });
-    return data;
-  });
-  if (summary && typeof summary === 'object') {
-    if (typeof summary.total !== 'number') summary.total = 0;
-    if (typeof summary.active !== 'number') summary.active = 0;
-    if (typeof summary.banned !== 'number') summary.banned = 0;
-    return summary;
-  }
-  return { total: 0, active: 0, banned: 0 };
-}
-
 function getSheetCacheVersion_(sheetName) {
   if (!sheetName) return String(Date.now());
-  if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
-    return getSupabaseCacheVersion_('vehicle_registration');
-  }
-  if (sheetName === TRUCK_LIST_TOTAL_SHEET) {
-    return getSupabaseCacheVersion_('truck_list_total');
-  }
   try {
     const props = PropertiesService.getScriptProperties();
     const key = SHEET_CACHE_VERSION_PREFIX + sheetName;
@@ -3860,14 +3512,6 @@ function getSheetCacheVersion_(sheetName) {
 
 function bumpSheetCacheVersion_(sheetName) {
   if (!sheetName) return;
-  if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
-    bumpSupabaseCacheVersion_('vehicle_registration');
-    return;
-  }
-  if (sheetName === TRUCK_LIST_TOTAL_SHEET) {
-    bumpSupabaseCacheVersion_('truck_list_total');
-    return;
-  }
   try {
     const props = PropertiesService.getScriptProperties();
     const key = SHEET_CACHE_VERSION_PREFIX + sheetName;
@@ -4122,7 +3766,7 @@ function getContractDataServerSide(params) {
       'ID': String(row.id == null ? '' : row.id).trim(),
       'Contract No': String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim(),
       'Customer Name': String(row.customer_name == null ? '' : row.customer_name).trim(),
-      'Transportation Company': String(row.transportation_company == null ? '' : row.transportation_company).trim(),
+      'Transportion Company': String(row.transportation_company == null ? '' : row.transportation_company).trim(),
       'Status': String(row.status == null ? '' : row.status).trim(),
       'Created At': createdAtDisplay,
       'Created At Sort': createdAtSort,
@@ -4134,7 +3778,7 @@ function getContractDataServerSide(params) {
     const contractor = String(session.contractor == null ? '' : session.contractor).trim();
     if (contractor) {
       data = data.filter(function (item) {
-        return String(item['Transportation Company'] || '') === contractor;
+        return String(item['Transportion Company'] || '') === contractor;
       });
     } else {
       data = [];
@@ -4142,7 +3786,7 @@ function getContractDataServerSide(params) {
   }
 
   const q = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
-  const searchKeys = ['ID','Contract No','Customer Name','Transportation Company','Status','Created At','Created By'];  
+  const searchKeys = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];  
   let filtered = q
     ? data.filter(function (item) {
         return searchKeys.some(function (key) {
@@ -4153,7 +3797,7 @@ function getContractDataServerSide(params) {
 
   const order = Array.isArray(params.order) ? params.order[0] : null;
   if (order && order.column != null) {
-    const dataColumns = ['ID','Contract No','Customer Name','Transportation Company','Status','Created At','Created By'];
+    const dataColumns = ['ID','Contract No','Customer Name','Transportion Company','Status','Created At','Created By'];
     let idx = Number(order.column);
     if (isNaN(idx)) idx = 0;
     idx -= 2; // Bỏ qua 2 cột Select & Action
@@ -4189,7 +3833,7 @@ function upsertContract(contract, sessionToken) {
   if (session.role !== 'admin') throw new Error('Bạn không có quyền thực hiện.');
 
   const { ID, 'Contract No': contractNo, 'Customer Name': customerName,
-          'Transportation Company': tc, 'Status': status } = contract;
+          'Transportion Company': tc, 'Status': status } = contract;
 
   const payload = {
     contract_no: String(contractNo == null ? '' : contractNo).trim(),
@@ -4260,7 +3904,7 @@ function deleteContracts(ids, sessionToken) {
   return `Đã xoá ${count} hợp đồng.`;
 }
 
-//Lấy danh sách Contractor từ Supabase (dropdown “Transportation Company” ở trang Hợp đồng)
+//Lấy danh sách Contractor từ Supabase (dropdown “Transportion Company” ở trang Hợp đồng)
 function getContractorOptions() {
   try {
     const data = supabaseRequest_(
@@ -4280,24 +3924,22 @@ function getContractorOptions() {
 }
 
 
-//Lấy danh sách "Đơn vị vận chuyển" từ Supabase truck_list_total
+//Lấy danh sách "Đơn vị vận chuyển" từ sheet TruckListTotal
 function getTransportCompanies() {
-  const rows = fetchTotalListRows_(['transportation_company']);
-  const companies = new Set();
-  rows.forEach(function (row) {
-    const company = String(row && row.transportation_company || '').trim();
-    if (company) companies.add(company);
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sh) return [];
+  const n = sh.getLastRow();
+  if (n < 2) return [];
+  const idx = HEADERS_TOTAL_LIST.indexOf('Transportion Company') + 1;
+  if (idx <= 0) return [];
+  const vals = sh.getRange(2, idx, n - 1, 1).getValues().flat();
+  const set = new Set();
+  vals.forEach(v => {
+    const s = String(v || '').trim();
+    if (s) set.add(s);
   });
-
-  if (!companies.size) {
-    const contractRows = fetchContractDataRows_(['transportation_company']);
-    contractRows.forEach(function (row) {
-      const company = String(row && row.transportation_company || '').trim();
-      if (company) companies.add(company);
-    });
-  }
-
-  return Array.from(companies).sort();
+  return Array.from(set).sort();
 }
 
 //Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
@@ -4332,11 +3974,17 @@ function getActiveContractNos(sessionToken) {
 // ====== GS: Trả về danh sách biển số đang có để đánh dấu trùng ======
 function getExistingTruckPlates(sessionToken) {
   const session = validateSession(sessionToken);
-  const rows = fetchTotalListRows_(['truck_plate']);
-  if (!rows.length) return [];
-  return rows
-    .map(function (row) { return normalizeTruckPlate_(row.truck_plate); })
-    .filter(function (plate) { return plate.length > 0; });
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sheet) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
+
+  const plateCol = HEADERS_TOTAL_LIST.indexOf('Truck Plate') + 1;
+  const lastRow  = sheet.getLastRow();
+  if (plateCol <= 0 || lastRow < 2) return [];
+
+  const norm = s => String(s || '').replace(/\s/g, '').toUpperCase();
+  const values = sheet.getRange(2, plateCol, lastRow - 1, 1).getValues().flat();
+  return values.map(norm).filter(Boolean);
 }
 
 
@@ -4347,38 +3995,53 @@ function saveTotalListAppend(rows, sessionToken) {
 
   if (!rows || !rows.length) return 'Không có dữ liệu để lưu.';
 
-  const payload = rows.map(function (obj) {
-    if (!obj) return null;
-    const record = Object.assign({}, obj);
-    record['Truck Plate'] = normalizeTruckPlate_(record['Truck Plate']);
-    if (!record['Truck Plate']) return null;
-    if (record['Trailer Plate']) {
-      record['Trailer Plate'] = normalizeTruckPlate_(record['Trailer Plate']);
-    }
-    return buildTotalListPayload_(record);
-  }).filter(function (payloadItem) { return payloadItem != null; });
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(TRUCK_LIST_TOTAL_SHEET);
+  if (!sh) throw new Error('Không tìm thấy sheet Danh sách xe tổng.');
 
-  if (!payload.length) {
-    return 'Không có dữ liệu hợp lệ để lưu.';
+  const header = HEADERS_TOTAL_LIST;
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, header.length).setValues([header]);
   }
 
-  const endpoints = getSupabaseTotalListEndpoints_();
-  const { result } = requestSupabaseWithEndpointFallback_(
-    'truck_list_total',
-    endpoints,
-    function (endpoint) { return endpoint; },
-    {
-      method: 'POST',
-      payload: payload,
-      headers: { Prefer: 'return=representation' }
-    }
-  );
-  const response = result || [];
+  // Format ngày/giờ
+  const pad = n => ('0' + n).slice(-2);
+  const formatDateText = d =>
+    `'${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; // thêm dấu '
+  const formatTimeText = d =>
+    `'${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; // thêm dấu '
 
-  const inserted = Array.isArray(response) ? response.length : payload.length;
-  bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);
+  const normPlate = s => String(s || '').replace(/\s/g, '').toUpperCase();
 
-  return `Đã thêm ${inserted} dòng mới vào Danh sách xe tổng.`;
+  const values = rows.map(obj => {
+    const dNow = new Date();
+    const regDate = obj['Register Date']
+      ? `${obj['Register Date']}`
+      : formatDateText(dNow);
+    const regTime = obj['Time']
+      ? `${obj['Time']}`
+      : formatTimeText(dNow);
+
+    return header.map(h => {
+      switch (h) {
+        case 'Truck Plate':
+        case 'Trailer Plate':
+          return normPlate(obj[h]);
+        case 'Register Date':
+          return regDate;
+        case 'Time':
+          return regTime;
+        default:
+          return obj[h] == null ? '' : String(obj[h]);
+      }
+    });
+  });
+
+  const startRow = sh.getLastRow() + 1;
+  sh.getRange(startRow, 1, values.length, header.length).setValues(values);
+  bumpSheetCacheVersion_(TRUCK_LIST_TOTAL_SHEET);  
+
+  return `Đã thêm ${values.length} dòng mới vào Danh sách xe tổng.`;
 }
 
 // === THAY TOÀN BỘ addManualVehicle ===
@@ -4393,7 +4056,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: khóa Contractor cho user thường
     if (userSession.role === 'user') {
-      rowObj['Transportation Company'] = userSession.contractor || rowObj['Transportation Company'];
+      rowObj['Transportion Company'] = userSession.contractor || rowObj['Transportion Company'];
     }
 
     coerceNumericRegisterFields_(rowObj);
@@ -4406,7 +4069,7 @@ function addManualVehicle(record, sessionToken, language) {
     // ✅ NEW: 3 kiểm tra đối chiếu "Danh sách tổng" (dùng đúng thông báo như upload)
     const precheck = checkVehiclesAgainstTotalList([{
       'Truck Plate'         : String(rowObj['Truck Plate'] || '').toUpperCase().replace(/\s/g, ''),
-      'Transportation Company': rowObj['Transportation Company']
+      'Transportion Company': rowObj['Transportion Company']
     }]);
     if (!precheck.isValid) {
       throw new Error(pickMessage(precheck.message, precheck.messageEn));
@@ -4414,7 +4077,7 @@ function addManualVehicle(record, sessionToken, language) {
 
     // ✅ NEW: kiểm tra Contract No thuộc đúng Contractor & Active
     const contractNo = String(rowObj['Contract No'] || '').trim();
-    const company    = String(rowObj['Transportation Company'] || '').trim();
+    const company    = String(rowObj['Transportion Company'] || '').trim();
     if (!isContractActiveForCompany_(contractNo, company)) {
       throw new Error(pickMessage(
         'Sai số hợp đồng, vui lòng kiểm tra lại hợp đồng vận chuyển (Contract No phải thuộc đúng đơn vị và đang Active).',
@@ -4426,7 +4089,7 @@ function addManualVehicle(record, sessionToken, language) {
     const dup = checkForExistingRegistrations([{
       'Register Date'       : rowObj['Register Date'],
       'Truck Plate'         : rowObj['Truck Plate'],
-      'Transportation Company': rowObj['Transportation Company']
+      'Transportion Company': rowObj['Transportion Company']
     }], sessionToken);
     if (dup && dup.length > 0) {
       throw new Error(pickMessage(
@@ -4504,7 +4167,7 @@ function getXpplSnapshot(payload, sessionToken){
   var headers = HEADERS_REGISTER;
   var response = supabaseRequest_(
     SUPABASE_VEHICLE_REG_ENDPOINT
-      + '?select=' + encodeURIComponent(getVehicleRegistrationSelectFields_().join(','))
+      + '?select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))
       + '&register_date=eq.' + encodeURIComponent(isoDate)
   ) || [];
 
@@ -4519,7 +4182,7 @@ function getXpplSnapshot(payload, sessionToken){
   for (var i=0;i<rowsRaw.length;i++){
     var r=rowsRaw[i];
     var obj = formatRowForClient_(r, headers);
-    if (scope !== 'ALL' && String(obj['Transportation Company']||'').trim() !== scope) continue;
+    if (scope !== 'ALL' && String(obj['Transportion Company']||'').trim() !== scope) continue;
     rows.push(obj);
 
     var st = String(obj['Registration Status']||'');
@@ -4577,13 +4240,8 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   var isoDate = toSupabaseDateString_(dateString);
   if (!isoDate) throw new Error('Ngày đăng ký không hợp lệ.');
 
-  var statusColumn = getVehicleRegistrationStatusColumnName_();
-  var statusSelect = getVehicleRegistrationStatusSelectExpression_();
-  var selectFields = ['id', 'contract_no'];
-  if (statusSelect) selectFields.push(statusSelect);
-  selectFields.push('transportation_company');
   var baseParams = [
-    'select=' + encodeURIComponent(selectFields.join(',')),
+    'select=' + encodeURIComponent(['id','contract_no','registration_status','transportation_company'].join(',')),
     'register_date=eq.' + encodeURIComponent(isoDate)
   ];
 
@@ -4606,9 +4264,8 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
 
   var changedIdsSet = {};
   rows.forEach(function (row) {
-    var statusValue = row && (row.registration_status != null ? row.registration_status : (statusColumn ? row[statusColumn] : undefined));
     if (Object.keys(set).length && !set[String(row.contract_no || '').trim()]) return;
-    if (String(statusValue || '') === newStatus) return;
+    if (String(row.registration_status || '') === newStatus) return;
     if (row.id != null) changedIdsSet[String(row.id)] = true;
   });
 
@@ -4619,12 +4276,10 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
   updateBatches.forEach(function (batch) {
     var updateFilter = buildSupabaseInFilter_('id', batch);
     if (!updateFilter) return;
-    var payload = {};
-    payload[statusColumn || 'registration_status'] = newStatus;
     supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + updateFilter, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
-      payload: payload
+      payload: { registration_status: newStatus }
     });
   });
 
@@ -4640,7 +4295,7 @@ function updateRegistrationStatusBulk(filters, newStatus, sessionToken){
  */
 function exportRegisteredVehicles(params) {
   const headers = HEADERS_REGISTER;
-  const queryParams = ['select=' + encodeURIComponent(getVehicleRegistrationSelectFields_().join(','))];
+  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))];
 
   if (params && params.dateString) {
     const iso = toSupabaseDateString_(params.dateString);
@@ -4665,6 +4320,72 @@ function exportRegisteredVehicles(params) {
 }
 
 
+
+function exportXpplToTemplateDownload(filter, sessionToken) {
+  const res = getXpplExportData(filter, sessionToken);
+  if (!res || !res.ok) return { ok:false, message:(res && res.errors && res.errors.join('\n')) || 'Không đủ điều kiện để xuất.' };
+
+  const { dateString, contractNo, customerName } = res.filter;
+  const rows  = res.rows || [];
+  if (!rows.length) return { ok:false, message:'Không có dữ liệu để xuất.' };
+
+  // 1) Copy + convert template -> Google Sheet (dễ ghi định dạng)
+  const name = `(${contractNo}_${dateString.replace(/\//g,'-')})-XPPL FORM`;
+  const copied = Drive.Files.copy({ title:name, mimeType: MimeType.GOOGLE_SHEETS }, XPPL_TEMPLATE_ID);
+  const fileId = copied.id;
+  const ss = SpreadsheetApp.openById(fileId);
+
+  try {
+    // Ghi header
+    const rDate = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.REG_DATE);
+    if (rDate) rDate.setValue(dateString);
+
+    const rCus  = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CUSTOMER_NAME);
+    if (rCus) rCus.setValue(customerName);
+
+    const rCon  = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.CONTRACT_NO);
+    if (rCon) rCon.setValue(contractNo);
+
+    const rTotal= _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TOTAL_TRUCK);
+    if (rTotal) rTotal.setValue(rows.length);
+
+    // Ghi bảng Truck list
+    const start = _getRangeByAnyName_(ss, XPPL_NR_ALIASES.TABLE_START);
+    if (!start) throw new Error('Không tìm thấy TABLE_START / NR_TABLE_START');
+
+    const sh = start.getSheet();
+    const r0 = start.getRow();
+    const c0 = start.getColumn();
+
+    const aoa = rows.map((r,i)=>[
+      i+1,
+      r['Truck Plate']||'',
+      r['Country']||'',
+      r['Wheel']||'',
+      r['Trailer Plate']||'',
+      r['Driver Name']||'',
+      r['ID/Passport']||'',
+      r['Phone number']||'',
+      r['Transportion Company']||'',
+      r['Subcontractor']||''
+    ]);
+    if (aoa.length) sh.getRange(r0, c0, aoa.length, 10).setValues(aoa);
+
+    // 2) Export về XLSX (blob) rồi xoá file tạm để không tăng dung lượng
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx`;
+    const resp = UrlFetchApp.fetch(exportUrl, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions:true });
+    const blob = resp.getBlob().setName(name + '.xlsx');
+
+    // Xoá vĩnh viễn file Google Sheet tạm
+    try { Drive.Files.remove(fileId); } catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(_){ } }
+
+    return { ok:true, filename: blob.getName(), base64: Utilities.base64Encode(blob.getBytes()) };
+
+  } catch (e) {
+    try { Drive.Files.remove(fileId); } catch(_){}
+    return { ok:false, message: 'Xuất thất bại: ' + (e && e.message) };
+  }
+}
 
 // ===== XPPL Weighing Station functions =====
 function saveXpplWeighingData(rows, sessionToken) {
@@ -4787,7 +4508,7 @@ function getXpplWeighingData(filter, sessionToken) {
 }
 
 // ===== WEIGHING RESULT HELPERS =====
-function matchTransportationCompanies(filter, sessionToken) {
+function matchTransportionCompanies(filter, sessionToken) {
   const user = requireXpplRole_(sessionToken);
   const normalizePlate = function (value) {
     return String(value == null ? '' : value)
@@ -4811,7 +4532,7 @@ function matchTransportationCompanies(filter, sessionToken) {
     const res = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&'));
     records = Array.isArray(res) ? res : [];
   } catch (e) {
-    Logger.log('matchTransportationCompanies error: ' + e);
+    Logger.log('matchTransportionCompanies error: ' + e);
     records = [];
   }
 
@@ -4844,7 +4565,7 @@ function matchTransportationCompanies(filter, sessionToken) {
         });
       }
     } catch (err) {
-      Logger.log('matchTransportationCompanies vehicle registration fetch error: ' + err);
+      Logger.log('matchTransportionCompanies vehicle registration fetch error: ' + err);
     }
   }
 
