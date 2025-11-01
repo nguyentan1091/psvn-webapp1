@@ -35,6 +35,8 @@ let $appContainer = null;
 let loginTemplateHTML = '';
 let loginFallbackTimer = null;
 let sessionCheckCompleted = false;
+let sessionRestoreInProgress = false;
+let lastXpplDateString = '';
 
 const PAGE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 phút cho mỗi trang
 const pageCache = new Map();
@@ -529,6 +531,10 @@ function scheduleLoginFallback(delay = 450) {
     loginFallbackTimer = setTimeout(() => {
         loginFallbackTimer = null;
         if (sessionCheckCompleted) {
+            return;
+        }
+        if (sessionRestoreInProgress) {
+            showLoader();
             return;
         }
         const hasLoginView = document.body && document.body.classList && document.body.classList.contains('login-view-active') && $('#loginForm').length;
@@ -1379,6 +1385,7 @@ $(document).ready(function() {
     const existingToken = storedSession && storedSession.token ? storedSession.token : null;
     const hasSessionFlag = sessionFlagInTab;
     const shouldAttemptRestore = !!(existingToken && hasSessionFlag);
+    sessionRestoreInProgress = shouldAttemptRestore;
     sessionCheckCompleted = false;
 
     if (shouldAttemptRestore) {
@@ -1415,6 +1422,7 @@ function initializeApp(existingToken) {
         .withSuccessHandler(session => {
             sessionCheckCompleted = true;
             clearLoginFallbackTimer();
+            sessionRestoreInProgress = false;
             const normalizedSession = (session && typeof session === 'object') ? session : {};
             const isValidSession = !!(normalizedSession.isLoggedIn && normalizedSession.token);
             if (isValidSession) {
@@ -1440,6 +1448,7 @@ function initializeApp(existingToken) {
         .withFailureHandler(error => {
             sessionCheckCompleted = true;
            clearLoginFallbackTimer();
+            sessionRestoreInProgress = false;
             userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
             clearStoredSession();
             clearSessionFlag();
@@ -1937,6 +1946,32 @@ async function handleLogin(e) {
         .checkLogin(credentials);
 }
 
+function buildCacheBustingUrl() {
+    try {
+        const url = new URL(window.location.href);
+        url.hash = '';
+        url.searchParams.set('_ts', Date.now().toString());
+        return url.toString();
+    } catch (err) {
+        const base = window.location.href.split('#')[0];
+        const separator = base.includes('?') ? '&' : '?';
+        return `${base}${separator}_ts=${Date.now()}`;
+    }
+}
+
+function redirectToAppWithCacheBusting() {
+    const targetUrl = buildCacheBustingUrl();
+    try {
+        if (window.top && window.top !== window) {
+            window.top.location.replace(targetUrl);
+        } else {
+            window.location.replace(targetUrl);
+        }
+    } catch (err) {
+        window.location.href = targetUrl;
+    }
+}
+
 function handleLogout() {
     const token = userSession && userSession.token ? userSession.token : null;
     clearTimeout(inactivityTimer);
@@ -1944,6 +1979,7 @@ function handleLogout() {
 
     sessionCheckCompleted = true;
     clearLoginFallbackTimer();
+    sessionRestoreInProgress = false;
 
     showLoader();
     invalidateAllPageCache();
@@ -1959,32 +1995,29 @@ function handleLogout() {
     if (!loginRendered) {
         loadLoginPage();
     }
+    showLoader();
 
     let reloadTimer = null;
 
-    const performReload = () => {
+    const scheduleRedirect = (delay = 0) => {
         if (reloadTimer) {
             clearTimeout(reloadTimer);
         }
-        try {
-            const cleanUrl = window.location.href.split('#')[0];
-            window.location.replace(cleanUrl);
-        } catch (_) {
-            window.location.reload();
-        }
+        const timeout = Math.max(0, Number(delay) || 0);
+        reloadTimer = setTimeout(() => {
+            redirectToAppWithCacheBusting();
+        }, timeout);
     };
 
-    reloadTimer = setTimeout(() => {
-        performReload();
-    }, 600);
+    scheduleRedirect(250);
 
     callServerWithRetry('logout', [token], {
         attempts: 2,
         initialDelay: 400,
-        onSuccess: performReload,
+        onSuccess: () => scheduleRedirect(0),
         onFailure: err => {
             showError(err);
-           performReload();
+            scheduleRedirect(0);
         }
     });
 }
@@ -6413,10 +6446,49 @@ function initXuLyXPPLPage() {
   }
   // Luôn trả dd/MM/yyyy từ #xppl-date dù input hiển thị dạng gì
   function getDateVN() {
-    const raw = ($('#xppl-date').val() || '').trim();
-    if (!raw) return '';
-    const parsed = parseDateValue(raw);
-    return parsed ? getFormattedDate(parsed) : raw;    
+    const $input = $('#xppl-date');
+    const fallbackDate = getVietnamNowClient();
+
+    if (!$input.length) {
+      if (lastXpplDateString) {
+        return lastXpplDateString;
+      }
+      const fallbackString = getFormattedDate(fallbackDate);
+      lastXpplDateString = fallbackString;
+      return fallbackString;
+    }
+
+    let raw = ($input.val() || '').trim();
+    if (!raw) {
+      const isoFallback = getVietnamIsoDate(fallbackDate);
+      if (isoFallback) {
+        $input.val(isoFallback);
+        raw = isoFallback;
+      }
+    }
+
+    let parsed = parseDateValue(raw);
+    if (!parsed || isNaN(parsed)) {
+      parsed = fallbackDate instanceof Date && !isNaN(fallbackDate) ? fallbackDate : null;
+      if (parsed) {
+        const iso = getVietnamIsoDate(parsed);
+        if (iso) {
+          $input.val(iso);
+        }
+      }
+    }
+
+    if (!parsed || isNaN(parsed)) {
+      return lastXpplDateString || '';
+    }
+
+    const formatted = getFormattedDate(parsed);
+    if (formatted) {
+      lastXpplDateString = formatted;
+      return formatted;
+    }
+
+    return lastXpplDateString || ''; 
   }
 
   ensureVietnamTime();
@@ -6428,6 +6500,10 @@ function initXuLyXPPLPage() {
   function loadExportOptionsForDate() {
     resetExportFormPlaceholders();
     const dateVN = getDateVN(); // dd/MM/yyyy
+    if (!dateVN) {
+      Swal.fire('Thiếu ngày đăng ký', 'Vui lòng chọn ngày đăng ký trước khi tải danh sách hợp đồng.', 'info');
+      return;
+    }
 
     showLoading('Đang tải danh sách hợp đồng…');
     google.script.run
@@ -6766,6 +6842,10 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
   }
   function refreshSnapshot() {
     const d = getDateVN();
+    if (!d) {
+      Swal.fire('Thiếu ngày đăng ký', 'Vui lòng chọn ngày đăng ký trước khi tải dữ liệu.', 'info');
+      return;
+    }
     showLoading('Đang tải dữ liệu…');
     google.script.run
       .withSuccessHandler(res=>{
@@ -6792,6 +6872,10 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
   }
   function refreshTable() {
     const d = getDateVN();
+    if (!d) {
+      Swal.fire('Thiếu ngày đăng ký', 'Vui lòng chọn ngày đăng ký trước khi tải dữ liệu.', 'info');
+      return;
+    }
     const selected = $('#xppl-contracts').val() || [];
     google.script.run
       .withSuccessHandler(res=>{
