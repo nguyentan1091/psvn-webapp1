@@ -1596,6 +1596,9 @@ function checkRegistrationTime() {
     status.timeToOpen = minutesUntilMorningOpen * 60 * 1000;
   }
 
+  status.serverEpochMillis = now.getTime();
+  status.generatedAt = now.toISOString();
+
   return status;
 }
 
