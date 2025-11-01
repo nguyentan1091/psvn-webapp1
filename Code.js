@@ -3607,16 +3607,32 @@ function deleteTotalListVehicles(ids, sessionToken) {
 
     if (!sanitized.length) throw new Error('Không có ID hợp lệ để xóa.');
 
-    const filter = buildSupabaseInFilter_('id', sanitized);
-    if (!filter) throw new Error('Không có ID hợp lệ để xóa.');
+    const unique = Array.from(new Set(sanitized));
+    const batches = chunkArray_(unique, SUPABASE_IN_FILTER_BATCH_SIZE);
 
-    const response = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + filter, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=representation' }
+    if (!batches.length) throw new Error('Không có ID hợp lệ để xóa.');
+
+    let deletedCount = 0;
+
+    batches.forEach(function (batch) {
+      const filter = buildSupabaseInFilter_('id', batch);
+      if (!filter) return;
+
+      const response = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + filter, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=representation' }
+      });
+
+      if (Array.isArray(response)) {
+        deletedCount += response.length;
+      } else {
+        deletedCount += batch.length;
+      }
     });
 
-    const count = Array.isArray(response) ? response.length : sanitized.length;
-    return `Đã xóa thành công ${count} xe.`;
+    if (!deletedCount) throw new Error('Không thể xóa xe.');
+
+    return `Đã xóa thành công ${deletedCount} xe.`;
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi xóa xe: ' + error.message); }
 }
 
