@@ -1,10 +1,6 @@
 // =================================================================
-// CẤU HÌNH GOOGLE SHEETS
-const SPREADSHEET_ID = '1IHBdQFecC1_JT17dQOTxq-NEz1-HvXHHuSVwg5TGGIM'; 
+// CẤU HÌNH CƠ SỞ DỮ LIỆU
 const VEHICLE_REGISTRATION_CACHE_KEY = 'vehicle_registration_supabase';
-// === XPPL Weighing Station database ===
-const XPPL_DB_ID = '1LJGbMLFU8GnETecJ3i_j_fL5GWz5W1zST5bCQ5A5o3w';
-const XPPL_DB_SHEET = 'XPPL-Database';
 const XPPL_DB_HEADERS = [
   'ID','No.','W.ID','Weighing Type','TicketID','Truck No','Date In','Time In','Date Out','Time Out',
   'Weight In','Weight Out','Net Weight','Product Name','CoalSource','ProductionCode','Customer Name',
@@ -907,19 +903,6 @@ function normalizeXpplDbValue_(header, value) {
   return sanitizeXpplText_(value);
 }
 
-function applyXpplDbFormats_(sheet, startRow, numRows) {
-  if (numRows <= 0) return;
-  for (var i = 0; i < XPPL_DB_HEADERS.length; i++) {
-    var header = XPPL_DB_HEADERS[i];
-    var type = XPPL_DB_COLUMN_TYPES[header] || 'text';
-    var format;
-    if (type === 'date') format = 'dd/MM/yyyy';
-    else if (type === 'time') format = 'HH:mm:ss';
-    else format = '@';
-    sheet.getRange(startRow, i + 1, numRows, 1).setNumberFormat(format);
-  }
-}
-
 function toXpplSupabaseDate_(value) {
   if (value === '' || value === null || value === undefined) return '';
   const normalized = normalizeDate(value);
@@ -1032,13 +1015,6 @@ function mapXpplRecordToRowArray_(record, headers) {
     }
     return value;
   });
-}
-
-function ensureDateTimeFormats(sheet, headers) {
-  var dateCol = headers.indexOf('Register Date') + 1;
-  var timeCol = headers.indexOf('Time') + 1;
-  if (dateCol>0) sheet.getRange(2, dateCol, Math.max(1, sheet.getMaxRows()-1), 1).setNumberFormat("dd/MM/yyyy");
-  if (timeCol>0) sheet.getRange(2, timeCol, Math.max(1, sheet.getMaxRows()-1), 1).setNumberFormat("HH:mm:ss");
 }
 
 function formatRowForClient_(rowArray, headers) {
@@ -1674,42 +1650,15 @@ function buildEmptyResult_(draw, includeSummary) {
   return result;
 }
 
-function fetchRowsByIndices_(sheet, rowIndices, columnCount) {
-  if (!Array.isArray(rowIndices) || !rowIndices.length) return [];
-
-  const sorted = rowIndices.slice().sort((a, b) => a - b);
-  const collected = [];
-
-  const pushBlock = (startIdx, length) => {
-    if (length <= 0) return;
-    const startRow = startIdx + 2; // +2 vì dữ liệu bắt đầu từ dòng 2
-    const values = sheet.getRange(startRow, 1, length, columnCount).getValues();
-    for (var i = 0; i < values.length; i++) {
-      collected.push(values[i]);
-    }
-  };
-
-  var blockStart = sorted[0];
-  var blockLength = 1;
-  for (var i = 1; i < sorted.length; i++) {
-    if (sorted[i] === sorted[i - 1] + 1) {
-      blockLength++;
-    } else {
-      pushBlock(blockStart, blockLength);
-      blockStart = sorted[i];
-      blockLength = 1;
-    }
-  }
-  pushBlock(blockStart, blockLength);
-
-  return collected;
-}
-
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   params = params || {};
   const userSession = validateSession(params.sessionToken);
   const userRole = String(userSession.role || '').toLowerCase();
   const includeSummary = sheetName === VEHICLE_REGISTRATION_CACHE_KEY;
+
+  if (sheetName !== VEHICLE_REGISTRATION_CACHE_KEY) {
+    throw new Error('Unsupported dataset for Supabase processing: ' + sheetName);
+  }
 
   const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
   const cachedResult = cacheKey ? safeScriptCacheGetJSON_(cacheKey) : null;
@@ -1724,183 +1673,13 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     return result;
   };
 
-  if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
-    const result = processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary);
-    return respondWithCache(result);
-  }  
-
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
-  }
-
-  const totalRows = lastRow - 1;
-  const columnCount = headers.length;
-
-  const idxRegisterDate = headers.indexOf('Register Date');
-  const idxContract = headers.indexOf('Contract No');
-  const idxCompany = headers.indexOf('Transportation Company');
-  const idxActivity = headers.indexOf('Activity Status');
-  const idxStatus = headers.indexOf('Registration Status');
-
-  if (params.dateString && idxRegisterDate === -1) {
-    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
-  }
-
-  const columnCache = {};
-  function getColumnValues(idx) {
-    if (idx === -1) return null;
-    if (!(idx in columnCache)) {
-      if (totalRows <= 0) {
-        columnCache[idx] = [];
-      } else {
-        const rangeValues = sheet.getRange(2, idx + 1, totalRows, 1).getValues();
-        columnCache[idx] = rangeValues.map(function (row) { return row[0]; });
-      }
-    }
-    return columnCache[idx];
-  }
-
-  const valuesRegisterDate = (params.dateString && idxRegisterDate !== -1)
-    ? getColumnValues(idxRegisterDate)
-    : null;
-  const valuesContract = (params.contractNo && idxContract !== -1)
-    ? getColumnValues(idxContract)
-    : null;
-  const valuesCompany = (userRole === 'user' && idxCompany !== -1)
-    ? getColumnValues(idxCompany)
-    : null;
-  const valuesActivity = (userRole === 'user' && idxActivity !== -1)
-    ? getColumnValues(idxActivity)
-    : null;
-  const valuesStatus = (userRole === 'user-supervision' && idxStatus !== -1)
-    ? getColumnValues(idxStatus)
-    : null;
-
-  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
-  const contractFilter = params.contractNo
-    ? String(params.contractNo).replace(/^'+/, '').trim().toLowerCase()
-    : '';
-  const contractorValue = String(userSession.contractor == null ? '' : userSession.contractor);
-
-  const timezone = 'Asia/Ho_Chi_Minh';
-  const matchedIndices = [];
-
-  for (var r = 0; r < totalRows; r++) {
-    if (userRole === 'user') {
-      if (valuesCompany) {
-        const rawCompany = valuesCompany[r];
-        const companyString = String(rawCompany == null ? '' : rawCompany);
-        if (companyString !== contractorValue) continue;
-      }
-      if (valuesActivity) {
-        const rawActivity = valuesActivity[r];
-        const activityString = String(rawActivity == null ? '' : rawActivity).toUpperCase();
-        if (activityString !== 'ACTIVE') continue;
-      }
-    } else if (userRole === 'user-supervision') {
-      if (valuesStatus) {
-        const rawStatus = valuesStatus[r];
-        const statusString = String(rawStatus == null ? '' : rawStatus).trim().toLowerCase();
-        if (statusString !== 'approved') continue;
-      }
-    }
-
-    if (dateFilter) {
-      const cellValue = valuesRegisterDate ? valuesRegisterDate[r] : null;
-      if (!cellValue) continue;
-      var cmp = '';
-      if (cellValue instanceof Date) {
-        cmp = Utilities.formatDate(cellValue, timezone, 'dd/MM/yyyy');
-      } else {
-        cmp = String(cellValue).trim().replace(/^'+/, '');
-      }
-      if (cmp !== dateFilter) continue;
-    }
-
-    if (contractFilter && valuesContract) {
-      const rawContract = valuesContract[r];
-      const contractString = String(rawContract == null ? '' : rawContract)
-        .replace(/^'+/, '')
-        .trim()
-        .toLowerCase();
-      if (contractString !== contractFilter) continue;
-    }
-
-    matchedIndices.push(r);
-  }
-
-  if (!matchedIndices.length) {
-    return respondWithCache(buildEmptyResult_(params.draw, includeSummary));
-  }
-
-  let allData = fetchRowsByIndices_(sheet, matchedIndices, columnCount);
-
-  const recordsTotal = allData.length;
-  let filteredData = allData;
-
-  if (params.search && params.search.value) {
-    const searchValue = params.search.value.toLowerCase();
-    filteredData = filteredData.filter(function (row) {
-      return row.some(function (cell) {
-        return String(cell).toLowerCase().includes(searchValue);
-      });
-    });
-  }
-
-  const recordsFiltered = filteredData.length;
-
-  
-  // === SUMMARY (for 'Xe đã đăng ký') ===
-  var summary = null;
-  try {
-    if (sheetName === VEHICLE_REGISTRATION_CACHE_KEY) {
-      var statusIdx = headers.indexOf('Registration Status');
-      if (statusIdx !== -1) {
-        var total = filteredData.length;
-        var pending = 0, approved = 0;
-        for (var i = 0; i < filteredData.length; i++) {
-          var v = filteredData[i][statusIdx];
-          v = (v instanceof Date)
-            ? Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy')
-            : String(v || '').replace(/^'/, '').trim();
-          if (/^pending approval$/i.test(v)) pending++;
-          else if (/^approved$/i.test(v)) approved++;
-        }
-        summary = { total: total, pending: pending, approved: approved };
-      }
-    }
-  } catch (e) { /* ignore summary errors */ }
-  if (params.order && params.order.length > 0) {
-    const orderInfo = params.order[0];
-    const columnIndex = orderInfo.column;
-    const direction = orderInfo.dir === 'asc' ? 1 : -1;
-    filteredData.sort(function (a, b) {
-      const valA = a[columnIndex];
-      const valB = b[columnIndex];
-      if (valA < valB) return -1 * direction;
-      if (valA > valB) return 1 * direction;
-      return 0;
-    });
-  } else if (defaultSortColumnIndex !== -1) {
-    filteredData.sort(function (a, b) {
-      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
-    });
-  }  
-
-  const start = Number(params.start || 0);
-  const length = Number(params.length || filteredData.length);
-  const paginatedData = filteredData.slice(start, start + length);
-  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
-
-  const result = {
-    draw: parseInt(params.draw, 10),
-    recordsTotal: recordsTotal,
-    recordsFiltered: recordsFiltered,
-    data: data,
-    summary: summary
-  };
+  const result = processVehicleRegistrationsServerSide_(
+    params,
+    headers,
+    userSession,
+    defaultSortColumnIndex,
+    includeSummary
+  );
   return respondWithCache(result);
 }
 
@@ -1984,7 +1763,9 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     });
   }
 
-  const paginatedData = filteredData.slice(params.start, params.start + params.length);
+  const start = Number(params.start || 0);
+  const length = Number(params.length || filteredData.length);
+  const paginatedData = filteredData.slice(start, start + length);
   const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
 
   return {
