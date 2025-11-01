@@ -303,6 +303,29 @@ function supabaseRequest_(path, options) {
   throw error;
 }
 
+function fetchAllSupabaseRows_(endpoint, queryParts, chunkSize) {
+  const limit = Math.max(1, Math.min(Number(chunkSize) || 1000, 1000));
+  const baseParts = Array.isArray(queryParts) ? queryParts.slice() : [];
+  const collected = [];
+  let offset = 0;
+
+  while (true) {
+    const pagingParts = baseParts.concat([
+      'limit=' + limit,
+      'offset=' + offset
+    ]);
+    const requestUrl = endpoint + '?' + pagingParts.join('&');
+    const rows = supabaseRequest_(requestUrl);
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    Array.prototype.push.apply(collected, rows);
+    if (rows.length < limit) break;
+    offset += limit;
+    if (offset >= 100000) break;
+  }
+
+  return collected;
+}
+
 function fetchContractDataRows_(selectFields, filterParams) {
   const fields = Array.isArray(selectFields) && selectFields.length
     ? selectFields.join(',')
@@ -2019,7 +2042,11 @@ function processTruckListTotalServerSide_(params, headers, userSession, defaultS
     'order=time.desc.nullslast'
   ];
 
-  let rows = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&')) || [];
+  let rows = fetchAllSupabaseRows_(
+    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+    queryParts,
+    1000
+  );
   if (!Array.isArray(rows)) rows = [];
 
   if (userRole === 'user') {
@@ -3494,11 +3521,16 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
 function getTotalListSummary(sessionToken) {
   const userSession = validateSession(sessionToken);
   try {
-    let rows = supabaseRequest_(
-      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent(['transportation_company', 'activity_status'].join(','))
-    ) || [];
+    let rows = fetchAllSupabaseRows_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+      [
+        'select=' + encodeURIComponent(['transportation_company', 'activity_status'].join(','))
+      ],
+      1000
+    );
+    if (!Array.isArray(rows)) rows = [];
 
-    if (!Array.isArray(rows) || !rows.length) {
+    if (!rows.length) {
       return { total: 0, active: 0, banned: 0 };
     }
 
