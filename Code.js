@@ -1537,26 +1537,42 @@ function checkRegistrationTime() {
   const hour = nowVn.getHours();
   const minute = nowVn.getMinutes();
   const currentTimeInMinutes = hour * 60 + minute;
-  const open1 = 8 * 60, close1 = 16 * 60, open2 = 20 * 60, close2 = 22 * 60;
-  let status = { isOpen: false, period: 0, message: '', timeToOpen: 0, timeToClose: 0 };
-  
-  if ((currentTimeInMinutes >= open1 && currentTimeInMinutes < close1)) {
+  const morningOpen = 7 * 60;
+  const todayCutoff = 11 * 60;
+  const afternoonClose = 16 * 60;
+
+  const status = {
+    isOpen: false,
+    period: 0,
+    message: '',
+    timeToOpen: 0,
+    timeToClose: 0,
+    allowToday: false,
+    allowTomorrow: false
+  };
+
+  const isWithinMainWindow = currentTimeInMinutes >= morningOpen && currentTimeInMinutes < afternoonClose;
+
+  if (isWithinMainWindow) {
     status.isOpen = true;
-    status.period = 1;
+    status.allowTomorrow = true;
+    status.timeToClose = (afternoonClose - currentTimeInMinutes) * 60 * 1000;
     status.message = 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
-    status.timeToClose = (close1 - currentTimeInMinutes) * 60 * 1000;
-  } else if (currentTimeInMinutes >= open2 && currentTimeInMinutes < close2) {
-    status.isOpen = true;
-    status.period = 2;
-    status.message = 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
-    status.timeToClose = (close2 - currentTimeInMinutes) * 60 * 1000;
+
+    if (currentTimeInMinutes < todayCutoff) {
+      status.period = 1; // 07:00 - 11:00 (allow today & tomorrow)
+      status.allowToday = true;
+    } else {
+      status.period = 2; // 11:00 - 16:00 (only tomorrow)
+    }
   } else {
-    status.isOpen = false;
     status.message = 'Hệ thống đăng ký bốc hàng đang đóng.';
-    if (currentTimeInMinutes < open1) status.timeToOpen = (open1 - currentTimeInMinutes) * 60 * 1000;
-    else if (currentTimeInMinutes < open2) status.timeToOpen = (open2 - currentTimeInMinutes) * 60 * 1000;
-    else status.timeToOpen = ((24 * 60 - currentTimeInMinutes) + open1) * 60 * 1000;
+    const minutesUntilMorningOpen = currentTimeInMinutes < morningOpen
+      ? morningOpen - currentTimeInMinutes
+      : (24 * 60 - currentTimeInMinutes) + morningOpen;
+    status.timeToOpen = minutesUntilMorningOpen * 60 * 1000;
   }
+
   return status;
 }
 
