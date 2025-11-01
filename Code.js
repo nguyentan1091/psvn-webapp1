@@ -1369,6 +1369,41 @@ function logout(sessionToken) {
   return { success: true };
 }
 
+function logoutAndGetHomeUrl() {
+  let cachedSession = null;
+  try {
+    cachedSession = safeGetUserCacheJSON('user_session');
+  } catch (e) {
+    Logger.log('logoutAndGetHomeUrl cache read error: ' + e);
+  }
+
+  if (cachedSession && cachedSession.token) {
+    try {
+      removeSessionFromCache_(cachedSession.token);
+    } catch (e) {
+      Logger.log('logoutAndGetHomeUrl remove session cache error: ' + e);
+    }
+  }
+
+  try {
+    safeRemoveUserCacheKey('user_session');
+  } catch (e) {
+    Logger.log('logoutAndGetHomeUrl cache remove error: ' + e);
+  }
+
+  let homeUrl = '';
+  try {
+    const service = ScriptApp.getService();
+    if (service && typeof service.getUrl === 'function') {
+      homeUrl = service.getUrl() || '';
+    }
+  } catch (e) {
+    Logger.log('logoutAndGetHomeUrl getUrl error: ' + e);
+  }
+
+  return { url: homeUrl };
+}
+
 function changePassword(passwords, sessionToken) {
   const session = validateSession(sessionToken);
   const { currentPassword, newPassword } = passwords;
