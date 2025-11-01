@@ -36,6 +36,22 @@ let loginTemplateHTML = '';
 let loginFallbackTimer = null;
 let sessionCheckCompleted = false;
 
+const PAGE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 phút cho mỗi trang
+const pageCache = new Map();
+const PAGE_INITIALIZERS = {
+    'Page_Guide': initGuidePage,
+    'Page_Register': initRegisterPage,
+    'Page_View': initViewPage,
+    'Page_TotalList': initTotalListPage,
+    'Page_Account': initAccountPage,
+    'Page_Contract': initContractPage,
+    'XPPL-WeighingStation': initXPPLWeighingStationPage,
+    'Page_WeighResult': initWeighResultPage,
+    'Page_XuLyXPPL': initXuLyXPPLPage,
+    'Page_LoginHistory': initLoginHistoryPage,
+    'Page_VehicleHistory': initVehicleHistoryPage
+};
+
 const SESSION_FLAG_KEY = 'psvn_isLoggedIn';
 const SESSION_STORAGE_KEY = 'psvn_userSession';
 const DEFAULT_RETRY_ATTEMPTS = 3;
@@ -474,11 +490,56 @@ function preloadLoginTemplate() {
     }
 }
 
+function getCachedPage(pageName) {
+    if (!pageName || !pageCache.has(pageName)) return null;
+    const cached = pageCache.get(pageName);
+    if (!cached || Date.now() - cached.timestamp > PAGE_CACHE_TTL_MS) {
+        pageCache.delete(pageName);
+        return null;
+    }
+    return cached.html;
+}
+
+function cachePageHtml(pageName, html) {
+    if (!pageName || typeof html !== 'string') return;
+    pageCache.set(pageName, { html, timestamp: Date.now() });
+}
+
+function invalidatePageCache(pageName) {
+    if (!pageName) return;
+    pageCache.delete(pageName);
+}
+
+function invalidateAllPageCache() {
+    pageCache.clear();
+}
+
 function clearLoginFallbackTimer() {
     if (loginFallbackTimer) {
         clearTimeout(loginFallbackTimer);
         loginFallbackTimer = null;
     }
+}
+
+function scheduleLoginFallback(delay = 450) {
+    clearLoginFallbackTimer();
+    if (typeof delay !== 'number' || delay <= 0) {
+        delay = 450;
+    }
+    loginFallbackTimer = setTimeout(() => {
+        loginFallbackTimer = null;
+        if (sessionCheckCompleted) {
+            return;
+        }
+        const hasLoginView = document.body && document.body.classList && document.body.classList.contains('login-view-active') && $('#loginForm').length;
+        if (hasLoginView) {
+            showApp();
+            return;
+        }
+        if (!renderLoginTemplate()) {
+            loadLoginPage();
+        }
+    }, delay);
 }
 
 // =================================================================
@@ -1301,7 +1362,7 @@ $(document).ready(function() {
     preloadLoginTemplate();
 
     const storedSession = getStoredSession();
-    let sessionFlagInTab = false;    
+    let sessionFlagInTab = false;
     if (storedSession) {
         userSession = storedSession;
         try {
@@ -1317,16 +1378,21 @@ $(document).ready(function() {
 
     const existingToken = storedSession && storedSession.token ? storedSession.token : null;
     const hasSessionFlag = sessionFlagInTab;
+    const shouldAttemptRestore = !!(existingToken && hasSessionFlag);
     sessionCheckCompleted = false;
 
-    showLoader();
-
-    if (!hasSessionFlag && !existingToken) {
-        loginFallbackTimer = setTimeout(() => {
-            if (!sessionCheckCompleted) {
-                renderLoginTemplate();
-            }
-        }, 450);
+    if (shouldAttemptRestore) {
+        showLoader();
+        scheduleLoginFallback(800);
+    } else {
+        const loginVisible = renderLoginTemplate();
+        if (!loginVisible) {
+            showLoader();
+            loadLoginPage();
+            scheduleLoginFallback(450);
+        } else {
+            clearLoginFallbackTimer();
+        }
     }
 
     try {
@@ -1366,19 +1432,19 @@ function initializeApp(existingToken) {
                 userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
                 clearStoredSession();
                 clearSessionFlag();
-                loadLoginPage();
+                if (!renderLoginTemplate()) {
+                    loadLoginPage();
+                }
             }
         })
         .withFailureHandler(error => {
             sessionCheckCompleted = true;
-            clearLoginFallbackTimer();
+           clearLoginFallbackTimer();
             userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
             clearStoredSession();
             clearSessionFlag();
             if (!renderLoginTemplate()) {
                 loadLoginPage();
-                const loader = getLoaderWrapper();
-                loader.hide();
             }
             showError(error);
         })
@@ -1414,18 +1480,19 @@ function showApp() {
     const app = getAppContainer();
     if (!loader.length || !app.length) return;
 
+    if (typeof loader.stop === 'function') {
+        loader.stop(true, true);
+    }
     loader.css('opacity', '0');
-    setTimeout(() => {
-        loader.hide();
-        app.show();
-        try {
-            setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
-        } catch (err) {
-            if (typeof console !== 'undefined' && console.warn) {
-                console.warn('setLanguage failed while showing app:', err);
-            }
+    loader.hide();
+    app.show();
+    try {
+        setLanguage(currentLang); // Áp dụng ngôn ngữ sau khi hiển thị
+    } catch (err) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('setLanguage failed while showing app:', err);
         }
-    }, 180);
+    }
 }
 
 function bindLoginEvents() {
@@ -1445,7 +1512,7 @@ function renderLoginTemplate() {
     const app = getAppContainer();
     if (!loginTemplateHTML || !app.length) return false;
 
-    loginFallbackTimer = null;
+
     document.body.className = 'login-view-active';
     app.html(loginTemplateHTML);
     try {
@@ -1477,6 +1544,7 @@ function loadLoginPage() {
             }
         }
         bindLoginEvents();
+        clearLoginFallbackTimer();
         showApp();
     })
     .withFailureHandler(showError)
@@ -1484,7 +1552,8 @@ function loadLoginPage() {
 }
 
 function loadDashboard() {
-  showLoader();  
+  invalidateAllPageCache();
+  showLoader();
   google.script.run
     .withSuccessHandler(html => {
         // Dòng mã thêm vào:
@@ -1548,6 +1617,34 @@ function loadDashboard() {
     .include('Dashboard');
 }
 
+function runPageInitializer(pageName) {
+    const initializer = PAGE_INITIALIZERS[pageName];
+    if (typeof initializer === 'function') {
+        try {
+            initializer();
+        } catch (err) {
+            if (typeof console !== 'undefined' && console.error) {
+                console.error(`Failed to initialize ${pageName}:`, err);
+            }
+        }
+    }
+}
+
+function renderPageContent(pageName, html, isInitialLoad) {
+    $('#main-content').html(html);
+    runPageInitializer(pageName);
+    try {
+        setLanguage(currentLang); // Dịch nội dung trang mới
+    } catch (err) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('setLanguage failed after loading page:', err);
+        }
+    }
+    if (!isInitialLoad) {
+        Swal.close();
+    }
+}
+
 function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
     if (registrationTimerInterval) {
         clearInterval(registrationTimerInterval);
@@ -1555,6 +1652,12 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
     }
 
     $('.page-title').text(translations[currentLang][pageTitleKey] || pageTitleKey);
+    const cachedHtml = getCachedPage(pageName);
+    if (cachedHtml) {
+        renderPageContent(pageName, cachedHtml, isInitialLoad);
+        return;
+    }
+
     if (!isInitialLoad) showLoading(translations[currentLang].loading_page);
     const role = getUserRole();
     if (role === 'user-supervision' && !SUPERVISION_ALLOWED_PAGES.has(pageName)) {
@@ -1600,28 +1703,8 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
 
     google.script.run
         .withSuccessHandler(html => {
-            $('#main-content').html(html);
-            switch (pageName) {
-                case 'Page_Guide': initGuidePage(); break;
-                case 'Page_Register': initRegisterPage(); break;
-                case 'Page_View': initViewPage(); break;
-                case 'Page_TotalList': initTotalListPage(); break;
-                case 'Page_Account': initAccountPage(); break;
-                case 'Page_Contract': initContractPage(); break;
-                case 'XPPL-WeighingStation': initXPPLWeighingStationPage(); break;
-                case 'Page_WeighResult': initWeighResultPage(); break;
-                case 'Page_XuLyXPPL': initXuLyXPPLPage(); break;
-                case 'Page_LoginHistory': initLoginHistoryPage(); break;
-                case 'Page_VehicleHistory': initVehicleHistoryPage(); break;
-}
-            try {
-                setLanguage(currentLang); // Dịch nội dung trang mới
-            } catch (err) {
-                if (typeof console !== 'undefined' && console.warn) {
-                    console.warn('setLanguage failed after loading page:', err);
-                }
-            }
-            if (!isInitialLoad) Swal.close();
+            cachePageHtml(pageName, html);
+            renderPageContent(pageName, html, isInitialLoad);
         })
         .withFailureHandler(showError)
         .include(pageName);
@@ -1855,27 +1938,53 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
-    const token = userSession && userSession.token ? userSession.token : null;  
+    const token = userSession && userSession.token ? userSession.token : null;
     clearTimeout(inactivityTimer);
     $(document).off('mousemove mousedown keypress scroll touchstart');
 
+    sessionCheckCompleted = true;
+    clearLoginFallbackTimer();
+
     showLoader();
+    invalidateAllPageCache();
 
     try { localStorage.removeItem('userSession'); } catch(_) {}
     clearStoredSession();
-    try { sessionStorage.removeItem(SESSION_FLAG_KEY); } catch(_) {}
+    clearSessionFlag();
     try { sessionStorage.clear(); } catch(_) {}
-    try { userSession = { isLoggedIn: false, role: null, contractor: null, token: null }; } catch(_) {}
+    try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch(_) {}
+    userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
+
+    const loginRendered = renderLoginTemplate();
+    if (!loginRendered) {
+        loadLoginPage();
+    }
+
+    let reloadTimer = null;
+
+    const performReload = () => {
+        if (reloadTimer) {
+            clearTimeout(reloadTimer);
+        }
+        try {
+            const cleanUrl = window.location.href.split('#')[0];
+            window.location.replace(cleanUrl);
+        } catch (_) {
+            window.location.reload();
+        }
+    };
+
+    reloadTimer = setTimeout(() => {
+        performReload();
+    }, 600);
 
     callServerWithRetry('logout', [token], {
         attempts: 2,
         initialDelay: 400,
-        onSuccess: () => {
-            window.location.reload();
-        },
+        onSuccess: performReload,
         onFailure: err => {
             showError(err);
-            setTimeout(() => { window.location.reload(); }, 1500);
+           performReload();
         }
     });
 }
