@@ -578,8 +578,11 @@ const translations = {
     "select_company_option": "Chọn đơn vị",
     "reg_date_label": "Ngày đăng ký",
     "register_contract_placeholder": "Nhập hoặc chọn Số hợp đồng",
-    "register_tomorrow_label": "(Ngày mai)",
-    "register_upload_date_note": "File upload chỉ chấp nhận ngày đăng ký là {date}.",
+    "register_today_option": "Hôm nay ({date})",
+    "register_tomorrow_option": "Ngày mai ({date})",
+    "register_date_join_word": "hoặc",
+    "register_upload_date_note_single": "File upload chỉ chấp nhận ngày đăng ký là {date}.",
+    "register_upload_date_note_multi": "File upload chỉ chấp nhận ngày đăng ký là {dates}.",
     "register_missing_data_title": "Thiếu dữ liệu",
     "register_missing_data_message": "Vui lòng nhập Ngày đăng ký, Số hợp đồng và Biển số xe.",
     "loading_saving_data": "Đang lưu dữ liệu...",
@@ -595,6 +598,7 @@ const translations = {
     "validation_ambiguous_date": "- Cột '{field}' có định dạng ngày không xác định rõ (dd/MM/yyyy hay MM/dd/yyyy). Vui lòng kiểm tra lại.",    
     "validation_invalid_date": "- Cột '{field}' có định dạng ngày không hợp lệ.",
     "validation_only_tomorrow": "- Cột '{field}' chỉ chấp nhận ngày mai.",
+    "validation_only_today_or_tomorrow": "- Cột '{field}' chỉ chấp nhận {dates}.",
     "validation_max_length": "- Cột '{field}' không được vượt quá {max} ký tự.",
     "validation_numeric_max": "- Cột '{field}' phải là số và không quá {max}.",
     "validation_numeric_only": "- Cột '{field}' phải là số.",
@@ -613,8 +617,8 @@ const translations = {
     "view_header": "Dữ liệu xe đã đăng ký",
     "search_in_table_placeholder": "Tìm kiếm trong bảng...",
     "export_excel_button": "Xuất Excel",
-    "edit_rules_notice_line1": "<strong>Quy tắc chỉnh sửa:</strong><br>- Dữ liệu đăng ký từ <strong>8:00 - 16:00</strong> chỉ có thể sửa trong khung giờ này.",
-    "edit_rules_notice_line2": "- Dữ liệu đăng ký từ <strong>20:00 - 22:00</strong> chỉ có thể sửa trong khung giờ này.",
+    "edit_rules_notice_line1": "<strong>Quy tắc chỉnh sửa:</strong><br>- Danh sách đăng ký trong ngày chỉ được chỉnh sửa từ <strong>07:00 - 11:00</strong>.",
+    "edit_rules_notice_line2": "- Sau 11:00 đến 16:00 chỉ được phép thao tác đăng ký cho ngày mai.",
     "view_filter_label": "Xem ngày",
     "view_today_label": "(Hôm nay)",
     "view_tomorrow_label": "(Ngày mai)",
@@ -874,6 +878,11 @@ const translations = {
     "reg_manual_header": "Add a New Vehicle (Manual Entry)",
     "reg_upload_header": "Add Multiple Vehicles (Upload File)",
     "reg_upload_note": "Note: Only .xlsx, .xls, .csv files are accepted.",
+    "register_today_option": "Today ({date})",
+    "register_tomorrow_option": "Tomorrow ({date})",
+    "register_date_join_word": "or",
+    "register_upload_date_note_single": "File upload only accepts registration date {date}.",
+    "register_upload_date_note_multi": "File upload only accepts registration dates {dates}.",
     "preview_data_button": "Preview Data",
     "preview_data_title": "Preview Data",
     "save_data_button": "Save Data",
@@ -881,8 +890,6 @@ const translations = {
     "select_company_option": "Select company",
     "reg_date_label": "Registration Date",
     "register_contract_placeholder": "Enter or select Contract No",
-    "register_tomorrow_label": "(Tomorrow)",
-    "register_upload_date_note": "File upload only accepts registration date {date}.",
     "register_missing_data_title": "Missing data",
     "register_missing_data_message": "Please enter Registration Date, Contract No, and Truck Plate.",
     "loading_saving_data": "Saving data...",
@@ -898,6 +905,7 @@ const translations = {
     "validation_invalid_date": "- Column '{field}' has an invalid date format.",
     "validation_ambiguous_date": "- Column '{field}' has an ambiguous date format (dd/MM/yyyy vs MM/dd/yyyy). Please verify.",
     "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
+    "validation_only_today_or_tomorrow": "- Column '{field}' only accepts {dates}.",
     "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
     "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
     "validation_numeric_only": "- Column '{field}' must be numeric.",
@@ -917,8 +925,8 @@ const translations = {
     "view_filter_label": "View date",    
     "search_in_table_placeholder": "Search in table...",
     "export_excel_button": "Export Excel",
-    "edit_rules_notice_line1": "<strong>Editing Rules:</strong><br>- Data registered from <strong>8:00 - 16:00</strong> can only be edited within this time frame.",
-    "edit_rules_notice_line2": "- Data registered from <strong>20:00 - 22:00</strong> can only be edited within this time frame.",
+    "edit_rules_notice_line1": "<strong>Editing Rules:</strong><br>- Registrations for the current day can only be edited between <strong>07:00 - 11:00</strong>.",
+    "edit_rules_notice_line2": "- From 11:00 to 16:00 only next-day registrations can be managed.",
     "view_stat_total_label": "Total registered vehicles:",
     "view_stat_pending_label": "Total pending approval:",
     "view_stat_approved_label": "Total approved vehicles:",
@@ -956,8 +964,11 @@ const translations = {
     "edit_vehicle_title": "Edit vehicle information",
     "edit_validation_message": "Please complete all required fields with valid values.",    
     "register_contract_placeholder": "Enter or select Contract No",
-    "register_tomorrow_label": "(Tomorrow)",
-    "register_upload_date_note": "File upload only accepts registration date {date}.",
+    "register_today_option": "Today ({date})",
+    "register_tomorrow_option": "Tomorrow ({date})",
+    "register_date_join_word": "or",
+    "register_upload_date_note_single": "File upload only accepts registration date {date}.",
+    "register_upload_date_note_multi": "File upload only accepts registration dates {dates}.",
     "register_missing_data_title": "Missing data",
     "register_missing_data_message": "Please enter Registration Date, Contract No, and Truck Plate.",
     "loading_saving_data": "Saving data...",
@@ -972,6 +983,7 @@ const translations = {
     "validation_required": "- Column '{field}' cannot be empty.",
     "validation_invalid_date": "- Column '{field}' has an invalid date format.",
     "validation_only_tomorrow": "- Column '{field}' only accepts tomorrow's date.",
+    "validation_only_today_or_tomorrow": "- Column '{field}' only accepts {dates}.",
     "validation_max_length": "- Column '{field}' cannot exceed {max} characters.",
     "validation_numeric_max": "- Column '{field}' must be numeric and not exceed {max}.",
     "validation_numeric_only": "- Column '{field}' must be numeric.",
@@ -2207,9 +2219,6 @@ function initRegisterPage() {
   ensureVietnamTime().then(() => {
     const nowVietnam = getVietnamNowClient();
     const today = new Date(nowVietnam.getTime());
-    const tomorrow = addVietnamDays(today, 1);
-    const todayStr = getFormattedDate(today);
-    const tomorrowStr = getFormattedDate(tomorrow);
     const t = translations[currentLang];
 
     setupCustomFileInput('#fileUploader', {
@@ -2230,17 +2239,10 @@ function initRegisterPage() {
         $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
         $('#registration-content .card').removeClass('opacity-50 disabled-card');
         $('#registration-content .card').find('input, select, button').prop('disabled', false);
-      } else {
-        const tomorrowLabel = t.register_tomorrow_label ? ` ${t.register_tomorrow_label}` : '';
-        dateControl.html(`<option value="${tomorrowStr}">${tomorrowStr}${tomorrowLabel}</option>`);
-        if (status.period === 1) {
-          const uploadNote = (t.register_upload_date_note || '').replace('{date}', tomorrowStr);
-          $('#upload-date-note').text(uploadNote);
         } else {
-          $('#upload-date-note').text('');
+          updateRegistrationUiForStatus(status);
+          startRegistrationTimer();
         }
-        startRegistrationTimer();        
-      }
     }).checkRegistrationTime();
 
     $('#manualEntryForm').off('submit').on('submit', handleManualAdd);
@@ -2285,43 +2287,133 @@ function initRegisterPage() {
 
 
 
+let latestRegistrationStatus = null;
+
+function updateUserDateSelector(status) {
+  if (!isRole('user')) return;
+
+  const dateControl = $('#formRegisterDate');
+  if (!dateControl.length) return;
+
+  const nowVietnam = getVietnamNowClient();
+  const today = new Date(nowVietnam.getTime());
+  const tomorrow = addVietnamDays(today, 1);
+  const todayStr = getFormattedDate(today);
+  const tomorrowStr = getFormattedDate(tomorrow);
+  const t = translations[currentLang] || {};
+
+  const options = [];
+  const allowedDates = [];
+
+  if (status && status.allowToday) {
+    const todayLabelTemplate = t.register_today_option || `Hôm nay ({date})`;
+    const todayLabel = todayLabelTemplate.replace('{date}', todayStr);
+    options.push({ value: todayStr, label: todayLabel });
+    allowedDates.push(todayStr);
+  }
+
+  if (status && status.allowTomorrow) {
+    const tomorrowLabelTemplate = t.register_tomorrow_option || `Ngày mai ({date})`;
+    const tomorrowLabel = tomorrowLabelTemplate.replace('{date}', tomorrowStr);
+    options.push({ value: tomorrowStr, label: tomorrowLabel });
+    allowedDates.push(tomorrowStr);
+  }
+
+  const previousValue = dateControl.val();
+  dateControl.empty();
+
+  if (!options.length) {
+    dateControl.append('<option value=""></option>');
+    dateControl.val('');
+    dateControl.prop('disabled', true);
+  } else {
+    options.forEach(opt => {
+      dateControl.append(`<option value="${opt.value}">${opt.label}</option>`);
+    });
+    if (previousValue && allowedDates.includes(previousValue)) {
+      dateControl.val(previousValue);
+    } else {
+      dateControl.val(options[0].value);
+    }
+    dateControl.prop('disabled', false);
+  }
+
+  const noteElement = $('#upload-date-note');
+  let noteText = '';
+  if (allowedDates.length === 1) {
+    const singleTemplate = t.register_upload_date_note_single || t.register_upload_date_note || '';
+    noteText = singleTemplate.replace('{date}', allowedDates[0]);
+  } else if (allowedDates.length > 1) {
+    const joinWord = t.register_date_join_word || 'or';
+    const joinedDates = allowedDates.join(` ${joinWord} `);
+    const multiTemplate = t.register_upload_date_note_multi || t.register_upload_date_note_single || '';
+    noteText = multiTemplate.replace('{dates}', joinedDates).replace('{date}', joinedDates);
+  }
+  noteElement.text(noteText);
+}
+
+function updateRegistrationUiForStatus(status) {
+  latestRegistrationStatus = status || null;
+
+  const openNotice = $('#registration-open-notice');
+  const closedNotice = $('#registration-closed-notice');
+  const contentCards = $('#registration-content .card');
+  const isUser = isRole('user');
+  const isOpen = Boolean(status && status.isOpen);
+
+  if (isOpen) {
+    openNotice.removeClass('d-none');
+    closedNotice.addClass('d-none');
+    contentCards.removeClass('opacity-50 disabled-card');
+    contentCards.find('input, select, button').prop('disabled', false);
+    if (isUser) {
+      $('#formTransportationCompany').prop('disabled', true);
+    }
+  } else {
+    closedNotice.removeClass('d-none');
+    openNotice.addClass('d-none');
+    contentCards.addClass('opacity-50 disabled-card');
+    contentCards.find('input, select, button').prop('disabled', true);
+    $('#previewContainer').addClass('d-none');
+    $('#saveUploadBtn').prop('disabled', true);
+  }
+
+  if (isUser) {
+    contentCards.toggleClass('d-none', !isOpen);
+  }
+
+  updateUserDateSelector(status);
+}
+
+
 function startRegistrationTimer() {
     if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
-																					
+
     const updateCountdown = () => {
         google.script.run
             .withSuccessHandler(status => {
+                updateRegistrationUiForStatus(status);
+
                 const openNotice = $('#registration-open-notice');
                 const closedNotice = $('#registration-closed-notice');
-                const contentCards = $('#registration-content .card');
+                const t = translations[currentLang] || {};
 
-                if (status.isOpen) {
-                    openNotice.removeClass('d-none');
-                    closedNotice.addClass('d-none');
-                    contentCards.removeClass('opacity-50 disabled-card');
-                    contentCards.find('input, select, button').prop('disabled', false);
-                    if (isRole('user')) {
-                        $('#formTransportationCompany').prop('disabled', true);
-                    }
-                    openNotice.find('#open-message').text(translations[currentLang].reg_open_message_text);
-                    const timeToClose = status.timeToClose;
+                if (status && status.isOpen) {
+                    const timeToClose = Math.max(0, Number(status.timeToClose) || 0);
+                    openNotice.find('#open-message').text(t.reg_open_message_text || 'Hệ thống đăng ký bốc hàng sẽ đóng sau:');
                     const hours = Math.floor(timeToClose / (1000 * 60 * 60));
                     const minutes = Math.floor((timeToClose % (1000 * 60 * 60)) / (1000 * 60));
                     const seconds = Math.floor((timeToClose % (1000 * 60)) / 1000);
                     openNotice.find('#countdown-timer-open').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
 
                 } else {
-                    closedNotice.removeClass('d-none');
-                    openNotice.addClass('d-none');
-                    contentCards.addClass('opacity-50 disabled-card');
-                    contentCards.find('input, select, button').prop('disabled', true);
-                    closedNotice.find('#closed-message').text(translations[currentLang].reg_closed_message_text);
-                    const timeToOpen = status.timeToOpen;
+                    const timeToOpen = Math.max(0, Number(status && status.timeToOpen) || 0);
+                    closedNotice.find('#closed-message').text(t.reg_closed_message_text || 'Hệ thống đăng ký bốc hàng đang đóng.');
                     const hours = Math.floor(timeToOpen / (1000 * 60 * 60));
                     const minutes = Math.floor((timeToOpen % (1000 * 60 * 60)) / (1000 * 60));
                     const seconds = Math.floor((timeToOpen % (1000 * 60)) / 1000);
                     closedNotice.find('#countdown-timer-closed').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
-                } 
+                }
             })
             .withFailureHandler(showError)
             .checkRegistrationTime();
@@ -2504,7 +2596,10 @@ function validateAndTransformData(dataRows) {
     const todayStr = getFormattedDate(today);
     const tomorrowStr = getFormattedDate(tomorrow);
     const nowParts = getVietnamDateParts(nowVietnam);
-    const currentHour = nowParts && nowParts.hour ? parseInt(nowParts.hour, 10) : new Date().getHours();    
+    const currentHour = nowParts && nowParts.hour ? parseInt(nowParts.hour, 10) : nowVietnam.getHours();
+    const currentMinute = nowParts && nowParts.minute ? parseInt(nowParts.minute, 10) : nowVietnam.getMinutes();
+    const currentMinutesTotal = (isNaN(currentHour) ? nowVietnam.getHours() : currentHour) * 60
+      + (isNaN(currentMinute) ? nowVietnam.getMinutes() : currentMinute);
 
     const transformedData = [];
     const allErrors = [];
@@ -2512,7 +2607,9 @@ function validateAndTransformData(dataRows) {
     const allowedStatus = ['RO', 'CO', 'PM', 'CM', 'AC', 'ND'];
     const allowedCountries = ['Vietnam', 'Laos'];
     const isAdmin = isRole('admin');
-    const isUserRole = isRole('user');    
+    const isUserRole = isRole('user');
+    const userAllowsToday = isUserRole && currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 11 * 60;
+    const userAllowsTomorrow = isUserRole && currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 16 * 60;
 
     const t = translations[currentLang];
     const formatMessage = (template, replacements = {}) => {
@@ -2575,10 +2672,11 @@ function validateAndTransformData(dataRows) {
             }
         });
 
+        const expectedDateForParsing = (!isAdmin && isUserRole && !userAllowsToday && userAllowsTomorrow) ? tomorrow : null;
         const dateParseResult = parseExcelDateDetailed(record['Register Date'], {
-            expectedDate: isAdmin ? null : tomorrow,
+            expectedDate: expectedDateForParsing,
             strictAmbiguity: isUserRole,
-            requireExpected: isUserRole
+            requireExpected: Boolean(isUserRole && !userAllowsToday && userAllowsTomorrow)
         });
 
         if (!dateParseResult.date) {
@@ -2595,16 +2693,26 @@ function validateAndTransformData(dataRows) {
             const isTomorrow = dateStr === tomorrowStr;
 
             if (isUserRole) {
-                if (!isTomorrow) {
+                const allowedDates = [];
+                if (userAllowsToday) allowedDates.push(todayStr);
+                if (userAllowsTomorrow) allowedDates.push(tomorrowStr);
+
+                if (!allowedDates.length) {
                     appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
+                } else if (!allowedDates.includes(dateStr)) {
+                    const joinWord = t.register_date_join_word || 'or';
+                    const allowedText = allowedDates.join(` ${joinWord} `);
+                    const template = allowedDates.length > 1
+                        ? (t.validation_only_today_or_tomorrow || "- Cột '{field}' chỉ chấp nhận {dates}.")
+                        : (t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.");
+                    appendError('Register Date', template, { field: columnNames['Register Date'], dates: allowedText });
                 }
-                record['Register Date'] = tomorrowStr;
+                record['Register Date'] = dateStr;
             } else {
                 if (!isAdmin) {
-                    if (currentHour >= 8 && currentHour < 16) {
-                        if (!isTomorrow) {
-                            appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
-                        }
+                    const withinWindow = currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 16 * 60;
+                    if (withinWindow && !isTomorrow) {
+                        appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
                     }
                 }
                 record['Register Date'] = dateStr;
@@ -3116,8 +3224,13 @@ $('#registeredVehicleTable')
     const ACTION_COL = 1;
 
     const isWithinUserEditWindow = () => {
-      const h = new Date().getHours();
-      return (h >= 8 && h < 16) || (h >= 20 && h < 22);
+      const parts = getVietnamDateParts(getVietnamNowClient());
+      if (!parts) return false;
+      const hour = parseInt(parts.hour || '', 10);
+      const minute = parseInt(parts.minute || '', 10);
+      if (isNaN(hour) || isNaN(minute)) return false;
+      const totalMinutes = hour * 60 + minute;
+      return totalMinutes >= 7 * 60 && totalMinutes < 11 * 60;
     };
 
     const applyRegisteredColumnsVisibility = () => {
@@ -3134,9 +3247,9 @@ $('#registeredVehicleTable')
           registeredVehicleTable.column(ACTION_COL).visible(allow);
         } catch (_e) {}
         if (!allow) {
-          $('#deleteSelectedBtn').addClass('disabled');
+          $('#deleteSelectedBtn').addClass('disabled').prop('disabled', true);
         } else {
-          $('#deleteSelectedBtn').removeClass('disabled');          
+          $('#deleteSelectedBtn').removeClass('disabled').prop('disabled', false);
         }
       }
     };
@@ -4314,8 +4427,8 @@ function validateAndTransformTotalListData(dataRows, existingPlates) {
     }
 
     if (phoneRaw) {
-      if (!/^\d{8,20}$/.test(phoneRaw)) {
-        addError('Phone number', "- Cột 'Phone number' chỉ chấp nhận số (8-20 ký tự).");
+      if (!/^.{0,200}$/.test(phoneRaw)) {
+        addError('Phone number', "- Cột 'Phone number' chỉ chấp nhận tối đa 200 ký tự (ít nhất 8 ký tự).");
       }
     }
 
