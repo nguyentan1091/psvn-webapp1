@@ -24,6 +24,11 @@ let wrResultTable, wrUnknownTable;
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
+let registrationTimerInterval = null;
+let registrationStatusFetchInFlight = false;
+let lastRegistrationStatusFetch = 0;
+const REGISTRATION_STATUS_REFRESH_MS = 5000;
+let registrationCountdownTargets = { close: null, open: null };
 let currentLang = 'en'; // Ngôn ngữ mặc định
 let $loaderWrapper = null;
 let $appContainer = null;
@@ -567,6 +572,7 @@ const translations = {
     "reg_open_message_text": "Hệ thống đăng ký bốc hàng sẽ đóng sau:",
     "reg_time_left": "Thời gian còn lại",
     "reg_closed_message_text": "Hệ thống đăng ký bốc hàng đang đóng.",
+    "reg_readonly_notice": "Biểu mẫu đang ở trạng thái chỉ xem.",
     "reg_will_reopen": "Sẽ mở lại sau",
     "reg_manual_header": "Thêm mới một xe (Nhập liệu thủ công)",
     "reg_upload_header": "Thêm mới nhiều xe (Upload File)",
@@ -874,6 +880,7 @@ const translations = {
     "reg_open_message_text": "The registration system will close in:",
     "reg_time_left": "Time remaining",
     "reg_closed_message_text": "The registration system is currently closed.",
+    "reg_readonly_notice": "The form is currently in read-only mode.",
     "reg_will_reopen": "Will reopen in",
     "reg_manual_header": "Add a New Vehicle (Manual Entry)",
     "reg_upload_header": "Add Multiple Vehicles (Upload File)",
@@ -1542,7 +1549,10 @@ function loadDashboard() {
 }
 
 function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
-    if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
+    if (registrationTimerInterval) {
+        clearInterval(registrationTimerInterval);
+        registrationTimerInterval = null;
+    }
 
     $('.page-title').text(translations[currentLang][pageTitleKey] || pageTitleKey);
     if (!isInitialLoad) showLoading(translations[currentLang].loading_page);
@@ -2216,73 +2226,73 @@ function handleChangePassword(e) {
 }
 
 function initRegisterPage() {
-  ensureVietnamTime().then(() => {
-    const nowVietnam = getVietnamNowClient();
-    const today = new Date(nowVietnam.getTime());
-    const t = translations[currentLang];
+  ensureVietnamTime();
+  const t = translations[currentLang];
 
-    setupCustomFileInput('#fileUploader', {
-      trigger: '#fileUploaderTrigger',
-      display: '#fileUploaderDisplay',
-      defaultKey: 'file_no_file_selected'
-    });
+  setupCustomFileInput('#fileUploader', {
+    trigger: '#fileUploaderTrigger',
+    display: '#fileUploaderDisplay',
+    defaultKey: 'file_no_file_selected'
+  });
 
-    let dateControl = $('#formRegisterDate');
+  let dateControl = $('#formRegisterDate');
 
-    google.script.run.withSuccessHandler(status => {
-
+  google.script.run
+    .withSuccessHandler(status => {
       if (userSession.role === 'admin') {
+        const nowVietnam = getVietnamNowClient();
+        const today = new Date(nowVietnam.getTime());
         const todayInput = getVietnamIsoDate(today);
         dateControl.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
         dateControl = $('#formRegisterDate');
         $('#upload-date-note').text('');
         $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
-        $('#registration-content .card').removeClass('opacity-50 disabled-card');
-        $('#registration-content .card').find('input, select, button').prop('disabled', false);
+        $('#registration-locked-overlay').addClass('d-none');
+        const contentCards = $('#registration-content .card');
+        contentCards.removeClass('opacity-50 disabled-card');
+        contentCards.find('input, select, button').prop('disabled', false);
+        refreshUploadSaveButtonState();
+      } else {
+        startRegistrationTimer(status);
+      }
+    })
+    .withFailureHandler(showError)
+    .checkRegistrationTime();
+
+  $('#manualEntryForm').off('submit').on('submit', handleManualAdd);
+  $('#uploadButton').off('click').on('click', handleFileUpload);
+  $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
+
+  google.script.run
+    .withSuccessHandler(list => {
+      allowedCompanies = (list || []).filter(Boolean);
+      const $sel = $('#formTransportationCompany');
+
+      if (isRole('user')) {
+        const me = String((userSession.contractor || '')).trim();
+        if (me) {
+          $sel.html(`<option value="${me}">${me}</option>`)
+              .val(me)
+              .prop('disabled', true)
+              .addClass('bg-light');
         } else {
-          updateRegistrationUiForStatus(status);
-          startRegistrationTimer();
-        }
-    }).checkRegistrationTime();
-
-    $('#manualEntryForm').off('submit').on('submit', handleManualAdd);
-    $('#uploadButton').off('click').on('click', handleFileUpload);
-    $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
-
-    // === NẠP "Đơn vị vận chuyển" từ Supabase truck_list_total ===
-    google.script.run
-      .withSuccessHandler(list => {
-        allowedCompanies = (list || []).filter(Boolean);
-        const $sel = $('#formTransportationCompany');
-
-        if (isRole('user')) {//đã làm đến đây lúc 15:28
-          // KHÓA dropdown cho user: chỉ đúng đơn vị của userSession.contractor
-          const me = String((userSession.contractor || '')).trim();
-          if (me) {
-            $sel.html(`<option value="${me}">${me}</option>`)
-                .val(me)
-                .prop('disabled', true)
-                .addClass('bg-light'); // chỉ để nhận biết bị khóa, có thể bỏ
-          } else {
-            // Không có contractor → vẫn cho chọn (ít gặp)
-            const firstOption = t.select_company_option || 'Chọn đơn vị';
-            const html = [`<option value="">${firstOption}</option>`,
-                          ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
-            $sel.html(html).prop('disabled', false).removeClass('bg-light');
-          }
-        } else {
-          // Admin: danh sách đầy đủ
-            const firstOption = t.select_company_option || 'Chọn đơn vị';
+          const firstOption = t.select_company_option || 'Chọn đơn vị';
           const html = [`<option value="">${firstOption}</option>`,
                         ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
           $sel.html(html).prop('disabled', false).removeClass('bg-light');
         }
-      })
-      .withFailureHandler(showError)
-      .getTransportCompanies();   // <-- đang đọc từ ContractData như bạn yêu cầu
+      } else {
+        const firstOption = t.select_company_option || 'Chọn đơn vị';
+        const html = [`<option value="">${firstOption}</option>`,
+                      ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
+        $sel.html(html).prop('disabled', false).removeClass('bg-light');
+      }
+    })
+    .withFailureHandler(showError)
+    .getTransportCompanies();
 
-    loadActiveContractNosForRegister();
-  });
+  loadActiveContractNosForRegister();
+  refreshUploadSaveButtonState();
 }
 
 
@@ -2357,70 +2367,182 @@ function updateRegistrationUiForStatus(status) {
 
   const openNotice = $('#registration-open-notice');
   const closedNotice = $('#registration-closed-notice');
+  const overlay = $('#registration-locked-overlay');
   const contentCards = $('#registration-content .card');
   const isUser = isRole('user');
+  const t = translations[currentLang] || {};
   const isOpen = Boolean(status && status.isOpen);
+
+  const openMessage = t.reg_open_message_text || 'Hệ thống đăng ký bốc hàng sẽ đóng sau:';
+  const closedMessage = t.reg_closed_message_text || 'Hệ thống đăng ký bốc hàng đang đóng.';
+  openNotice.find('#open-message').text(openMessage);
+  closedNotice.find('#closed-message').text(closedMessage);
 
   if (isOpen) {
     openNotice.removeClass('d-none');
     closedNotice.addClass('d-none');
-    contentCards.removeClass('opacity-50 disabled-card');
-    contentCards.find('input, select, button').prop('disabled', false);
-    if (isUser) {
-      $('#formTransportationCompany').prop('disabled', true);
-    }
+    overlay.addClass('d-none');
   } else {
     closedNotice.removeClass('d-none');
     openNotice.addClass('d-none');
-    contentCards.addClass('opacity-50 disabled-card');
-    contentCards.find('input, select, button').prop('disabled', true);
+    overlay.removeClass('d-none');
+    overlay.find('[data-translate="reg_readonly_notice"]').text(t.reg_readonly_notice || 'Biểu mẫu đang ở trạng thái chỉ xem.');
+  }
+
+  contentCards.removeClass('d-none');
+  contentCards.toggleClass('opacity-50', !isOpen);
+  contentCards.toggleClass('disabled-card', !isOpen);
+  contentCards.find('input, select, button, textarea').prop('disabled', !isOpen);
+
+  if (isOpen && isUser) {
+    $('#formTransportationCompany').prop('disabled', true);
+  }
+
+  if (!isOpen) {
     $('#previewContainer').addClass('d-none');
-    $('#saveUploadBtn').prop('disabled', true);
   }
 
-  if (isUser) {
-    contentCards.toggleClass('d-none', !isOpen);
-  }
-
+  refreshUploadSaveButtonState();
   updateUserDateSelector(status);
 }
 
+function isRegistrationOpen() {
+  return Boolean(latestRegistrationStatus && latestRegistrationStatus.isOpen);
+}
 
-function startRegistrationTimer() {
-    if (typeof registrationTimerInterval !== 'undefined') clearInterval(registrationTimerInterval);
+function refreshUploadSaveButtonState() {
+  const saveBtn = $('#saveUploadBtn');
+  if (!saveBtn.length) return;
 
-    const updateCountdown = () => {
-        google.script.run
-            .withSuccessHandler(status => {
-                updateRegistrationUiForStatus(status);
+  const hasData = Array.isArray(previewTableData) && previewTableData.length > 0;
+  const hasErrors = hasData && previewTableData.some(row => row && row.errors);
+  const hasValidRows = hasData && previewTableData.some(row => row && !row.errors);
+  const shouldEnable = isRegistrationOpen() && hasData && !hasErrors && hasValidRows;
+  saveBtn.prop('disabled', !shouldEnable);
+}
 
-                const openNotice = $('#registration-open-notice');
-                const closedNotice = $('#registration-closed-notice');
-                const t = translations[currentLang] || {};
+function updateRegistrationCountdownTargets(status) {
+  if (!status) {
+    registrationCountdownTargets = { close: null, open: null };
+    return;
+  }
 
-                if (status && status.isOpen) {
-                    const timeToClose = Math.max(0, Number(status.timeToClose) || 0);
-                    openNotice.find('#open-message').text(t.reg_open_message_text || 'Hệ thống đăng ký bốc hàng sẽ đóng sau:');
-                    const hours = Math.floor(timeToClose / (1000 * 60 * 60));
-                    const minutes = Math.floor((timeToClose % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((timeToClose % (1000 * 60)) / 1000);
-                    openNotice.find('#countdown-timer-open').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+  const serverEpoch = Number(status.serverEpochMillis);
+  const nowBase = Number.isFinite(serverEpoch) ? serverEpoch : Date.now();
 
-                } else {
-                    const timeToOpen = Math.max(0, Number(status && status.timeToOpen) || 0);
-                    closedNotice.find('#closed-message').text(t.reg_closed_message_text || 'Hệ thống đăng ký bốc hàng đang đóng.');
-                    const hours = Math.floor(timeToOpen / (1000 * 60 * 60));
-                    const minutes = Math.floor((timeToOpen % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((timeToOpen % (1000 * 60)) / 1000);
-                    closedNotice.find('#countdown-timer-closed').text(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
-                }
-            })
-            .withFailureHandler(showError)
-            .checkRegistrationTime();
-    };
+  if (status.isOpen) {
+    const timeToClose = Math.max(0, Number(status.timeToClose) || 0);
+    registrationCountdownTargets.close = nowBase + timeToClose;
+    registrationCountdownTargets.open = null;
+  } else {
+    const timeToOpen = Math.max(0, Number(status.timeToOpen) || 0);
+    registrationCountdownTargets.open = nowBase + timeToOpen;
+    registrationCountdownTargets.close = null;
+  }
+}
 
-    updateCountdown();
-    registrationTimerInterval = setInterval(updateCountdown, 1000);
+function getActiveCountdownTarget() {
+  if (!latestRegistrationStatus) return null;
+  return latestRegistrationStatus.isOpen ? registrationCountdownTargets.close : registrationCountdownTargets.open;
+}
+
+function formatCountdown(milliseconds) {
+  const safeMs = Math.max(0, Number(milliseconds) || 0);
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function updateRegistrationCountdownDisplays() {
+  const openNotice = $('#registration-open-notice');
+  const closedNotice = $('#registration-closed-notice');
+
+  if (!latestRegistrationStatus) {
+    openNotice.find('#countdown-timer-open').text('--:--:--');
+    closedNotice.find('#countdown-timer-closed').text('--:--:--');
+    return;
+  }
+
+  const now = Date.now();
+  if (latestRegistrationStatus.isOpen) {
+    const remaining = registrationCountdownTargets.close != null
+      ? Math.max(0, registrationCountdownTargets.close - now)
+      : 0;
+    openNotice.find('#countdown-timer-open').text(formatCountdown(remaining));
+    closedNotice.find('#countdown-timer-closed').text('--:--:--');
+  } else {
+    const remaining = registrationCountdownTargets.open != null
+      ? Math.max(0, registrationCountdownTargets.open - now)
+      : 0;
+    closedNotice.find('#countdown-timer-closed').text(formatCountdown(remaining));
+    openNotice.find('#countdown-timer-open').text('--:--:--');
+  }
+}
+
+function applyRegistrationStatus(status) {
+  updateRegistrationUiForStatus(status);
+  updateRegistrationCountdownTargets(status);
+  updateRegistrationCountdownDisplays();
+}
+
+function fetchRegistrationStatus(force = false) {
+  if (registrationStatusFetchInFlight) return;
+
+  const now = Date.now();
+  if (!force && now - lastRegistrationStatusFetch < REGISTRATION_STATUS_REFRESH_MS) {
+    return;
+  }
+
+  registrationStatusFetchInFlight = true;
+  google.script.run
+    .withSuccessHandler(status => {
+      registrationStatusFetchInFlight = false;
+      lastRegistrationStatusFetch = Date.now();
+      applyRegistrationStatus(status || null);
+    })
+    .withFailureHandler(error => {
+      registrationStatusFetchInFlight = false;
+      showError(error);
+    })
+    .checkRegistrationTime();
+}
+
+function startRegistrationTimer(initialStatus) {
+  if (registrationTimerInterval) {
+    clearInterval(registrationTimerInterval);
+  }
+
+  registrationStatusFetchInFlight = false;
+
+  if (initialStatus) {
+    lastRegistrationStatusFetch = Date.now();
+    applyRegistrationStatus(initialStatus);
+  } else if (latestRegistrationStatus) {
+    applyRegistrationStatus(latestRegistrationStatus);
+  } else {
+    lastRegistrationStatusFetch = 0;
+  }
+
+  const tick = () => {
+    updateRegistrationCountdownDisplays();
+    const now = Date.now();
+    const target = getActiveCountdownTarget();
+
+    if (target != null && target - now <= 0) {
+      fetchRegistrationStatus(true);
+    } else if (now - lastRegistrationStatusFetch >= REGISTRATION_STATUS_REFRESH_MS) {
+      fetchRegistrationStatus(false);
+    }
+  };
+
+  tick();
+  registrationTimerInterval = setInterval(tick, 1000);
+
+  if (!initialStatus) {
+    fetchRegistrationStatus(true);
+  }
 }
 
 // === THAY TOÀN BỘ HÀM NÀY ===
@@ -2495,7 +2617,7 @@ function handleManualAdd(e) {
 
 function handleFileUpload() {
     const file = $('#fileUploader')[0].files[0];
-    const t = translations[currentLang];    
+    const t = translations[currentLang];
     if (!file) {
         Swal.fire(t.no_file_selected_title || 'Chưa chọn file',
                   t.no_file_selected_message || 'Vui lòng chọn một file.',
@@ -2519,7 +2641,17 @@ function handleFileUpload() {
                 
                 const columns = [
                     { data: 'ID', title: t.col_id || 'ID' },
-                    { data: 'Register Date', title: t.col_register_date || 'Register Date' },
+                    {
+                        data: 'Register Date',
+                        title: t.col_register_date || 'Register Date',
+                        render: (data, type) => {
+                            const parsed = parseRegisterDateValue(data);
+                            if (type === 'sort' || type === 'type') {
+                                return parsed ? parsed.toISOString() : (data == null ? '' : data);
+                            }
+                            return formatRegisterDateForDisplay(data);
+                        }
+                    },
                     { data: 'Contract No', title: t.col_contract_no || 'Contract No' },
                     { data: 'Truck Plate', title: t.col_truck_plate || 'Truck Plate' },
                     { data: 'Country', title: t.col_country || 'Country' },
@@ -2563,7 +2695,6 @@ function handleFileUpload() {
                 Swal.close();
 
                 if (errors.length > 0) {
-                    $('#saveUploadBtn').prop('disabled', true);
                     const maxErrorsToShow = 10;
                     const slicedErrors = errors.slice(0, maxErrorsToShow);
                     let errorHtml = `<p>${t.upload_errors_intro || 'Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.'}</p><ul class="text-start">`;
@@ -2577,15 +2708,39 @@ function handleFileUpload() {
                         title: t.invalid_data_title || 'Dữ liệu không hợp lệ!',
                         html: errorHtml
                     });
-                } else {
-                    $('#saveUploadBtn').prop('disabled', false);
                 }
+
+                refreshUploadSaveButtonState();
             };
             reader.readAsArrayBuffer(file);
         } catch (error) {
             showError({ message: error.message });
         }
     }, 100);
+}
+
+function parseRegisterDateValue(value) {
+    const result = parseExcelDateDetailed(value, { preferDayFirst: true });
+    if (result && result.date) {
+        return result.date;
+    }
+    if (typeof value === 'string' && value.trim()) {
+        const parsed = parseDateValue(value.trim());
+        if (parsed) return parsed;
+    }
+    if (value instanceof Date && !isNaN(value)) {
+        return value;
+    }
+    return null;
+}
+
+function formatRegisterDateForDisplay(value) {
+    const parsed = parseRegisterDateValue(value);
+    if (parsed) {
+        return getFormattedDate(parsed);
+    }
+    if (value === null || value === undefined) return '';
+    return String(value);
 }
 
 function validateAndTransformData(dataRows) {
@@ -2768,7 +2923,8 @@ function validateAndTransformData(dataRows) {
             allErrors.push(`<b>${rowLabel}:</b><br>${errorMessages}`);
             record.errors = rowErrors;
         }
-        
+
+        record['Register Date'] = formatRegisterDateForDisplay(record['Register Date']);
         transformedData.push(record);
     });
 
@@ -2820,6 +2976,7 @@ function handleSaveUploadedData() {
             if($.fn.DataTable.isDataTable('#previewDataTable')) $('#previewDataTable').DataTable().clear().destroy();
             $('#previewContainer').addClass('d-none');
             $('#fileUploader').val('').trigger('change');
+            refreshUploadSaveButtonState();
         })
         .withFailureHandler(showError)
         .saveData(sanitizedDataToSave, userSession.token, currentLang);
