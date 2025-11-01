@@ -1973,7 +1973,6 @@ function redirectToAppWithCacheBusting() {
 }
 
 function handleLogout() {
-    const token = userSession && userSession.token ? userSession.token : null;
     clearTimeout(inactivityTimer);
     $(document).off('mousemove mousedown keypress scroll touchstart');
 
@@ -1983,11 +1982,31 @@ function handleLogout() {
 
     showLoader();
     invalidateAllPageCache();
+    if (window.caches && typeof window.caches.keys === 'function') {
+        try {
+            window.caches.keys().then(keys => {
+                keys.forEach(key => {
+                    try {
+                        const deletion = window.caches.delete(key);
+                        if (deletion && typeof deletion.catch === 'function') {
+                            deletion.catch(() => {});
+                        }
+                    } catch (err) {
+                        // Ignore per-cache deletion errors
+                    }
+                });
+            }).catch(() => {});
+        } catch (err) {
+            // Ignore cache deletion errors
+        }
+    }
 
-    try { localStorage.removeItem('userSession'); } catch(_) {}
+    try { localStorage.clear(); } catch(_) {}
+
     clearStoredSession();
     clearSessionFlag();
     try { sessionStorage.clear(); } catch(_) {}
+    try { localStorage.removeItem('userSession'); } catch(_) {}
     try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch(_) {}
     userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
 
@@ -1997,29 +2016,59 @@ function handleLogout() {
     }
     showLoader();
 
-    let reloadTimer = null;
-
-    const scheduleRedirect = (delay = 0) => {
-        if (reloadTimer) {
-            clearTimeout(reloadTimer);
+    const openHome = (homeUrl) => {
+        const timestamp = Date.now();
+        let targetUrl = '';
+        if (homeUrl && typeof homeUrl === 'string') {
+            try {
+                const url = new URL(homeUrl);
+                url.searchParams.set('logout', '1');
+                url.searchParams.set('t', String(timestamp));
+                targetUrl = url.toString();
+            } catch (err) {
+                const base = homeUrl.split('#')[0];
+                const separator = base.includes('?') ? '&' : '?';
+                targetUrl = `${base}${separator}logout=1&t=${timestamp}`;
+            }
+        } else {
+            const fallback = buildCacheBustingUrl();
+            try {
+                const url = new URL(fallback);
+                url.searchParams.set('logout', '1');
+                url.searchParams.set('t', String(timestamp));
+                targetUrl = url.toString();
+            } catch (err) {
+                const base = fallback.split('#')[0];
+                const separator = base.includes('?') ? '&' : '?';
+                targetUrl = `${base}${separator}logout=1&t=${timestamp}`;
+            }
         }
-        const timeout = Math.max(0, Number(delay) || 0);
-        reloadTimer = setTimeout(() => {
-            redirectToAppWithCacheBusting();
-        }, timeout);
+
+        try {
+            window.open(targetUrl, '_top');
+        } catch (err) {
+            window.location.href = targetUrl;
+        }
     };
 
-    scheduleRedirect(250);
+    const logoutFailureFallback = setTimeout(() => {
+        openHome(null);
+    }, 1500);
 
-    callServerWithRetry('logout', [token], {
-        attempts: 2,
-        initialDelay: 400,
-        onSuccess: () => scheduleRedirect(0),
-        onFailure: err => {
-            showError(err);
-            scheduleRedirect(0);
-        }
-    });
+    google.script.run
+        .withSuccessHandler(result => {
+            clearTimeout(logoutFailureFallback);
+            const url = result && typeof result === 'object' ? result.url : result;
+            openHome(url);
+        })
+        .withFailureHandler(err => {
+            clearTimeout(logoutFailureFallback);
+            if (err) {
+                showError(err);
+            }
+            openHome(null);
+        })
+        .logoutAndGetHomeUrl();
 }
 
 function resetInactivityTimer() {
