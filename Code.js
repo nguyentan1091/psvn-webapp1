@@ -2461,15 +2461,15 @@ function checkVehiclesAgainstTotalList(vehicles) {
     };
   }
 
-  const normalizePlate = function (value) {
-    return String(value == null ? '' : value).toUpperCase().replace(/\s/g, '');
-  };
-
   const totalListMap = new Map();
   rows.forEach(function (row) {
-    const plate = normalizePlate(row.truck_plate);
-    if (!plate) return;
-    totalListMap.set(plate, String(row.transportation_company == null ? '' : row.transportation_company).trim());
+    const normalized = normalizeTruckPlateValue_(row.truck_plate);
+    if (!normalized) return;
+    const companyRaw = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+    totalListMap.set(normalized, {
+      companyRaw: companyRaw,
+      companyNormalized: companyRaw.toLowerCase()
+    });
   });
 
   if (!totalListMap.size) {
@@ -2486,25 +2486,26 @@ function checkVehiclesAgainstTotalList(vehicles) {
   const seenMismatch = new Set();
 
   vehicles.forEach(function (vehicle) {
-    const plate = normalizePlate(vehicle['Truck Plate']);
-    if (!plate) return;
+    const normalizedPlate = normalizeTruckPlateValue_(vehicle['Truck Plate']);
+    const displayPlate = resolveTruckPlateDisplay_(vehicle['Truck Plate'], normalizedPlate);
+    if (!normalizedPlate) return;
     const company = String(vehicle['Transportation Company'] || '').trim().toLowerCase();
 
-    if (!totalListMap.has(plate)) {
-      if (!seenNew.has(plate)) {
-        seenNew.add(plate);
-        newPlates.push(plate);
+    if (!totalListMap.has(normalizedPlate)) {
+      if (!seenNew.has(normalizedPlate)) {
+        seenNew.add(normalizedPlate);
+        newPlates.push(displayPlate);
       }
       return;
     }
 
-    const existingCompanyRaw = String(totalListMap.get(plate) || '').trim();
-    const existingCompany = existingCompanyRaw.toLowerCase();
+    const existingEntry = totalListMap.get(normalizedPlate) || { companyRaw: '', companyNormalized: '' };
+    const existingCompany = existingEntry.companyNormalized;
     if (existingCompany === '' && company === '') return;
     if (existingCompany !== company) {
-      if (!seenMismatch.has(plate)) {
-        seenMismatch.add(plate);
-        mismatchPlates.push(plate);
+      if (!seenMismatch.has(normalizedPlate)) {
+        seenMismatch.add(normalizedPlate);
+        mismatchPlates.push(displayPlate);
       }
     }
   });
@@ -2546,15 +2547,11 @@ function checkVehicleActivityStatus(vehicles) {
     };
   }
 
-  const normalizePlate = function (value) {
-    return String(value == null ? '' : value).toUpperCase().replace(/\s/g, '');
-  };
-
   const activityMap = new Map();
   rows.forEach(function (row) {
-    const plate = normalizePlate(row.truck_plate);
-    if (!plate) return;
-    activityMap.set(plate, String(row.activity_status == null ? '' : row.activity_status).trim().toLowerCase());
+    const normalized = normalizeTruckPlateValue_(row.truck_plate);
+    if (!normalized) return;
+    activityMap.set(normalized, String(row.activity_status == null ? '' : row.activity_status).trim().toLowerCase());
   });
 
   if (!activityMap.size) {
@@ -2567,10 +2564,11 @@ function checkVehicleActivityStatus(vehicles) {
 
   const bannedPlates = [];
   vehicles.forEach(function (vehicle) {
-    const plate = normalizePlate(vehicle['Truck Plate']);
-    if (!plate) return;
-    if (activityMap.get(plate) === 'banned') {
-      bannedPlates.push(plate);
+    const normalizedPlate = normalizeTruckPlateValue_(vehicle['Truck Plate']);
+    const displayPlate = resolveTruckPlateDisplay_(vehicle['Truck Plate'], normalizedPlate);
+    if (!normalizedPlate) return;
+    if (activityMap.get(normalizedPlate) === 'banned') {
+      bannedPlates.push(displayPlate);
     }
   });
 
@@ -3287,10 +3285,11 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
     recordsToCheck.forEach(function (rec) {
       const regDate = normalizeDate(rec['Register Date']);
       const isoDate = toSupabaseDateString_(regDate) || '';
-      const plate = String(rec['Truck Plate'] || '').toUpperCase().replace(/\s/g, '');
+      const normalizedPlate = normalizeTruckPlateValue_(rec['Truck Plate']);
+      const displayPlate = resolveTruckPlateDisplay_(rec['Truck Plate'], normalizedPlate);
       const company = String(rec['Transportation Company'] || '').trim().toUpperCase();
-      if (!isoDate || !plate || !company) return;
-      normalizedRecords.push({ date: isoDate, plate: plate, company: company });
+      if (!isoDate || !normalizedPlate || !company) return;
+      normalizedRecords.push({ date: isoDate, plate: normalizedPlate, company: company, display: displayPlate });
       uniqueDates.add(isoDate);
     });
 
@@ -3306,7 +3305,7 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
       if (Array.isArray(existingRows)) {
         existingRows.forEach(function (row) {
           const dateStr = String(row.register_date || '').trim();
-          const plate = String(row.truck_plate || '').toUpperCase().replace(/\s/g, '');
+          const plate = normalizeTruckPlateValue_(row.truck_plate);
           const company = String(row.transportation_company || '').trim().toUpperCase();
           if (dateStr && plate && company) {
             existingKeys.add(`${dateStr}-${plate}-${company}`);
@@ -4238,6 +4237,17 @@ function _toDateKey(v){
   var d = new Date(s);
   if (!isNaN(d.getTime())) return _toDateKey(d);
   return s;
+}
+
+function normalizeTruckPlateValue_(value) {
+  return String(value == null ? '' : value)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+function resolveTruckPlateDisplay_(value, normalized) {
+  const str = String(value == null ? '' : value).trim();
+  return str || normalized || normalizeTruckPlateValue_(value);
 }
 
 function getXpplSnapshot(payload, sessionToken){
