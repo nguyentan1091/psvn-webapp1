@@ -147,6 +147,15 @@ const SUPABASE_HISTORY_VEHICLE_REG_ENDPOINT = '/rest/v1/history_vehicle_registra
 const SUPABASE_CONTRACT_DATA_ENDPOINT = '/rest/v1/contract_data';
 const SUPABASE_XPPL_DATABASE_ENDPOINT = '/rest/v1/xppl_database';
 const SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT = '/rest/v1/truck_list_total';
+// Cấu hình tăng tốc cho Supabase (cache + tải song song)
+const SUPABASE_CACHE_KEY_PREFIX = 'supabase_cache::';
+const SUPABASE_CACHE_VERSION_PREFIX = 'supabase_cache_version::';
+const SUPABASE_CACHE_TTL_SECONDS = 30;
+const SUPABASE_CACHE_VERSION_TTL_SECONDS = 10 * 60; // 10 phút
+const SUPABASE_FETCH_PARALLEL_REQUESTS = 4;
+const UTF8_CHARSET = (typeof Utilities !== 'undefined' && Utilities.Charset && Utilities.Charset.UTF_8)
+  ? Utilities.Charset.UTF_8
+  : 'UTF-8';
 const CONTRACT_DATA_SELECT_FIELDS = [
   'id',
   'contract_no',
@@ -260,7 +269,18 @@ function supabaseRequest_(path, options) {
   }
 
   const url = buildSupabaseUrl_(path);
-  const returnResponse = !!opts.returnResponse;  
+  const returnResponse = !!opts.returnResponse;
+  const resourceName = normalizeSupabaseResourcePath_(path);
+  const useCache = method === 'GET' && !returnResponse && opts.cache !== false;
+  const cacheContext = useCache ? buildSupabaseCacheContext_(path, resourceName) : null;
+
+  if (cacheContext && cacheContext.cacheKey) {
+    const cacheHit = readSupabaseCache_(cacheContext.cacheKey);
+    if (cacheHit.hit) {
+      return cacheHit.value;
+    }
+  }
+
   let response;
   try {
     response = UrlFetchApp.fetch(url, request);
@@ -280,6 +300,25 @@ function supabaseRequest_(path, options) {
   }
 
   if (status >= 200 && status < 300) {
+    if (method === 'GET') {
+      if (cacheContext && cacheContext.cacheKey && data !== undefined) {
+        writeSupabaseCache_(cacheContext.cacheKey, data, opts.cacheTtl || SUPABASE_CACHE_TTL_SECONDS);
+      }
+      if (returnResponse) {
+        return {
+          data: data,
+          status: status,
+          headers: response.getAllHeaders(),
+          raw: response
+        };
+      }
+      return data;
+    }
+
+    if (resourceName) {
+      bumpSupabaseResourceVersion_(resourceName);
+    }
+
     if (returnResponse) {
       return {
         data: data,
@@ -287,7 +326,7 @@ function supabaseRequest_(path, options) {
         headers: response.getAllHeaders(),
         raw: response
       };
-    }    
+    }
     return data;
   }
 
@@ -304,18 +343,41 @@ function fetchAllSupabaseRows_(endpoint, queryParts, chunkSize) {
   const baseParts = Array.isArray(queryParts) ? queryParts.slice() : [];
   const collected = [];
   let offset = 0;
+  const parallel = Math.max(1, Math.min(Number(SUPABASE_FETCH_PARALLEL_REQUESTS) || 1, 10));
 
   while (true) {
-    const pagingParts = baseParts.concat([
-      'limit=' + limit,
-      'offset=' + offset
-    ]);
-    const requestUrl = endpoint + '?' + pagingParts.join('&');
-    const rows = supabaseRequest_(requestUrl);
-    if (!Array.isArray(rows) || rows.length === 0) break;
-    Array.prototype.push.apply(collected, rows);
-    if (rows.length < limit) break;
-    offset += limit;
+    const requestBatch = [];
+    for (let i = 0; i < parallel; i++) {
+      const currentOffset = offset + i * limit;
+      if (currentOffset >= 100000) break;
+      const pagingParts = baseParts.concat([
+        'limit=' + limit,
+        'offset=' + currentOffset
+      ]);
+      const requestUrl = endpoint + '?' + pagingParts.join('&');
+      requestBatch.push({ path: requestUrl });
+    }
+
+    if (!requestBatch.length) {
+      break;
+    }
+
+    const batchResults = executeSupabaseBatchGet_(requestBatch, { cacheTtl: SUPABASE_CACHE_TTL_SECONDS });
+    let fetchedFullBatch = true;
+    for (let i = 0; i < batchResults.length; i++) {
+      const rows = Array.isArray(batchResults[i]) ? batchResults[i] : [];
+      Array.prototype.push.apply(collected, rows);
+      if (rows.length < limit) {
+        fetchedFullBatch = false;
+        break;
+      }
+    }
+
+    if (!fetchedFullBatch) {
+      break;
+    }
+
+    offset += limit * requestBatch.length;
     if (offset >= 100000) break;
   }
 
@@ -3558,6 +3620,173 @@ function updateTotalListVehicle(rowData, sessionToken) {
 
     return 'Cập nhật thông tin xe thành công!';
   } catch (error) { Logger.log(error); throw new Error('Lỗi khi cập nhật thông tin xe: ' + error.message); }
+}
+
+function normalizeSupabaseResourcePath_(path) {
+  if (!path) return '';
+  const raw = String(path).replace(/^https?:\/\/[^/]+/i, '');
+  const queryIndex = raw.indexOf('?');
+  const withoutQuery = queryIndex === -1 ? raw : raw.substring(0, queryIndex);
+  return withoutQuery.replace(/^\/+/, '');
+}
+
+function extractSupabaseQuery_(path) {
+  if (!path) return '';
+  const str = String(path);
+  const idx = str.indexOf('?');
+  return idx === -1 ? '' : str.substring(idx + 1);
+}
+
+function computeSupabaseCacheHash_(input) {
+  try {
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, input, UTF8_CHARSET);
+    return Utilities.base64EncodeWebSafe(digest).replace(/=+$/, '');
+  } catch (e) {
+    Logger.log('computeSupabaseCacheHash_ error: ' + e);
+    return String(Math.abs(input.length || 0) + Date.now());
+  }
+}
+
+function getSupabaseResourceVersion_(resourceName) {
+  if (!resourceName) return String(Date.now());
+  const key = SUPABASE_CACHE_VERSION_PREFIX + resourceName;
+  try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache && cache.get(key);
+    if (cached) return cached;
+  } catch (cacheError) {
+    Logger.log('getSupabaseResourceVersion_ cache error: ' + cacheError);
+  }
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let version = props.getProperty(key);
+    if (!version) {
+      version = String(Date.now());
+      props.setProperty(key, version);
+    }
+    try {
+      CacheService.getScriptCache().put(key, version, SUPABASE_CACHE_VERSION_TTL_SECONDS);
+    } catch (cachePutError) {
+      Logger.log('getSupabaseResourceVersion_ cache put error: ' + cachePutError);
+    }
+    return version;
+  } catch (propError) {
+    Logger.log('getSupabaseResourceVersion_ error: ' + propError);
+    return String(Date.now());
+  }
+}
+
+function bumpSupabaseResourceVersion_(resourceName) {
+  if (!resourceName) return;
+  const key = SUPABASE_CACHE_VERSION_PREFIX + resourceName;
+  const newVersion = String(Date.now()) + '_' + Math.floor(Math.random() * 1000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty(key, newVersion);
+  } catch (propError) {
+    Logger.log('bumpSupabaseResourceVersion_ props error: ' + propError);
+  }
+  try {
+    CacheService.getScriptCache().put(key, newVersion, SUPABASE_CACHE_VERSION_TTL_SECONDS);
+  } catch (cacheError) {
+    Logger.log('bumpSupabaseResourceVersion_ cache error: ' + cacheError);
+  }
+}
+
+function buildSupabaseCacheContext_(path, resourceName) {
+  const resource = resourceName || normalizeSupabaseResourcePath_(path);
+  if (!resource) return null;
+  const version = getSupabaseResourceVersion_(resource);
+  const query = extractSupabaseQuery_(path) || '';
+  const hash = computeSupabaseCacheHash_(resource + '::' + version + '::' + query);
+  return {
+    resource: resource,
+    version: version,
+    cacheKey: SUPABASE_CACHE_KEY_PREFIX + hash
+  };
+}
+
+function readSupabaseCache_(cacheKey) {
+  if (!cacheKey) return { hit: false, value: null };
+  const entry = safeScriptCacheGetJSON_(cacheKey);
+  if (entry && typeof entry === 'object' && entry.__supabaseCache === true) {
+    return { hit: true, value: entry.value };
+  }
+  return { hit: false, value: null };
+}
+
+function writeSupabaseCache_(cacheKey, value, ttl) {
+  if (!cacheKey) return;
+  const payload = { __supabaseCache: true, value: value };
+  safeScriptCachePutJSON_(cacheKey, payload, ttl);
+}
+
+function executeSupabaseBatchGet_(requestBatch, options) {
+  if (!Array.isArray(requestBatch) || !requestBatch.length) return [];
+
+  const results = new Array(requestBatch.length);
+  const pending = [];
+  const fetchRequests = [];
+  const ttl = options && options.cacheTtl ? options.cacheTtl : SUPABASE_CACHE_TTL_SECONDS;
+
+  for (let i = 0; i < requestBatch.length; i++) {
+    const requestInfo = requestBatch[i] || {};
+    const path = String(requestInfo.path || '');
+    const resourceName = normalizeSupabaseResourcePath_(path);
+    const cacheContext = buildSupabaseCacheContext_(path, resourceName);
+    const cacheHit = cacheContext && cacheContext.cacheKey ? readSupabaseCache_(cacheContext.cacheKey) : { hit: false, value: null };
+    if (cacheHit.hit) {
+      results[i] = cacheHit.value;
+      continue;
+    }
+
+    pending.push({ index: i, path: path, cacheContext: cacheContext });
+    fetchRequests.push({
+      url: buildSupabaseUrl_(path),
+      method: 'get',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY
+      },
+      muteHttpExceptions: true
+    });
+  }
+
+  if (pending.length) {
+    const responses = UrlFetchApp.fetchAll(fetchRequests);
+    for (let r = 0; r < responses.length; r++) {
+      const response = responses[r];
+      const pendingInfo = pending[r];
+      const status = response.getResponseCode();
+      const text = response.getContentText();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (parseError) {
+          data = text;
+        }
+      }
+      if (status < 200 || status >= 300) {
+        const message = data && data.message ? data.message : text;
+        throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error') + ' [' + pendingInfo.path + ']');
+      }
+
+      results[pendingInfo.index] = data;
+      if (pendingInfo.cacheContext && pendingInfo.cacheContext.cacheKey && data !== undefined) {
+        writeSupabaseCache_(pendingInfo.cacheContext.cacheKey, data, ttl);
+      }
+    }
+  }
+
+  for (let i = 0; i < results.length; i++) {
+    if (typeof results[i] === 'undefined') {
+      results[i] = [];
+    }
+  }
+
+  return results;
 }
 
 // --- Helpers an toàn cho CacheService ---
