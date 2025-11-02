@@ -6976,6 +6976,20 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
 }
 
 // ====================== WEIGHING RESULT PAGE ======================
+const WR_DELETE_BATCH_SIZE = 25;
+
+function chunkWrIds(ids, size) {
+  const chunkSize = Number(size) || 0;
+  if (!Array.isArray(ids) || !ids.length || chunkSize <= 0) {
+    return Array.isArray(ids) && ids.length ? [ids.slice()] : [];
+  }
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 function initWeighResultPage() {
   const role = getUserRole();
   const isAdmin = role === 'admin';
@@ -7292,16 +7306,52 @@ function deleteWrRows(table){
     .then(r => {
       if (!r.isConfirmed) return;
       const t2 = translations[currentLang] || translations.vi || {};
-      showLoading(t2.wr_deleting_loading || 'Đang xoá...');
-      google.script.run
-        .withSuccessHandler(msg => {
+      const baseLoadingTitle = t2.wr_deleting_loading || 'Đang xoá...';
+      showLoading(baseLoadingTitle);
+
+      const batches = chunkWrIds(ids, WR_DELETE_BATCH_SIZE);
+      const totalBatches = batches.length;
+      let lastMessage = '';
+
+      const updateProgressTitle = currentBatch => {
+        if (totalBatches <= 1) return;
+        const template = t2.wr_deleting_loading_progress;
+        const progressTitle = template
+          ? template.replace('{current}', currentBatch).replace('{total}', totalBatches)
+          : `${baseLoadingTitle} (${currentBatch}/${totalBatches})`;
+        Swal.update({ title: progressTitle });
+      };
+
+      const processBatch = index => {
+        if (index >= totalBatches) {
           Swal.close();
           const t3 = translations[currentLang] || translations.vi || {};
-          Swal.fire(t3.success_title || 'Thành công', msg, 'success');
+          const successMessage = lastMessage || t3.wr_delete_success_message || t3.wr_delete_success || 'Đã xoá các mục đã chọn.';
+          Swal.fire(t3.success_title || 'Thành công', successMessage, 'success');
           reloadWrTables();
-        })
-        .withFailureHandler(showError)
-        .deleteWeighResults(ids, userSession.token);
+          return;
+        }
+
+        updateProgressTitle(index + 1);
+
+        google.script.run
+          .withSuccessHandler(msg => {
+            if (msg) lastMessage = msg;
+            processBatch(index + 1);
+          })
+          .withFailureHandler(err => {
+            Swal.close();
+            showError(err);
+          })
+          .deleteWeighResults(batches[index], userSession.token);
+      };
+
+      if (!batches.length) {
+        Swal.close();
+        return;
+      }
+
+      processBatch(0);
     });
 }
 
