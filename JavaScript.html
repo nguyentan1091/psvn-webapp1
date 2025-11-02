@@ -1973,6 +1973,7 @@ function redirectToAppWithCacheBusting() {
 }
 
 function handleLogout() {
+    const sessionToken = userSession && userSession.token;
     clearTimeout(inactivityTimer);
     $(document).off('mousemove mousedown keypress scroll touchstart');
 
@@ -2014,62 +2015,23 @@ function handleLogout() {
     if (!loginRendered) {
         loadLoginPage();
     }
-    showLoader();
+        google.script.run
+          .withSuccessHandler(() => {
+              if (!loginRendered) {
+                  showApp();
 
-    const openHome = (homeUrl) => {
-        const timestamp = Date.now();
-        let targetUrl = '';
-        if (homeUrl && typeof homeUrl === 'string') {
-            try {
-                const url = new URL(homeUrl);
-                url.searchParams.set('logout', '1');
-                url.searchParams.set('t', String(timestamp));
-                targetUrl = url.toString();
-            } catch (err) {
-                const base = homeUrl.split('#')[0];
-                const separator = base.includes('?') ? '&' : '?';
-                targetUrl = `${base}${separator}logout=1&t=${timestamp}`;
+              }
+            })
+            .withFailureHandler(err => {
+                if (err) {
+                    showError(err);
+                }
+            if (!loginRendered) {
+                showApp();
             }
-        } else {
-            const fallback = buildCacheBustingUrl();
-            try {
-                const url = new URL(fallback);
-                url.searchParams.set('logout', '1');
-                url.searchParams.set('t', String(timestamp));
-                targetUrl = url.toString();
-            } catch (err) {
-                const base = fallback.split('#')[0];
-                const separator = base.includes('?') ? '&' : '?';
-                targetUrl = `${base}${separator}logout=1&t=${timestamp}`;
-            }
-        }
-
-        try {
-            window.open(targetUrl, '_top');
-        } catch (err) {
-            window.location.href = targetUrl;
-        }
-    };
-
-    const logoutFailureFallback = setTimeout(() => {
-        openHome(null);
-    }, 1500);
-
-    google.script.run
-        .withSuccessHandler(result => {
-            clearTimeout(logoutFailureFallback);
-            const url = result && typeof result === 'object' ? result.url : result;
-            openHome(url);
-        })
-        .withFailureHandler(err => {
-            clearTimeout(logoutFailureFallback);
-            if (err) {
-                showError(err);
-            }
-            openHome(null);
-        })
-        .logoutAndGetHomeUrl();
-}
+          })
+        .logout(sessionToken || null);
+    }
 
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
