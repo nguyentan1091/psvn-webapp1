@@ -2449,11 +2449,16 @@ const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu.
 const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
 
 function checkVehiclesAgainstTotalList(vehicles) {
-  let rows = supabaseRequest_(
-    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent(['truck_plate', 'transportation_company'].join(','))
-  ) || [];
+  let rows = fetchAllSupabaseRows_(
+    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+    [
+      'select=' + encodeURIComponent(['truck_plate', 'transportation_company'].join(','))
+    ],
+    1000
+  );
+  if (!Array.isArray(rows)) rows = [];
 
-  if (!Array.isArray(rows) || !rows.length) {
+  if (!rows.length) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2535,11 +2540,16 @@ function checkVehiclesAgainstTotalList(vehicles) {
 // LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
 // =================================================================
 function checkVehicleActivityStatus(vehicles) {
-  let rows = supabaseRequest_(
-    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent(['truck_plate', 'activity_status'].join(','))
-  ) || [];
+  let rows = fetchAllSupabaseRows_(
+    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+    [
+      'select=' + encodeURIComponent(['truck_plate', 'activity_status'].join(','))
+    ],
+    1000
+  );
+  if (!Array.isArray(rows)) rows = [];
 
-  if (!Array.isArray(rows) || !rows.length) {
+  if (!rows.length) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2612,7 +2622,7 @@ function getAllDataForExport(dateString, sessionToken, searchQuery, contractNo) 
     }
 
     const rows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + params.join('&')) || [];
-    if (!Array.isArray(rows) || !rows.length) return [];
+    if (!rows.length) return [];
 
     let mapped = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
 
@@ -3386,9 +3396,14 @@ function saveTotalTruckData(dataToSave, sessionToken) {
       return String(value || '').replace(/\s/g, '').toUpperCase();
     };
 
-    let existingRows = supabaseRequest_(
-      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent(['truck_plate'].join(','))
-    ) || [];
+    let existingRows = fetchAllSupabaseRows_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+      [
+        'select=' + encodeURIComponent(['truck_plate'].join(','))
+      ],
+      1000
+    );
+    if (!Array.isArray(existingRows)) existingRows = [];
 
     const existingPlates = new Set();
     if (Array.isArray(existingRows)) {
@@ -4017,9 +4032,14 @@ function getContractorOptions() {
 //Lấy danh sách "Đơn vị vận chuyển" từ Supabase truck_list_total
 function getTransportCompanies() {
   try {
-    let rows = supabaseRequest_(
-      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent(['transportation_company'].join(','))
-    ) || [];
+    let rows = fetchAllSupabaseRows_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+      [
+        'select=' + encodeURIComponent(['transportation_company'].join(','))
+      ],
+      1000
+    );
+    if (!Array.isArray(rows)) rows = [];
 
     if (!Array.isArray(rows) || !rows.length) return [];
 
@@ -4067,11 +4087,16 @@ function getActiveContractNos(sessionToken) {
 // ====== GS: Trả về danh sách biển số đang có để đánh dấu trùng ======
 function getExistingTruckPlates(sessionToken) {
   validateSession(sessionToken);
-  let rows = supabaseRequest_(
-    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent(['truck_plate'].join(','))
-  ) || [];
+  let rows = fetchAllSupabaseRows_(
+    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+    [
+      'select=' + encodeURIComponent(['truck_plate'].join(','))
+    ],
+    1000
+  );
+  if (!Array.isArray(rows)) rows = [];
 
-  if (!Array.isArray(rows) || !rows.length) return [];
+  if (!rows.length) return [];
 
   const normalizePlate = function (value) {
     return String(value == null ? '' : value).replace(/\s/g, '').toUpperCase();
