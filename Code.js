@@ -3388,6 +3388,7 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
 
     const seen = new Set();
     const duplicates = [];
+    const duplicateDisplays = new Set();
 
     normalizedRecords.forEach(function (rec) {
       const key = `${rec.date}-${rec.plate}-${rec.company}`;
