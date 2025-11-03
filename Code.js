@@ -3393,7 +3393,11 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
       const key = `${rec.date}-${rec.plate}-${rec.company}`;
 
       if (existingKeys.has(key) || seen.has(key)) {
-        duplicates.push(rec.plate);
+        const displayValue = rec.display || rec.plate;
+        if (!duplicateDisplays.has(displayValue)) {
+          duplicateDisplays.add(displayValue);
+          duplicates.push(displayValue);
+        }
       }
       seen.add(key);
     });
@@ -4494,9 +4498,22 @@ function _toDateKey(v){
 }
 
 function normalizeTruckPlateValue_(value) {
-  return String(value == null ? '' : value)
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
+
+  let str = String(value == null ? '' : value).trim();
+  if (!str) return '';
+
+  if (typeof str.normalize === 'function') {
+    str = str.normalize('NFKC');
+  }
+
+  str = str.toUpperCase();
+
+  try {
+    return str.replace(/[^\p{L}\p{N}_.-]/gu, '');
+  } catch (err) {
+    // Fallback for environments that do not support Unicode property escapes
+    return str.replace(/[^A-Z0-9._\-\u00C0-\u024F\u0E80-\u0EFF]/g, '');
+  }
 }
 
 function resolveTruckPlateDisplay_(value, normalized) {
