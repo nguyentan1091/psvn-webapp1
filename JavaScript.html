@@ -2192,7 +2192,7 @@ function fetchUsersData() {
     google.script.run
         .withSuccessHandler(data => {
             usersTable.clear().rows.add(data).draw();
-            setTimeout(() => usersTable.columns.adjust(), 10);
+        requestAnimationFrame(() => usersTable.columns.adjust());
             Swal.close();
         })
         .withFailureHandler(showError)
@@ -2777,99 +2777,106 @@ function handleFileUpload() {
                   'warning');
         return;
     }
-    showLoading(t.loading_processing_file || 'Đang xử lý và xác thực file...');
-    setTimeout(() => {
+    showLoadingDeferred(t.loading_processing_file || 'Đang xử lý và xác thực file...', 120);
+    const reader = new FileReader();
+    reader.onload = function(e) {
         try {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const workbook = XLSX.read(e.target.result, { type: 'array' });
-                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+            const workbook = XLSX.read(e.target.result, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
 
-                if (jsonData.length < 2) throw new Error(t.file_no_data_error || 'File không có dữ liệu.');
-                
-                const { data, errors } = validateAndTransformData(jsonData.slice(1));
-                
-                previewTableData = data;
-                
-                const columns = [
-                    { data: 'ID', title: t.col_id || 'ID' },
-                    {
-                        data: 'Register Date',
-                        title: t.col_register_date || 'Register Date',
-                        render: (data, type) => {
-                            const parsed = parseRegisterDateValue(data);
-                            if (type === 'sort' || type === 'type') {
-                                return parsed ? parsed.toISOString() : (data == null ? '' : data);
-                            }
-                            return formatRegisterDateForDisplay(data);
+            if (jsonData.length < 2) throw new Error(t.file_no_data_error || 'File không có dữ liệu.');
+
+            const { data, errors } = validateAndTransformData(jsonData.slice(1));
+
+            previewTableData = data;
+
+            const columns = [
+                { data: 'ID', title: t.col_id || 'ID' },
+                {
+                    data: 'Register Date',
+                    title: t.col_register_date || 'Register Date',
+                    render: (data, type) => {
+                        const parsed = parseRegisterDateValue(data);
+                        if (type === 'sort' || type === 'type') {
+                            return parsed ? parsed.toISOString() : (data == null ? '' : data);
                         }
-                    },
-                    { data: 'Contract No', title: t.col_contract_no || 'Contract No' },
-                    { data: 'Truck Plate', title: t.col_truck_plate || 'Truck Plate' },
-                    { data: 'Country', title: t.col_country || 'Country' },
-                    { data: 'Wheel', title: t.col_wheel || 'Wheel' },
-                    { data: 'Trailer Plate', title: t.col_trailer_plate || 'Trailer Plate' },
-                    { data: 'Truck weight', title: t.col_truck_weight || 'Truck weight' },
-                    { data: 'Pay load', title: t.col_payload || 'Pay load' },
-                    { data: 'Container No1', title: t.col_container1 || 'Container 1' },
-                    { data: 'Container No2', title: t.col_container2 || 'Container 2' },
-                    { data: 'Driver Name', title: t.col_driver_name || 'Driver Name' },
-                    { data: 'ID/Passport', title: t.col_id_passport || 'ID/Passport' },
-                    { data: 'Phone number', title: t.col_phone_number || 'Phone number' },
-                    { data: 'Destination EST', title: t.col_destination || 'Destination EST' },
-                    { data: 'Transportation Company', title: t.col_transport_company || 'Transportation Company' },
-                    { data: 'Subcontractor', title: t.col_subcontractor || 'Subcontractor' },
-                    { data: 'Vehicle Status', title: t.col_vehicle_status || 'Vehicle Status' }
-                ];
-                
-                if ($.fn.DataTable.isDataTable('#previewDataTable')) {
-                    $('#previewDataTable').DataTable().destroy();
-                }
-                
-                previewDataTable = $('#previewDataTable').DataTable({
-                    data: previewTableData,
-                    columns: columns,
-                    paging: false, info: false, searching: false, scrollX: true,
-                    createdRow: function(row, data, dataIndex) {
-                        if (data.errors) {
-                            for (const key in data.errors) {
-                                const colIndex = columns.findIndex(c => c.data === key);
-                                if (colIndex !== -1) {
-                                    $(row).find('td').eq(colIndex).addClass('is-invalid').attr('title', data.errors[key]);
-                                }
+                        return formatRegisterDateForDisplay(data);
+                    }
+                },
+                { data: 'Contract No', title: t.col_contract_no || 'Contract No' },
+                { data: 'Truck Plate', title: t.col_truck_plate || 'Truck Plate' },
+                { data: 'Country', title: t.col_country || 'Country' },
+                { data: 'Wheel', title: t.col_wheel || 'Wheel' },
+                { data: 'Trailer Plate', title: t.col_trailer_plate || 'Trailer Plate' },
+                { data: 'Truck weight', title: t.col_truck_weight || 'Truck weight' },
+                { data: 'Pay load', title: t.col_payload || 'Pay load' },
+                { data: 'Container No1', title: t.col_container1 || 'Container 1' },
+                { data: 'Container No2', title: t.col_container2 || 'Container 2' },
+                { data: 'Driver Name', title: t.col_driver_name || 'Driver Name' },
+                { data: 'ID/Passport', title: t.col_id_passport || 'ID/Passport' },
+                { data: 'Phone number', title: t.col_phone_number || 'Phone number' },
+                { data: 'Destination EST', title: t.col_destination || 'Destination EST' },
+                { data: 'Transportation Company', title: t.col_transport_company || 'Transportation Company' },
+                { data: 'Subcontractor', title: t.col_subcontractor || 'Subcontractor' },
+                { data: 'Vehicle Status', title: t.col_vehicle_status || 'Vehicle Status' }
+            ];
+
+            if ($.fn.DataTable.isDataTable('#previewDataTable')) {
+                $('#previewDataTable').DataTable().destroy();
+            }
+
+            previewDataTable = $('#previewDataTable').DataTable({
+                data: previewTableData,
+                columns: columns,
+                paging: false,
+                info: false,
+                searching: false,
+                scrollX: true,
+                createdRow: function(row, rowData) {
+                    if (rowData.errors) {
+                        for (const key in rowData.errors) {
+                            const colIndex = columns.findIndex(c => c.data === key);
+                            if (colIndex !== -1) {
+                                $(row).find('td').eq(colIndex).addClass('is-invalid').attr('title', rowData.errors[key]);
                             }
                         }
                     }
+                }
+            });
+
+            $('#previewContainer').removeClass('d-none');
+            requestAnimationFrame(() => previewDataTable.columns.adjust());
+
+            dismissLoading();
+
+            if (errors.length > 0) {
+                const maxErrorsToShow = 10;
+                const slicedErrors = errors.slice(0, maxErrorsToShow);
+                let errorHtml = `<p>${t.upload_errors_intro || 'Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.'}</p><ul class="text-start">`;
+                slicedErrors.forEach(err => { errorHtml += `<li>${err}</li>`; });
+                if(errors.length > maxErrorsToShow) {
+                    errorHtml += `<li>${t.upload_errors_more || '... và nhiều lỗi khác.'}</li>`;
+                }
+                errorHtml += '</ul>';
+                Swal.fire({
+                    icon: 'error',
+                    title: t.invalid_data_title || 'Dữ liệu không hợp lệ!',
+                    html: errorHtml
                 });
-                
-                $('#previewContainer').removeClass('d-none');
-                setTimeout(() => previewDataTable.columns.adjust(), 10);
-                Swal.close();
+            }
 
-                if (errors.length > 0) {
-                    const maxErrorsToShow = 10;
-                    const slicedErrors = errors.slice(0, maxErrorsToShow);
-                    let errorHtml = `<p>${t.upload_errors_intro || 'Phát hiện lỗi trong file tải lên. Vui lòng sửa lại file Excel và thử lại. Các ô màu đỏ là các ô bị lỗi.'}</p><ul class="text-start">`;
-                    slicedErrors.forEach(err => { errorHtml += `<li>${err}</li>`; });
-                    if(errors.length > maxErrorsToShow) {
-                        errorHtml += `<li>${t.upload_errors_more || '... và nhiều lỗi khác.'}</li>`;
-                    }
-                    errorHtml += '</ul>';
-                    Swal.fire({
-                        icon: 'error',
-                        title: t.invalid_data_title || 'Dữ liệu không hợp lệ!',
-                        html: errorHtml
-                    });
-                }
-
-                refreshUploadSaveButtonState();
-            };
-            reader.readAsArrayBuffer(file);
+            refreshUploadSaveButtonState();
         } catch (error) {
+            dismissLoading(true);
             showError({ message: error.message });
         }
-    }, 100);
+    };
+    reader.onerror = function() {
+        dismissLoading(true);
+        showError({ message: t.file_read_error || 'Không thể đọc file tải lên. Vui lòng thử lại.' });
+    };
+    reader.readAsArrayBuffer(file);
 }
 
 function parseRegisterDateValue(value) {
@@ -3121,9 +3128,10 @@ function handleSaveUploadedData() {
         return;
     }
 
-    showLoading(t.loading_checking_data || 'Đang kiểm tra và lưu dữ liệu...');
+    showLoadingDeferred(t.loading_checking_data || 'Đang kiểm tra và lưu dữ liệu...', 120);
     google.script.run
         .withSuccessHandler(message => {
+            dismissLoading();
             Swal.fire(t.success_title || 'Thành công', message, 'success');
             previewTableData = [];
             if($.fn.DataTable.isDataTable('#previewDataTable')) $('#previewDataTable').DataTable().clear().destroy();
@@ -3131,7 +3139,7 @@ function handleSaveUploadedData() {
             $('#fileUploader').val('').trigger('change');
             refreshUploadSaveButtonState();
         })
-        .withFailureHandler(showError)
+        .withFailureHandler(err => { dismissLoading(true); showError(err); })
         .saveData(sanitizedDataToSave, userSession.token, currentLang);
 }
 
@@ -3177,6 +3185,7 @@ function initializeDataTable(config) {
         autoWidth: false,
         deferRender: true,
         scrollX: true,
+        stateSave: true,
         select: enableSelect ? { style: 'multi', selector: 'td:first-child .row-checkbox' } : false,
         pageLength: pageLength,
         language: {
@@ -3195,7 +3204,7 @@ function initializeDataTable(config) {
             }
         },
         drawCallback: function(settings) {
-            setTimeout(() => $(this.api().table().node()).DataTable().columns.adjust(), 50);
+            requestAnimationFrame(() => this.api().columns.adjust());
         }
     };
 
@@ -4425,185 +4434,175 @@ function handleTotalListFileUpload() {
     return;
   }
 
-  showLoading('Đang xử lý và xác thực file...');
-  setTimeout(() => {
+  showLoadingDeferred('Đang xử lý và xác thực file...', 120);
+  const reader = new FileReader();
+  reader.onload = function (e) {
     try {
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
 
-          // Lấy danh sách biển số đang có trong Danh sách tổng để đánh dấu trùng
-          google.script.run
-            .withSuccessHandler(existingList => {
-              const existingPlates = new Set(Array.isArray(existingList) ? existingList : []);
+      google.script.run
+        .withSuccessHandler(existingList => {
+          try {
+            const existingPlates = new Set(Array.isArray(existingList) ? existingList : []);
 
-              // Bạn đã có hàm validateAndTransformTotalListData(rows, existingPlates)
-              const result = validateAndTransformTotalListData(jsonData.slice(1), existingPlates);
-              const validationErrors = Array.isArray(result.errors) ? result.errors : [];
+            const result = validateAndTransformTotalListData(jsonData.slice(1), existingPlates);
+            const validationErrors = Array.isArray(result.errors) ? result.errors : [];
 
-              // Chuẩn hoá record để luôn có đủ key DataTable cần
-              totalListPreviewData = (result.data || []).map(r => ({
-                ID: r.ID || (typeof generateRandomId === 'function' ? generateRandomId(12) : String(Date.now())),
-                'Truck Plate': r['Truck Plate'] || '',
-                Country: r['Country'] || '',
-                Wheel: r['Wheel'] || '',
-                'Trailer Plate': r['Trailer Plate'] || '',
-                'Truck weight': r['Truck weight'] || '',
-                'Pay load': r['Pay load'] || '',
-                'Container No1': r['Container No1'] || '',
-                'Container No2': r['Container No2'] || '',
-                'Driver Name': r['Driver Name'] || '',
-                'ID/Passport': r['ID/Passport'] || '',
-                'Phone number': r['Phone number'] || '',
-                'Transportation Company': r['Transportation Company'] || '',
-                'Subcontractor': r['Subcontractor'] || '',
-                'Vehicle Status': (r['Vehicle Status'] || '').toString().toUpperCase(),
-                'Activity Status': r['Activity Status'] || '',
-                'Register Date': r['Register Date'] || '',
-                'Time': r['Time'] || '',
-                _duplicate: typeof r._duplicate === 'boolean'
-                  ? r._duplicate
-                  : existingPlates.has(String(r['Truck Plate'] || '').replace(/\s/g, '').toUpperCase()),
-                errors: r.errors || null
-              }));
+            totalListPreviewData = (result.data || []).map(r => ({
+              ID: r.ID || (typeof generateRandomId === 'function' ? generateRandomId(12) : String(Date.now())),
+              'Truck Plate': r['Truck Plate'] || '',
+              Country: r['Country'] || '',
+              Wheel: r['Wheel'] || '',
+              'Trailer Plate': r['Trailer Plate'] || '',
+              'Truck weight': r['Truck weight'] || '',
+              'Pay load': r['Pay load'] || '',
+              'Container No1': r['Container No1'] || '',
+              'Container No2': r['Container No2'] || '',
+              'Driver Name': r['Driver Name'] || '',
+              'ID/Passport': r['ID/Passport'] || '',
+              'Phone number': r['Phone number'] || '',
+              'Transportation Company': r['Transportation Company'] || '',
+              'Subcontractor': r['Subcontractor'] || '',
+              'Vehicle Status': (r['Vehicle Status'] || '').toString().toUpperCase(),
+              'Activity Status': r['Activity Status'] || '',
+              'Register Date': r['Register Date'] || '',
+              'Time': r['Time'] || '',
+              _duplicate: typeof r._duplicate === 'boolean'
+                ? r._duplicate
+                : existingPlates.has(String(r['Truck Plate'] || '').replace(/\s/g, '').toUpperCase()),
+              errors: r.errors || null
+            }));
 
-              // Huỷ DataTable cũ nếu có
-              if ($.fn.DataTable.isDataTable('#total-list-previewDataTable')) {
-                $('#total-list-previewDataTable').DataTable().clear().destroy();
-              }
-              $('#total-list-previewDataTable').addClass('table-sm dt-compact'); // thu nhỏ giống bảng dưới
+            if ($.fn.DataTable.isDataTable('#total-list-previewDataTable')) {
+              $('#total-list-previewDataTable').DataTable().clear().destroy();
+            }
+            $('#total-list-previewDataTable').addClass('table-sm dt-compact');
 
-              const columns = [
-                { data: 'ID', title: 'ID', defaultContent: '' },
-                { data: 'Truck Plate', title: 'Biển số xe', defaultContent: '' },
-                { data: 'Country', title: 'Quốc gia', defaultContent: '' },
-                { data: 'Wheel', title: 'Số bánh', defaultContent: '' },
-                { data: 'Trailer Plate', title: 'Biển số Mooc', defaultContent: '' },
-                { data: 'Truck weight', title: 'Trọng lượng xe', defaultContent: '' },
-                { data: 'Pay load', title: 'Tải trọng xe', defaultContent: '' },
-                { data: 'Container No1', title: 'Container 1', defaultContent: '' },
-                { data: 'Container No2', title: 'Container 2', defaultContent: '' },
-                { data: 'Driver Name', title: 'Tên lái xe', defaultContent: '' },
-                { data: 'ID/Passport', title: 'Số hộ chiếu', defaultContent: '' },
-                { data: 'Phone number', title: 'Số điện thoại', defaultContent: '' },
-                { data: 'Transportation Company', title: 'Đơn vị vận chuyển', defaultContent: '' },
-                { data: 'Subcontractor', title: 'Nhà thầu phụ', defaultContent: '' },
-                { data: 'Vehicle Status', title: 'Tình trạng xe', defaultContent: '' },
-                { data: 'Activity Status', title: 'Trạng thái hoạt động', defaultContent: '' },                
-                { data: 'Register Date', title: 'Ngày tạo', defaultContent: '' },
-                { data: 'Time', title: 'Thời gian tạo', defaultContent: '' }
-              ];
+            const columns = [
+              { data: 'ID', title: 'ID', defaultContent: '' },
+              { data: 'Truck Plate', title: 'Biển số xe', defaultContent: '' },
+              { data: 'Country', title: 'Quốc gia', defaultContent: '' },
+              { data: 'Wheel', title: 'Số bánh', defaultContent: '' },
+              { data: 'Trailer Plate', title: 'Biển số Mooc', defaultContent: '' },
+              { data: 'Truck weight', title: 'Trọng lượng xe', defaultContent: '' },
+              { data: 'Pay load', title: 'Tải trọng xe', defaultContent: '' },
+              { data: 'Container No1', title: 'Container 1', defaultContent: '' },
+              { data: 'Container No2', title: 'Container 2', defaultContent: '' },
+              { data: 'Driver Name', title: 'Tên lái xe', defaultContent: '' },
+              { data: 'ID/Passport', title: 'Số hộ chiếu', defaultContent: '' },
+              { data: 'Phone number', title: 'Số điện thoại', defaultContent: '' },
+              { data: 'Transportation Company', title: 'Đơn vị vận chuyển', defaultContent: '' },
+              { data: 'Subcontractor', title: 'Nhà thầu phụ', defaultContent: '' },
+              { data: 'Vehicle Status', title: 'Tình trạng xe', defaultContent: '' },
+              { data: 'Activity Status', title: 'Trạng thái hoạt động', defaultContent: '' },
+              { data: 'Register Date', title: 'Ngày tạo', defaultContent: '' },
+              { data: 'Time', title: 'Thời gian tạo', defaultContent: '' }
+            ];
 
-              totalListPreviewTable = $('#total-list-previewDataTable').DataTable({
-                data: totalListPreviewData,
-                columns,
-                paging: false,
-                info: false,
-                searching: false,
-                scrollX: true,
-                createdRow: function (row, rowData) {
-                  let rowHasError = false;
-
-                  // Tô đỏ từng ô có lỗi (và đánh dấu cả dòng)
-                  if (rowData && rowData.errors) {
-                    Object.keys(rowData.errors).forEach((key) => {
-                      const colIdx = columns.findIndex(c => c.data === key);
-                      if (colIdx !== -1) {
-                        $(row).find('td').eq(colIdx)
-                          .addClass('is-invalid')
-                          .attr('title', rowData.errors[key]);
-                        rowHasError = true;
-                      }
-                    });
-                  }
-                  if (rowHasError) $(row).addClass('tl-row-error');     // đỏ cả dòng
-                  if (rowData && rowData._duplicate) $(row).addClass('tl-row-dup'); // vàng cả dòng trùng
+            totalListPreviewTable = $('#total-list-previewDataTable').DataTable({
+              data: totalListPreviewData,
+              columns,
+              paging: false,
+              info: false,
+              searching: false,
+              scrollX: true,
+              createdRow: function (row, rowData) {
+                let rowHasError = false;
+                if (rowData && rowData.errors) {
+                  Object.keys(rowData.errors).forEach((key) => {
+                    const colIdx = columns.findIndex(c => c.data === key);
+                    if (colIdx !== -1) {
+                      $(row).find('td').eq(colIdx)
+                        .addClass('is-invalid')
+                        .attr('title', rowData.errors[key]);
+                      rowHasError = true;
+                    }
+                  });
                 }
+                if (rowHasError) $(row).addClass('tl-row-error');
+                if (rowData && rowData._duplicate) $(row).addClass('tl-row-dup');
+              }
+            });
+
+            $('#total-list-previewContainer').removeClass('d-none');
+            requestAnimationFrame(() => totalListPreviewTable.columns.adjust());
+
+            const duplicatePlates = totalListPreviewData
+              .filter(r => r && r._duplicate)
+              .map(r => r['Truck Plate'])
+              .filter(Boolean);
+            const hasErrors = validationErrors.length > 0;
+            const hasDup = duplicatePlates.length > 0;
+
+            const alertSections = [];
+
+            if (hasErrors) {
+              const maxErrorRows = 10;
+              const errorItems = validationErrors.slice(0, maxErrorRows).map(err => {
+                const rowLabel = err && err.row ? `Dòng ${err.row}` : 'Dòng không xác định';
+                const messages = Array.isArray(err.messages) ? err.messages.join('<br>') : '';
+                return `<li><strong>${rowLabel}</strong><br>${messages}</li>`;
+              }).join('');
+
+              alertSections.push(`
+                <div>
+                  <div class="fw-bold mb-1">Lỗi dữ liệu</div>
+                  <div class="text-start" style="max-height:160px; overflow:auto">
+                    <ol class="ps-3 mb-0">${errorItems}</ol>
+                    ${validationErrors.length > maxErrorRows ? '<div class="mt-2"><small>...</small></div>' : ''}
+                  </div>
+                </div>
+              `);
+            }
+
+            if (hasDup) {
+              const max = 20;
+              const show = duplicatePlates.slice(0, max).join(', ');
+              alertSections.push(`
+                <div>
+                  <div class="fw-bold mb-1">Biển số trùng</div>
+                  <div class="text-start" style="max-height:120px; overflow:auto">
+                    <small>${show}${duplicatePlates.length > max ? ', ...' : ''}</small>
+                  </div>
+                  <div class="mt-1"><small>Vui lòng loại bỏ/cập nhật trong file trước khi lưu.</small></div>
+                </div>
+              `);
+            }
+
+            dismissLoading();
+
+            if (alertSections.length) {
+              Swal.fire({
+                icon: hasErrors ? 'error' : 'warning',
+                title: 'Kiểm tra lại dữ liệu tải lên',
+                html: alertSections.join('<hr class="my-2">')
               });
+            }
 
-              $('#total-list-previewContainer').removeClass('d-none');
-              setTimeout(() => totalListPreviewTable.columns.adjust(), 10);
+            $('#total-list-saveUploadBtn').prop('disabled', hasErrors || hasDup);
+          } catch (err) {
+            dismissLoading(true);
+            showError(err);
+          }
+        })
+        .withFailureHandler(err => { dismissLoading(true); showError(err); })
+        .getExistingTruckPlates(userSession.token);
 
-              // Cảnh báo trùng ngay sau khi xem trước
-              const duplicatePlates = totalListPreviewData
-                .filter(r => r && r._duplicate)
-                .map(r => r['Truck Plate'])
-                .filter(Boolean);
-              const hasErrors = validationErrors.length > 0;
-              const hasDup = duplicatePlates.length > 0;
-
-              const alertSections = [];
-
-              if (hasErrors) {
-                const maxErrorRows = 10;
-                const errorItems = validationErrors.slice(0, maxErrorRows).map(err => {
-                  const rowLabel = err && err.row ? `Dòng ${err.row}` : 'Dòng không xác định';
-                  const messages = Array.isArray(err.messages) ? err.messages.join('<br>') : '';
-                  return `<li><strong>${rowLabel}</strong><br>${messages}</li>`;
-                }).join('');
-
-                alertSections.push(`
-                  <div>
-                    <div class="fw-bold mb-1">Lỗi dữ liệu</div>
-                    <div class="text-start" style="max-height:160px; overflow:auto">
-                      <ol class="ps-3 mb-0">${errorItems}</ol>
-                      ${validationErrors.length > maxErrorRows ? '<div class="mt-2"><small>...</small></div>' : ''}
-                    </div>
-                  </div>
-                `);
-              }
-
-              if (hasDup) {
-                const max = 20;
-                const show = duplicatePlates.slice(0, max).join(', ');
-                alertSections.push(`
-                  <div>
-                    <div class="fw-bold mb-1">Phát hiện dữ liệu trùng</div>
-                    <div class="text-start" style="max-height:120px; overflow:auto">
-                      <small>${show}${duplicatePlates.length > max ? ', ...' : ''}</small>
-                    </div>
-                    <div class="mt-1"><small>Vui lòng loại bỏ/cập nhật trong file trước khi lưu.</small></div>
-                  </div>
-                `);
-              }
-
-              if (alertSections.length) {
-                Swal.fire({
-                  icon: hasErrors ? 'error' : 'warning',
-                  title: 'Kiểm tra lại dữ liệu tải lên',
-                  html: alertSections.join('<hr class="my-2">')
-                });
-              } else {
-                Swal.close(); // đóng spinner nếu không có cảnh báo thêm
-              }
-
-              // Khoá nút lưu nếu còn trùng hoặc còn lỗi
-              $('#total-list-saveUploadBtn').prop('disabled', hasErrors || hasDup);
-            })
-            .withFailureHandler(err => { Swal.close(); showError(err); })
-            .getExistingTruckPlates(userSession.token);
-
-        } catch (err) {
-          Swal.close();
-          showError(err);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } catch (error) {
-      Swal.close();
-      showError({ message: error.message });
+    } catch (err) {
+      dismissLoading(true);
+      showError(err);
     }
-  }, 100);
+  };
+  reader.onerror = function() {
+    dismissLoading(true);
+    showError({ message: 'Không thể đọc file danh sách tổng. Vui lòng thử lại.' });
+  };
+  reader.readAsArrayBuffer(file);
 }
-
-
-
-
 function generateCustomId() {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
@@ -4836,9 +4835,10 @@ function handleSaveTotalListUploadedData() {
     'Time': r['Time'] || regTime
   }));
 
-  showLoading('Đang cập nhật danh sách...');
+  showLoadingDeferred('Đang cập nhật danh sách...', 120);
   google.script.run
     .withSuccessHandler(msg => {
+      dismissLoading();
       Swal.fire({
         icon: 'success',
         title: 'Lưu thành công',
@@ -4862,7 +4862,7 @@ function handleSaveTotalListUploadedData() {
       $('#total-list-saveUploadBtn').prop('disabled', true);
       $('#total-list-fileUploader').val('').trigger('change');
     })
-    .withFailureHandler(err => { Swal.close(); showError(err); })
+    .withFailureHandler(err => { dismissLoading(true); showError(err); })
     .saveTotalListAppend(payload, userSession.token);   // <== APPEND, không ghi đè
 }
 
@@ -4888,14 +4888,15 @@ function handleDeleteTotalList() {
         confirmButtonText: 'Vâng, xóa đi!'
     }).then((result) => {
         if (result.isConfirmed) {
-            showLoading('Đang xóa xe...');
+            showLoadingDeferred('Đang xóa xe...', 120);
             google.script.run
                 .withSuccessHandler(message => {
+                    dismissLoading();
                     Swal.fire('Đã xóa!', message, 'success');
                     totalListTable.draw(false);
                     fetchTotalListSummary();
                 })
-                .withFailureHandler(showError)
+                .withFailureHandler(err => { dismissLoading(true); showError(err); })
                 .deleteTotalListVehicles(selectedIds, userSession.token);
         }
     });
@@ -5269,12 +5270,49 @@ function parseExcelDate(excelDate, options) {
 }
 
 
+let loadingModalTimer = null;
+let loadingModalVisible = false;
+
+function clearPendingLoadingTimer() {
+  if (loadingModalTimer) {
+    clearTimeout(loadingModalTimer);
+    loadingModalTimer = null;
+  }
+}
+
 function showLoading(title) {
+    clearPendingLoadingTimer();
     Swal.fire({
         title: title,
         allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
+        didOpen: () => {
+            loadingModalVisible = true;
+            Swal.showLoading();
+        },
+        willClose: () => {
+            loadingModalVisible = false;
+        }
     });
+}
+
+function showLoadingDeferred(title, delay = 150) {
+    clearPendingLoadingTimer();
+    const wait = Math.max(0, Number(delay) || 0);
+    if (wait === 0) {
+        showLoading(title);
+        return;
+    }
+    loadingModalTimer = setTimeout(() => {
+        loadingModalTimer = null;
+        showLoading(title);
+    }, wait);
+}
+
+function dismissLoading(force = false) {
+    clearPendingLoadingTimer();
+    if (force || loadingModalVisible) {
+        try { Swal.close(); } catch (_) {}
+    }
 }
 
 function formatMinutesForDisplay(minutes) {
@@ -5320,6 +5358,7 @@ function localizeErrorMessage(message, lang) {
 }
 
 function showError(error) {
+  dismissLoading();
   const t = translations[currentLang] || translations.vi || {};
   let raw = getRawErrorMessage(error);
   if (!raw) raw = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
@@ -6174,7 +6213,7 @@ function handleXpplWeighingUpload() {
     cancelButtonText: t.xppl_upload_cancel_button || t.cancel_button || 'Hủy bỏ'
   }).then(res => {
     if (!res.isConfirmed) return;
-    showLoading(t.xppl_processing_file || 'Đang xử lý file...');
+    showLoadingDeferred(t.xppl_processing_file || 'Đang xử lý file...', 120);
     const reader = new FileReader();
     reader.onload = function(e) {
       try {
@@ -6194,7 +6233,7 @@ function handleXpplWeighingUpload() {
         });
         google.script.run
           .withSuccessHandler(msg => {
-            Swal.close();
+            dismissLoading();
             Swal.fire(t.success_title || 'Thành công', msg || (t.xppl_upload_success_message || 'Tải lên thành công'), 'success');
             $('#xppl-weighing-file').val('');
             $('#xppl-weighing-file').val('').trigger('change');
@@ -6202,10 +6241,10 @@ function handleXpplWeighingUpload() {
             $('#xppl-filter-customer').val('');
             loadXpplWeighingData();
           })
-          .withFailureHandler(err => { Swal.close(); showError(err); })
+          .withFailureHandler(err => { dismissLoading(true); showError(err); })
           .saveXpplWeighingData(data, userSession.token);
       } catch(err) {
-        Swal.close();
+        dismissLoading(true);
         Swal.fire({
           icon: 'warning',
           iconHtml: '⚠️',
@@ -6244,12 +6283,12 @@ function loadXpplWeighingData() {
     customerName: customerVal
   };
 
-  showLoading(t.xppl_loading_data || 'Đang tải dữ liệu...');
+  showLoadingDeferred(t.xppl_loading_data || 'Đang tải dữ liệu...', 120);
   callServerWithRetry('getXpplWeighingData', [filter, userSession.token], {
     attempts: 3,
     initialDelay: 700,
     onSuccess: res => {
-      Swal.close();
+      dismissLoading();
       if (!res) res = {};
       if (res.contracts) {
         const $c = $('#xppl-filter-contract').prop('disabled', false)
@@ -6271,7 +6310,7 @@ function loadXpplWeighingData() {
       }
     },
     onFailure: err => {
-      Swal.close();
+      dismissLoading(true);
       showError(err);
     }
   });
