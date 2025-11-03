@@ -1635,7 +1635,7 @@ function checkRegistrationTime() {
   const currentTimeInMinutes = hour * 60 + minute;
   const morningOpen = 7 * 60;
   const todayCutoff = 11 * 60;
-  const afternoonClose = 16 * 60;
+  const afternoonClose = 20 * 60;
 
   const status = {
     isOpen: false,
@@ -3130,6 +3130,16 @@ function saveData(dataToSave, sessionToken, language) {
         'Đã hết thời gian cho phép đăng ký dữ liệu trong ngày.',
         'The allowed registration time for today has ended.'
       ));
+    }
+  }
+
+  if (String(userSession.role || '').toLowerCase() === 'user') {
+    const contractorName = String(userSession.contractor == null ? '' : userSession.contractor).trim();
+    if (contractorName) {
+      dataToSave.forEach(function (record) {
+        if (!record || typeof record !== 'object') return;
+        record['Transportation Company'] = contractorName;
+      });
     }
   }
 
