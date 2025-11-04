@@ -5315,6 +5315,16 @@ function collectExcelDateCandidates(value) {
         const trimmed = value.trim();
         if (trimmed) {
             const sanitized = trimmed.replace(/^'+/, '').replace(/"/g, '');
+
+            const numericMatch = sanitized.match(/^\d+(?:\.\d+)?$/);
+            if (numericMatch) {
+                const serialValue = Number.parseFloat(numericMatch[0]);
+                if (Number.isFinite(serialValue)) {
+                    const millis = Math.round((serialValue - 25569) * 86400 * 1000);
+                    addCandidate(new Date(millis), 'serialString');
+                }
+            }
+
             const digitParts = sanitized.match(/(\d{1,4})/g);
 
             if (digitParts && digitParts.length === 3) {
