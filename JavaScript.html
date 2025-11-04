@@ -2921,6 +2921,24 @@ function validateAndTransformData(dataRows) {
     const tomorrow = addVietnamDays(today, 1);
     const todayStr = getFormattedDate(today);
     const tomorrowStr = getFormattedDate(tomorrow);
+    const todayParts = getVietnamDateParts(today);
+    const todayUtcDate = todayParts
+        ? createUtcDate(
+            Number.parseInt(todayParts.year, 10),
+            Number.parseInt(todayParts.month, 10),
+            Number.parseInt(todayParts.day, 10)
+        )
+        : null;
+    const tomorrowParts = getVietnamDateParts(tomorrow);
+    const tomorrowUtcDate = tomorrowParts
+        ? createUtcDate(
+            Number.parseInt(tomorrowParts.year, 10),
+            Number.parseInt(tomorrowParts.month, 10),
+            Number.parseInt(tomorrowParts.day, 10)
+        )
+        : null;
+    const todayKey = todayUtcDate ? toUtcDateKey(todayUtcDate) : '';
+    const tomorrowKey = tomorrowUtcDate ? toUtcDateKey(tomorrowUtcDate) : '';
     const nowParts = getVietnamDateParts(nowVietnam);
     const currentHour = nowParts && nowParts.hour ? parseInt(nowParts.hour, 10) : nowVietnam.getHours();
     const currentMinute = nowParts && nowParts.minute ? parseInt(nowParts.minute, 10) : nowVietnam.getMinutes();
@@ -2934,8 +2952,9 @@ function validateAndTransformData(dataRows) {
     const allowedCountries = ['Vietnam', 'Laos'];
     const isAdmin = isRole('admin');
     const isUserRole = isRole('user');
-    const userAllowsToday = isUserRole && currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 11 * 60;
-    const userAllowsTomorrow = isUserRole && currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 16 * 60;
+    const status = latestRegistrationStatus || {};
+    const userAllowsToday    = isUserRole && !!status.allowToday;
+    const userAllowsTomorrow = isUserRole && !!status.allowTomorrow;
 
     const t = translations[currentLang];
     const formatMessage = (template, replacements = {}) => {
@@ -2998,7 +3017,9 @@ function validateAndTransformData(dataRows) {
             }
         });
 
-        const expectedDateForParsing = (!isAdmin && isUserRole && !userAllowsToday && userAllowsTomorrow) ? tomorrow : null;
+        const expectedDateForParsing = (!isAdmin && isUserRole && !userAllowsToday && userAllowsTomorrow)
+            ? tomorrowUtcDate
+            : null;
         const dateParseResult = parseExcelDateDetailed(record['Register Date'], {
             expectedDate: expectedDateForParsing,
             strictAmbiguity: isUserRole,
@@ -3016,27 +3037,39 @@ function validateAndTransformData(dataRows) {
             }
         } else {
             const dateStr = getFormattedDate(dateParseResult.date);
-            const isTomorrow = dateStr === tomorrowStr;
+            const parsedDateKey = toUtcDateKey(dateParseResult.date);
+            const isTomorrow = parsedDateKey && parsedDateKey === tomorrowKey;
 
             if (isUserRole) {
                 const allowedDates = [];
-                if (userAllowsToday) allowedDates.push(todayStr);
-                if (userAllowsTomorrow) allowedDates.push(tomorrowStr);
+                const allowedDateKeys = [];
+                if (userAllowsToday) {
+                    allowedDates.push(todayStr);
+                    if (todayKey) allowedDateKeys.push(todayKey);
+                }
+                if (userAllowsTomorrow) {
+                    allowedDates.push(tomorrowStr);
+                    if (tomorrowKey) allowedDateKeys.push(tomorrowKey);
+                }
 
                 if (!allowedDates.length) {
                     appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
-                } else if (!allowedDates.includes(dateStr)) {
-                    const joinWord = t.register_date_join_word || 'or';
-                    const allowedText = allowedDates.join(` ${joinWord} `);
-                    const template = allowedDates.length > 1
-                        ? (t.validation_only_today_or_tomorrow || "- Cột '{field}' chỉ chấp nhận {dates}.")
-                        : (t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.");
-                    appendError('Register Date', template, { field: columnNames['Register Date'], dates: allowedText });
+                } else {
+                    const matchesKey = parsedDateKey && allowedDateKeys.includes(parsedDateKey);
+                    const matchesString = allowedDates.includes(dateStr);
+                    if (!matchesKey && !matchesString) {
+                        const joinWord = t.register_date_join_word || 'or';
+                        const allowedText = allowedDates.join(` ${joinWord} `);
+                        const template = allowedDates.length > 1
+                            ? (t.validation_only_today_or_tomorrow || "- Cột '{field}' chỉ chấp nhận {dates}.")
+                            : (t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.");
+                        appendError('Register Date', template, { field: columnNames['Register Date'], dates: allowedText });
+                    }
                 }
                 record['Register Date'] = dateStr;
             } else {
                 if (!isAdmin) {
-                    const withinWindow = currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 16 * 60;
+                    const withinWindow = currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 23 * 60;
                     if (withinWindow && !isTomorrow) {
                         appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
                     }
@@ -5184,9 +5217,28 @@ function addVietnamDays(date, days) {
     if (!(date instanceof Date) || isNaN(date) || !Number.isFinite(days)) {
         return new Date(NaN);
     }
-    const result = new Date(date.getTime());
-    result.setUTCDate(result.getUTCDate() + days);
-    return result;
+
+    const offsetDays = Number(days);
+    const parts = getVietnamDateParts(date);
+    if (!parts) {
+        return new Date(NaN);
+    }
+
+    const baseDate = createUtcDate(
+        Number.parseInt(parts.year, 10),
+        Number.parseInt(parts.month, 10),
+        Number.parseInt(parts.day, 10)
+    );
+
+    if (!baseDate) {
+        return new Date(NaN);
+    }
+
+    if (offsetDays !== 0) {
+        baseDate.setUTCDate(baseDate.getUTCDate() + offsetDays);
+    }
+
+    return baseDate;
 }
 
 function getVietnamDateParts(date) {
