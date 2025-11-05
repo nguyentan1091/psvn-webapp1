@@ -3069,7 +3069,7 @@ function validateAndTransformData(dataRows) {
                 record['Register Date'] = dateStr;
             } else {
                 if (!isAdmin) {
-                    const withinWindow = currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 23 * 60;
+                    const withinWindow = currentMinutesTotal >= 7 * 60 && currentMinutesTotal < 16 * 60;
                     if (withinWindow && !isTomorrow) {
                         appendError('Register Date', t.validation_only_tomorrow || "- Cột '{field}' chỉ chấp nhận ngày mai.", { field: columnNames['Register Date'] });
                     }
