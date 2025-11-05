@@ -1635,7 +1635,7 @@ function checkRegistrationTime() {
   const currentTimeInMinutes = hour * 60 + minute;
   const morningOpen = 7 * 60;
   const todayCutoff = 11 * 60;
-  const afternoonClose = 20 * 60;
+  const afternoonClose = 16 * 60;
 
   const status = {
     isOpen: false,
