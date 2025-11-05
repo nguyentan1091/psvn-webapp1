@@ -1089,7 +1089,8 @@ function formatRowForClient_(rowArray, headers) {
       continue;
     }
     if (key === 'Time' || key === 'Time In' || key === 'Time Out' || key === 'Changed Time') {
-      out[key] = formatTimeForClient(val);
+      const fullDateTime = formatSupabaseDateTime_(val);
+      out[key] = fullDateTime || formatTimeForClient(val);
       continue;
     }
     if (key === 'Updated At') {
