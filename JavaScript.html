@@ -3542,7 +3542,16 @@ function initViewPage() {
     { data: 'Subcontractor', title: t.col_subcontractor },
     { data: 'Vehicle Status', title: t.col_vehicle_status },
     { data: 'Registration Status', title: t.col_registration_status },
-    { data: 'Time', title: t.col_time }
+    {
+      data: 'Time',
+      title: t.col_time,
+      render: (data, type) => {
+        if (type === 'display' || type === 'filter') {
+          return formatDateTimeForDisplay(data);
+        }
+        return data;
+      }
+    }
   ];
 
   const columns = showSelectActions
@@ -7316,6 +7325,50 @@ function initWeighResultPage() {
 
   $('#wr-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrResultTable, 'WeighResults'); });
   if (isAdmin) $('#wr-unknown-export').off('click').on('click', function(e){ e.preventDefault(); exportWrTable(wrUnknownTable, 'UnknownVehicles'); });
+}
+
+function formatDateTimeForDisplay(value) {
+  if (value == null || value === '') return '';
+
+  let date = null;
+  if (value instanceof Date && !isNaN(value)) {
+    date = value;
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    date = new Date(value);
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      const direct = new Date(trimmed);
+      if (!isNaN(direct)) {
+        date = direct;
+      } else {
+        let normalized = trimmed.replace(' ', 'T');
+        if (/([+-]\d{2})(\d{2})$/.test(normalized)) {
+          normalized = normalized.replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+        } else if (/([+-]\d{2})$/.test(normalized)) {
+          normalized = `${normalized}:00`;
+        }
+        const parsed = new Date(normalized);
+        if (!isNaN(parsed)) {
+          date = parsed;
+        }
+      }
+    }
+  }
+
+  if (!(date instanceof Date) || isNaN(date)) {
+    return String(value);
+  }
+
+  const parts = getVietnamDateParts(date);
+  if (!parts) return '';
+  const day = parts.day || String(date.getDate()).padStart(2, '0');
+  const month = parts.month || String(date.getMonth() + 1).padStart(2, '0');
+  const year = parts.year || String(date.getFullYear());
+  const hour = parts.hour || String(date.getHours()).padStart(2, '0');
+  const minute = parts.minute || String(date.getMinutes()).padStart(2, '0');
+  const second = parts.second || String(date.getSeconds()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hour}:${minute}:${second}`;
 }
 
 function formatTimeForDisplay(value) {
