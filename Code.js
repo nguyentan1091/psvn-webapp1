@@ -1761,6 +1761,8 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
   const cachedResult = cacheKey ? safeScriptCacheGetJSON_(cacheKey) : null;
   if (cachedResult) {
+    const requestedDraw = parseInt(params.draw, 10);
+    cachedResult.draw = isNaN(requestedDraw) ? (cachedResult.draw || 0) : requestedDraw;
     return cachedResult;
   }
 
@@ -3881,7 +3883,6 @@ function buildServerSideCacheKey_(sheetName, params, userRole) {
       sheet: sheetName,
       version: version,
       role: userRole || '',
-      draw: params.draw || '',
       start: params.start || 0,
       length: params.length || 0,
       dateString: params.dateString || '',
