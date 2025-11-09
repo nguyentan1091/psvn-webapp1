@@ -233,6 +233,33 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'Time': 'time'
 };
 
+function getVehicleRegistrationSearchColumns_() {
+  if (typeof VEHICLE_REGISTRATION_SEARCH_COLUMNS !== 'undefined' && Array.isArray(VEHICLE_REGISTRATION_SEARCH_COLUMNS)) {
+    return VEHICLE_REGISTRATION_SEARCH_COLUMNS;
+  }
+  return [
+    'register_date::text',
+    'contract_no',
+    'truck_plate',
+    'country',
+    'wheel::text',
+    'trailer_plate',
+    'truck_weight::text',
+    'pay_load::text',
+    'container_no1',
+    'container_no2',
+    'driver_name',
+    'id_passport',
+    'phone_number',
+    'destination_est',
+    'transportation_company',
+    'subcontractor',
+    'vehicle_status',
+    'registration_status',
+    'time::text'
+  ];
+}
+
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
   if (!path) return base;
@@ -817,6 +844,22 @@ function sanitizeHistorySearchTerm_(value) {
 }
 
 
+function buildSupabaseSearchOr_(columns, searchValue) {
+  if (!Array.isArray(columns) || !columns.length) return '';
+  const sanitized = sanitizeHistorySearchTerm_(searchValue);
+  if (!sanitized) return '';
+  const likeValue = `%${sanitized}%`;
+  const conditions = [];
+  for (let i = 0; i < columns.length; i++) {
+    const column = String(columns[i] || '').trim();
+    if (!column) continue;
+    conditions.push(`${column}.ilike.${likeValue}`);
+  }
+  if (!conditions.length) return '';
+  return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
+}
+
+
 function normalizeToUtcDate_(date) {
   if (Object.prototype.toString.call(date) !== '[object Date]' || isNaN(date)) return null;
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -1170,6 +1213,57 @@ const TRUCK_LIST_TOTAL_COLUMN_MAP = {
   'Updated By': 'updated_by'
 };
 
+const TRUCK_LIST_TOTAL_SEARCH_COLUMNS = [
+  'truck_plate',
+  'country',
+  'wheel::text',
+  'trailer_plate',
+  'truck_weight::text',
+  'pay_load::text',
+  'container_no1',
+  'container_no2',
+  'driver_name',
+  'id_passport',
+  'phone_number',
+  'transportation_company',
+  'subcontractor',
+  'vehicle_status',
+  'activity_status',
+  'register_date::text',
+  'time::text',
+  'created_by',
+  'updated_at::text',
+  'updated_by'
+];
+
+function getTruckListTotalSearchColumns_() {
+  if (typeof TRUCK_LIST_TOTAL_SEARCH_COLUMNS !== 'undefined' && Array.isArray(TRUCK_LIST_TOTAL_SEARCH_COLUMNS)) {
+    return TRUCK_LIST_TOTAL_SEARCH_COLUMNS;
+  }
+  return [
+    'truck_plate',
+    'country',
+    'wheel::text',
+    'trailer_plate',
+    'truck_weight::text',
+    'pay_load::text',
+    'container_no1',
+    'container_no2',
+    'driver_name',
+    'id_passport',
+    'phone_number',
+    'transportation_company',
+    'subcontractor',
+    'vehicle_status',
+    'activity_status',
+    'register_date::text',
+    'time::text',
+    'created_by',
+    'updated_at::text',
+    'updated_by'
+  ];
+}
+
 function coerceNumericRegisterFields_(record) {
   if (!record) return;
   NUMERIC_REGISTER_FIELDS.forEach(field => {
@@ -1188,6 +1282,17 @@ function coerceNumericRegisterFields_(record) {
 // KHỞI TẠO WEB APP
 // =================================================================
 function doGet(e) {
+// Chạy 1 lần duy nhất khi webapp khởi động
+  try {
+    const lock = LockService.getScriptLock();
+    if (lock.tryLock(10000)) { // Thử khóa trong 10s
+      ensureSupervisionAccount_(); // Chỉ chạy hàm này 1 lần
+      lock.releaseLock();
+    }
+  } catch (e) {
+    Logger.log('ensureSupervisionAccount_ startup error: ' + e);
+  }
+
   return HtmlService.createTemplateFromFile('Index')
       .evaluate()
       .setTitle('Hệ Thống Quản Lý Xe')
@@ -1784,98 +1889,123 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
 }
 
 function processVehicleRegistrationsServerSide_(params, headers, userSession, defaultSortColumnIndex, includeSummary) {
+  params = params || {};
+  const draw = parseInt(params.draw, 10) || 0;
+  const start = Math.max(parseInt(params.start, 10) || 0, 0);
+  let length = parseInt(params.length, 10);
+  if (!isFinite(length) || length <= 0) length = 50;
+
   const userRole = String(userSession.role || '').toLowerCase();
 
-  const filters = [];
+  const filterParts = [];
   const dateFilter = params.dateString ? String(params.dateString).trim() : '';
   if (dateFilter) {
     const iso = toSupabaseDateString_(dateFilter);
-    if (iso) filters.push('register_date=eq.' + encodeURIComponent(iso));
-    else return buildEmptyResult_(params.draw, includeSummary);
+    if (iso) filterParts.push('register_date=eq.' + encodeURIComponent(iso));
+    else return buildEmptyResult_(draw, includeSummary);
   }
 
   if (params.contractNo) {
     const contract = String(params.contractNo).replace(/^'+/, '').trim();
-    if (contract) filters.push('contract_no=eq.' + encodeURIComponent(contract));
+    if (contract) filterParts.push('contract_no=eq.' + encodeURIComponent(contract));
   }
 
   if (userRole === 'user') {
     const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
-    if (!contractor) return buildEmptyResult_(params.draw, includeSummary);
-    filters.push('transportation_company=eq.' + encodeURIComponent(contractor));
+    if (!contractor) return buildEmptyResult_(draw, includeSummary);
+    filterParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (userRole === 'user-supervision') {
-    filters.push('registration_status=eq.' + encodeURIComponent('Approved'));
+    filterParts.push('registration_status=eq.' + encodeURIComponent('Approved'));
   }
 
-  const queryParams = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(',')), 'order=time.desc.nullslast'];
-  Array.prototype.push.apply(queryParams, filters);
-  const query = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + queryParams.join('&');
+  const searchValue = params.search && params.search.value ? params.search.value : '';
+  const searchColumns = getVehicleRegistrationSearchColumns_();
+  const searchClause = buildSupabaseSearchOr_(searchColumns, searchValue);
 
-  const response = supabaseRequest_(query) || [];
-  if (!Array.isArray(response) || !response.length) {
-    return buildEmptyResult_(params.draw, includeSummary);
+  let sortColumn = defaultSortColumnIndex >= 0 ? VEHICLE_REGISTRATION_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
+  let sortDir = 'desc';
+  if (Array.isArray(params.order) && params.order.length) {
+    const orderInfo = params.order[0] || {};
+    const idx = parseInt(orderInfo.column, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < headers.length) {
+      const mapped = VEHICLE_REGISTRATION_COLUMN_MAP[headers[idx]];
+      if (mapped) sortColumn = mapped;
+    }
+    if (String(orderInfo.dir).toLowerCase() === 'asc') {
+      sortDir = 'asc';
+    }
   }
+  if (!sortColumn) sortColumn = 'time';
 
-  const allData = response.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
-  let filteredData = allData.slice();
+  const filteredParts = filterParts.slice();
+  if (searchClause) filteredParts.push(searchClause);
 
-  if (params.search && params.search.value) {
-    const searchValue = params.search.value.toLowerCase();
-    filteredData = filteredData.filter(function (row) {
-      return row.some(function (cell) {
-        return String(cell).toLowerCase().includes(searchValue);
-      });
-    });
-  }
+  const dataQueryParts = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))]
+    .concat(filteredParts);
+  dataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+  dataQueryParts.push('limit=' + Math.max(length, 10));
+  dataQueryParts.push('offset=' + start);
 
-  const recordsTotal = allData.length;
-  const recordsFiltered = filteredData.length;
+  const response = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + dataQueryParts.join('&'), {
+    headers: { Prefer: 'count=exact' },
+    returnResponse: true
+  });
+
+  const rows = Array.isArray(response.data) ? response.data : [];
+  const filteredTotal = parseContentRangeTotal_(response.headers);
+  const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
+
+  const totalQueryParts = ['select=' + encodeURIComponent('id')].concat(filterParts);
+  totalQueryParts.push('limit=1');
+  const totalResponse = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + totalQueryParts.join('&'), {
+    headers: { Prefer: 'count=exact' },
+    returnResponse: true
+  });
+  const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
+  const recordsTotal = totalFromHeader != null
+    ? totalFromHeader
+    : (Array.isArray(totalResponse.data) ? totalResponse.data.length : recordsFiltered);
+
+  const mappedRows = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
+  const data = mappedRows.map(function (row) { return formatRowForClient_(row, headers); });
 
   let summary = null;
   if (includeSummary) {
-    const statusIdx = headers.indexOf('Registration Status');
-    if (statusIdx !== -1) {
-      let pending = 0;
-      let approved = 0;
-      for (var i = 0; i < filteredData.length; i++) {
-        const status = String(filteredData[i][statusIdx] || '').trim().toLowerCase();
-        if (status === 'pending approval') pending++;
-        else if (status === 'approved') approved++;
+    const summaryFilterParts = filterParts.slice();
+    if (searchClause) summaryFilterParts.push(searchClause);
+    const summaryQueryParts = ['select=' + encodeURIComponent('registration_status,count:id')]
+      .concat(summaryFilterParts);
+    summaryQueryParts.push('group=registration_status');
+
+    let pending = 0;
+    let approved = 0;
+    let total = 0;
+    try {
+      const summaryRows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + summaryQueryParts.join('&')) || [];
+      for (let i = 0; i < summaryRows.length; i++) {
+        const row = summaryRows[i];
+        const status = String(row && row.registration_status || '').trim().toLowerCase();
+        const count = parseInt(row && row.count, 10);
+        const safeCount = isNaN(count) ? 0 : count;
+        total += safeCount;
+        if (status === 'pending approval') pending += safeCount;
+        else if (status === 'approved') approved += safeCount;
       }
-      summary = { total: filteredData.length, pending: pending, approved: approved };
+    } catch (summaryError) {
+      Logger.log('processVehicleRegistrationsServerSide_ summary error: ' + summaryError);
     }
+    summary = { total: total || recordsFiltered, pending: pending, approved: approved };
   }
-
-  if (params.order && params.order.length > 0) {
-    const orderInfo = params.order[0];
-    const columnIndex = orderInfo.column;
-    const direction = orderInfo.dir === 'asc' ? 1 : -1;
-    filteredData.sort(function (a, b) {
-      const valA = a[columnIndex];
-      const valB = b[columnIndex];
-      if (valA < valB) return -1 * direction;
-      if (valA > valB) return 1 * direction;
-      return 0;
-    });
-  } else if (defaultSortColumnIndex !== -1) {
-    filteredData.sort(function (a, b) {
-      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
-    });
-  }
-
-  const start = Number(params.start || 0);
-  const length = Number(params.length || filteredData.length);
-  const paginatedData = filteredData.slice(start, start + length);
-  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
 
   return {
-    draw: parseInt(params.draw, 10),
+    draw: draw,
     recordsTotal: recordsTotal,
     recordsFiltered: recordsFiltered,
     data: data,
     summary: summary
   };
 }
+
 
 function getRegisteredDataServerSide(params) {
   return processServerSide(params, VEHICLE_REGISTRATION_CACHE_KEY, HEADERS_REGISTER, HEADERS_REGISTER.indexOf('Time'));
@@ -1916,78 +2046,87 @@ function getRegisteredContractOptions(filter, sessionToken) {
 
 function processTruckListTotalServerSide_(params, headers, userSession, defaultSortColumnIndex) {
   params = params || {};
+  const draw = parseInt(params.draw, 10) || 0;
+  const start = Math.max(parseInt(params.start, 10) || 0, 0);
+  let length = parseInt(params.length, 10);
+  if (!isFinite(length) || length <= 0) length = 50;
+
   const userRole = String(userSession.role || '').toLowerCase();
-  const start = Number(params.start || 0);
-  const length = Number(params.length || 0);
 
-  const queryParts = [
-    'select=' + encodeURIComponent(TRUCK_LIST_TOTAL_SELECT_FIELDS.join(',')),
-    'order=register_date.desc.nullslast',
-    'order=time.desc.nullslast'
-  ];
-
-  let rows = fetchAllSupabaseRows_(
-    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
-    queryParts,
-    1000
-  );
-  if (!Array.isArray(rows)) rows = [];
-
+  const filterParts = [];
   if (userRole === 'user') {
     const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
     if (!contractor) {
-      rows = [];
-    } else {
-      rows = rows.filter(function (row) {
-        const company = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-        const activity = String(row.activity_status == null ? '' : row.activity_status).trim().toLowerCase();
-        return company === contractor && activity === 'active';
-      });
+      return {
+        draw: draw,
+        recordsTotal: 0,
+        recordsFiltered: 0,
+        data: []
+      };
+    }
+    filterParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
+    filterParts.push('activity_status=in.(Active,active)');
+  }
+
+  const searchValue = params.search && params.search.value ? params.search.value : '';
+  const searchColumns = getTruckListTotalSearchColumns_();
+  const searchClause = buildSupabaseSearchOr_(searchColumns, searchValue);
+
+  let sortColumn = defaultSortColumnIndex >= 0 ? TRUCK_LIST_TOTAL_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
+  let sortDir = 'desc';
+  if (Array.isArray(params.order) && params.order.length) {
+    const orderInfo = params.order[0] || {};
+    const idx = parseInt(orderInfo.column, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < headers.length) {
+      const mapped = TRUCK_LIST_TOTAL_COLUMN_MAP[headers[idx]];
+      if (mapped) sortColumn = mapped;
+    }
+    if (String(orderInfo.dir).toLowerCase() === 'asc') {
+      sortDir = 'asc';
     }
   }
+  if (!sortColumn) sortColumn = 'register_date';
 
-  const allData = rows.map(function (row) { return mapTruckListRowToArray_(row, headers); });
-  let filteredData = allData.slice();
+  const filteredParts = filterParts.slice();
+  if (searchClause) filteredParts.push(searchClause);
 
-  if (params.search && params.search.value) {
-    const searchValue = params.search.value.toLowerCase();
-    filteredData = filteredData.filter(function (row) {
-      return row.some(function (cell) {
-        return String(cell).toLowerCase().includes(searchValue);
-      });
-    });
-  }
+  const dataQueryParts = ['select=' + encodeURIComponent(TRUCK_LIST_TOTAL_SELECT_FIELDS.join(','))]
+    .concat(filteredParts);
+  dataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+  dataQueryParts.push('limit=' + Math.max(length, 10));
+  dataQueryParts.push('offset=' + start);
 
-  const recordsTotal = allData.length;
-  const recordsFiltered = filteredData.length;
+  const response = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + dataQueryParts.join('&'), {
+    headers: { Prefer: 'count=exact' },
+    returnResponse: true
+  });
 
-  if (params.order && params.order.length > 0) {
-    const orderInfo = params.order[0];
-    const columnIndex = orderInfo.column;
-    const direction = orderInfo.dir === 'asc' ? 1 : -1;
-    filteredData.sort(function (a, b) {
-      const valA = a[columnIndex];
-      const valB = b[columnIndex];
-      if (valA < valB) return -1 * direction;
-      if (valA > valB) return 1 * direction;
-      return 0;
-    });
-  } else if (defaultSortColumnIndex !== -1) {
-    filteredData.sort(function (a, b) {
-      return (a[defaultSortColumnIndex] < b[defaultSortColumnIndex] ? 1 : -1);
-    });
-  }
+  const rows = Array.isArray(response.data) ? response.data : [];
+  const filteredTotal = parseContentRangeTotal_(response.headers);
+  const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
 
-  const paginatedData = filteredData.slice(start, start + (length > 0 ? length : filteredData.length));
-  const data = paginatedData.map(function (row) { return formatRowForClient_(row, headers); });
+  const totalQueryParts = ['select=' + encodeURIComponent('id')].concat(filterParts);
+  totalQueryParts.push('limit=1');
+  const totalResponse = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalQueryParts.join('&'), {
+    headers: { Prefer: 'count=exact' },
+    returnResponse: true
+  });
+  const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
+  const recordsTotal = totalFromHeader != null
+    ? totalFromHeader
+    : (Array.isArray(totalResponse.data) ? totalResponse.data.length : recordsFiltered);
+
+  const mappedRows = rows.map(function (row) { return mapTruckListRowToArray_(row, headers); });
+  const data = mappedRows.map(function (row) { return formatRowForClient_(row, headers); });
 
   return {
-    draw: parseInt(params.draw, 10),
+    draw: draw,
     recordsTotal: recordsTotal,
     recordsFiltered: recordsFiltered,
     data: data
   };
 }
+
 
 function getTotalListDataServerSide(params) {
   const userSession = validateSession(params && params.sessionToken);
@@ -4057,7 +4196,6 @@ function validateSession(sessionToken) {
 // ==========================
 function getUserSession(sessionToken) {
   try {
-    ensureSupervisionAccount_();
   } catch (e) {
     Logger.log('ensureSupervisionAccount_ wrapper error: ' + e);
   }
