@@ -372,7 +372,7 @@ function getCleanErrorMessage(error) {
 function isTransientError(error) {
     const raw = getRawErrorMessage(error);
     if (!raw) return false;
-    return /(http\s*503|service unavailable|networkerror|connection failure|server error)/i.test(raw);
+    return /(http\s*503|service unavailable|networkerror|connection failure|server error|server is busy)/i.test(raw);
 }
 
 function callServerWithRetry(methodName, args = [], options = {}) {
@@ -3206,6 +3206,57 @@ function initializeDataTable(config) {
         $(`#${tableId}`).DataTable().destroy();
     }
 
+    const pendingState = {
+        active: false,
+        queued: null
+    };
+
+    function executeAjax(params, dtCallback) {
+        const drawValue = params && params.draw;
+
+        const finalize = () => {
+            pendingState.active = false;
+            if (pendingState.queued) {
+                const next = pendingState.queued;
+                pendingState.queued = null;
+                executeAjax(next.params, next.callback);
+            }
+        };
+
+        pendingState.active = true;
+
+        const handleSuccess = data => {
+            try {
+                dtCallback(data);
+            } finally {
+                finalize();
+            }
+        };
+
+        const handleFailure = (err, meta) => {
+            try {
+                const handled = meta && meta.handled === true;
+                if (!handled) {
+                    showError(err);
+                }
+                dtCallback({
+                    draw: drawValue || 0,
+                    recordsTotal: 0,
+                    recordsFiltered: 0,
+                    data: []
+                });
+            } finally {
+                finalize();
+            }
+        };
+
+        try {
+            ajaxFunction(params, handleSuccess, handleFailure);
+        } catch (syncErr) {
+            handleFailure(syncErr, { handled: false });
+        }
+    }
+
     const options = {
         processing: true,
         serverSide: true,
@@ -3219,7 +3270,12 @@ function initializeDataTable(config) {
                 sessionToken: userSession.token,
                 ...getExtraParams()
             };
-            ajaxFunction(params, callback);
+
+            if (pendingState.active) {
+                pendingState.queued = { params, callback };
+            } else {
+                executeAjax(params, callback);
+            }
         },
         columns: columns,
         paging: true,
@@ -3566,11 +3622,17 @@ function initViewPage() {
   registeredVehicleTable = initializeDataTable({
     tableId: 'registeredVehicleTable',
     columns: columns,
-    ajaxFunction: (params, callback) => {
-      google.script.run
-        .withSuccessHandler(json => callback(json))
-        .withFailureHandler(showError)
-        .getRegisteredDataServerSide(params);
+    ajaxFunction: (params, callback, onError) => {
+      callServerWithRetry('getRegisteredDataServerSide', [params], {
+        onSuccess: json => callback(json),
+        onFailure: err => {
+          if (typeof onError === 'function') {
+            onError(err, { handled: false });
+          } else {
+            showError(err);
+          }
+        }
+      });
     },
     getExtraParams: () => ({
       dateString: getSelectedDateString(),
@@ -4050,11 +4112,17 @@ function initLoginHistoryPage() {
   loginHistoryTable = initializeDataTable({
     tableId: 'login-history-table',
     columns,
-    ajaxFunction: (params, callback) => {
-      google.script.run
-        .withSuccessHandler(json => callback(json))
-        .withFailureHandler(showError)
-        .getLoginHistoryServerSide(params);
+    ajaxFunction: (params, callback, onError) => {
+      callServerWithRetry('getLoginHistoryServerSide', [params], {
+        onSuccess: json => callback(json),
+        onFailure: err => {
+          if (typeof onError === 'function') {
+            onError(err, { handled: false });
+          } else {
+            showError(err);
+          }
+        }
+      });
     },
     getExtraParams: () => ({ filters: getLoginHistoryFilters() }),
     searchControl: '#login-history-search',
@@ -4135,11 +4203,17 @@ function initVehicleHistoryPage() {
   vehicleHistoryTable = initializeDataTable({
     tableId: 'vehicle-history-table',
     columns,
-    ajaxFunction: (params, callback) => {
-      google.script.run
-        .withSuccessHandler(json => callback(json))
-        .withFailureHandler(showError)
-        .getVehicleRegistrationHistoryServerSide(params);
+    ajaxFunction: (params, callback, onError) => {
+      callServerWithRetry('getVehicleRegistrationHistoryServerSide', [params], {
+        onSuccess: json => callback(json),
+        onFailure: err => {
+          if (typeof onError === 'function') {
+            onError(err, { handled: false });
+          } else {
+            showError(err);
+          }
+        }
+      });
     },
     getExtraParams: () => ({ filters: getVehicleHistoryFilters() }),
     searchControl: '#vehicle-history-search',
@@ -5570,7 +5644,7 @@ function showError(error) {
   let raw = getRawErrorMessage(error);
   if (!raw) raw = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
 
-  const serverBusyRegex = /(http\s*503|service unavailable|networkerror|connection failure)/i;
+  const serverBusyRegex = /(http\s*503|service unavailable|networkerror|connection failure|server is busy)/i;
   const isServerBusy = serverBusyRegex.test(raw);
 
   if (!isServerBusy) {
