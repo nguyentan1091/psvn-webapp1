@@ -1786,6 +1786,14 @@ function checkRegistrationTime() {
   return status;
 }
 
+function getRegisterPageInitData(sessionToken) {
+  return {
+    registrationStatus: checkRegistrationTime(),
+    transportCompanies: getTransportCompanies(),
+    activeContractNos: getActiveContractNos(sessionToken)
+  };
+}
+
 function getVietnamCurrentTime() {
   const timezone = 'Asia/Ho_Chi_Minh';
   const now = new Date();
