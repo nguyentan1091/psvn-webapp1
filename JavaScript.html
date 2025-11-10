@@ -7326,7 +7326,13 @@ function chunkWrIds(ids, size) {
 function initWeighResultPage() {
   const role = getUserRole();
   const isAdmin = role === 'admin';
-  const isAdminXppl = role === 'admin-xppl';
+
+  const $statusSummaryColumns = $('#wr-summary-cards .wr-summary-status-card');
+  if (isAdmin) {
+    $statusSummaryColumns.removeClass('d-none');
+  } else {
+    $statusSummaryColumns.addClass('d-none');
+  }
 
   $('#wr-unknown-btn').toggleClass('d-none', !isAdmin);
   $('#wr-delete').toggleClass('d-none', !isAdmin);
