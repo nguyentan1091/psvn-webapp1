@@ -2025,53 +2025,83 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   dataQueryParts.push('limit=' + Math.max(length, 10));
   dataQueryParts.push('offset=' + start);
 
-  const response = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + dataQueryParts.join('&'), {
-    headers: { Prefer: 'count=exact' },
-    returnResponse: true
-  });
+  const dataPath = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + dataQueryParts.join('&');
+  const totalQueryParts = ['select=' + encodeURIComponent('count:id')].concat(filterParts);
+  const totalPath = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + totalQueryParts.join('&');
 
-  const rows = Array.isArray(response.data) ? response.data : [];
-  const filteredTotal = parseContentRangeTotal_(response.headers);
+  const batchRequests = [
+    { path: dataPath, headers: { Prefer: 'count=exact' } },
+    { path: totalPath }
+  ];
+
+  let summaryQueryParts = null;
+  if (includeSummary) {
+    summaryQueryParts = ['select=' + encodeURIComponent('registration_status,count:id')]
+      .concat(filterParts.slice());
+    if (searchClause) summaryQueryParts.push(searchClause);
+    summaryQueryParts.push('group=registration_status');
+    batchRequests.push({ path: SUPABASE_VEHICLE_REG_ENDPOINT + '?' + summaryQueryParts.join('&') });
+  }
+
+  let dataResponse;
+  let totalResponse;
+  let summaryResponse = null;
+
+  try {
+    const batchResponses = executeSupabaseBatchRequests_(batchRequests);
+    dataResponse = batchResponses[0];
+    totalResponse = batchResponses[1];
+    if (includeSummary) {
+      summaryResponse = batchResponses[2];
+    }
+  } catch (batchError) {
+    Logger.log('getRegisteredDataServerSide batch error: ' + batchError);
+    dataResponse = supabaseRequest_(dataPath, {
+      headers: { Prefer: 'count=exact' },
+      returnResponse: true
+    });
+    totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
+    if (includeSummary && summaryQueryParts) {
+      try {
+        summaryResponse = { data: supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + summaryQueryParts.join('&')) || [] };
+      } catch (summaryError) {
+        Logger.log('getRegisteredDataServerSide summary fallback error: ' + summaryError);
+        summaryResponse = { data: [] };
+      }
+    }
+  }
+
+  const rows = Array.isArray(dataResponse && dataResponse.data) ? dataResponse.data : [];
+  const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
   const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
 
-  const totalQueryParts = ['select=' + encodeURIComponent('id')].concat(filterParts);
-  totalQueryParts.push('limit=1');
-  const totalResponse = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + totalQueryParts.join('&'), {
-    headers: { Prefer: 'count=exact' },
-    returnResponse: true
-  });
-  const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
-  const recordsTotal = totalFromHeader != null
-    ? totalFromHeader
-    : (Array.isArray(totalResponse.data) ? totalResponse.data.length : recordsFiltered);
+  let recordsTotal = recordsFiltered;
+  const totalData = Array.isArray(totalResponse && totalResponse.data) ? totalResponse.data : [];
+  if (totalData.length) {
+    const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
+    const parsedCount = rawCount == null ? NaN : Number(rawCount);
+    if (!isNaN(parsedCount)) {
+      recordsTotal = parsedCount;
+    }
+  }
 
   const mappedRows = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
   const data = mappedRows.map(function (row) { return formatRowForClient_(row, headers); });
 
   let summary = null;
   if (includeSummary) {
-    const summaryFilterParts = filterParts.slice();
-    if (searchClause) summaryFilterParts.push(searchClause);
-    const summaryQueryParts = ['select=' + encodeURIComponent('registration_status,count:id')]
-      .concat(summaryFilterParts);
-    summaryQueryParts.push('group=registration_status');
-
     let pending = 0;
     let approved = 0;
     let total = 0;
-    try {
-      const summaryRows = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + summaryQueryParts.join('&')) || [];
-      for (let i = 0; i < summaryRows.length; i++) {
-        const row = summaryRows[i];
-        const status = String(row && row.registration_status || '').trim().toLowerCase();
-        const count = parseInt(row && row.count, 10);
-        const safeCount = isNaN(count) ? 0 : count;
-        total += safeCount;
-        if (status === 'pending approval') pending += safeCount;
-        else if (status === 'approved') approved += safeCount;
-      }
-    } catch (summaryError) {
-      Logger.log('processVehicleRegistrationsServerSide_ summary error: ' + summaryError);
+    const summaryRows = Array.isArray(summaryResponse && summaryResponse.data) ? summaryResponse.data : [];
+    for (let i = 0; i < summaryRows.length; i++) {
+      const row = summaryRows[i];
+      const status = String(row && row.registration_status || '').trim().toLowerCase();
+      const count = Number(row && (row.count != null ? row.count : row.count_id));
+      const safeCount = isNaN(count) ? 0 : count;
+      total += safeCount;
+      if (status === 'pending approval') pending += safeCount;
+      else if (status === 'approved') approved += safeCount;
     }
     summary = { total: total || recordsFiltered, pending: pending, approved: approved };
   }
@@ -2174,25 +2204,42 @@ function processTruckListTotalServerSide_(params, headers, userSession, defaultS
   dataQueryParts.push('limit=' + Math.max(length, 10));
   dataQueryParts.push('offset=' + start);
 
-  const response = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + dataQueryParts.join('&'), {
-    headers: { Prefer: 'count=exact' },
-    returnResponse: true
-  });
+  const dataPath = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + dataQueryParts.join('&');
+  const totalQueryParts = ['select=' + encodeURIComponent('count:id')].concat(filterParts);
+  const totalPath = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalQueryParts.join('&');
 
-  const rows = Array.isArray(response.data) ? response.data : [];
-  const filteredTotal = parseContentRangeTotal_(response.headers);
+  let dataResponse;
+  let totalResponse;
+
+  try {
+    const [dataRes, totalRes] = executeSupabaseBatchRequests_([
+      { path: dataPath, headers: { Prefer: 'count=exact' } },
+      { path: totalPath }
+    ]);
+    dataResponse = dataRes;
+    totalResponse = totalRes;
+  } catch (batchError) {
+    Logger.log('processTruckListTotalServerSide_ batch error: ' + batchError);
+    dataResponse = supabaseRequest_(dataPath, {
+      headers: { Prefer: 'count=exact' },
+      returnResponse: true
+    });
+    totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
+  }
+
+  const rows = Array.isArray(dataResponse && dataResponse.data) ? dataResponse.data : [];
+  const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
   const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
 
-  const totalQueryParts = ['select=' + encodeURIComponent('id')].concat(filterParts);
-  totalQueryParts.push('limit=1');
-  const totalResponse = supabaseRequest_(SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalQueryParts.join('&'), {
-    headers: { Prefer: 'count=exact' },
-    returnResponse: true
-  });
-  const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
-  const recordsTotal = totalFromHeader != null
-    ? totalFromHeader
-    : (Array.isArray(totalResponse.data) ? totalResponse.data.length : recordsFiltered);
+  let recordsTotal = recordsFiltered;
+  const totalData = Array.isArray(totalResponse && totalResponse.data) ? totalResponse.data : [];
+  if (totalData.length) {
+    const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
+    const parsedCount = rawCount == null ? NaN : Number(rawCount);
+    if (!isNaN(parsedCount)) {
+      recordsTotal = parsedCount;
+    }
+  }
 
   const mappedRows = rows.map(function (row) { return mapTruckListRowToArray_(row, headers); });
   const data = mappedRows.map(function (row) { return formatRowForClient_(row, headers); });
@@ -3634,6 +3681,8 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
       : [null];
     const existingKeys = new Set();
     const selectParam = encodeURIComponent(['register_date', 'truck_plate', 'transportation_company'].join(','));
+    const requestBatch = [];
+
     dateChunks.forEach(function (dateChunk) {
       const dateFilter = buildSupabaseInFilter_('register_date', dateChunk);
       if (!dateFilter) return;
@@ -3652,19 +3701,25 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
           query += '&' + filters.join('&');
         }
 
-        const existingRows = supabaseRequest_(query) || [];
-        if (Array.isArray(existingRows)) {
-          existingRows.forEach(function (row) {
-            const dateStr = String(row.register_date || '').trim();
-            const plate = normalizeTruckPlateValue_(row.truck_plate);
-            const company = String(row.transportation_company || '').trim().toUpperCase();
-            if (dateStr && plate && company) {
-              existingKeys.add(`${dateStr}-${plate}-${company}`);
-            }
-          });
-        }
+        requestBatch.push({ path: query });
       });
     });
+
+    if (requestBatch.length) {
+      const batchResults = executeSupabaseBatchGet_(requestBatch, { cacheTtl: SUPABASE_CACHE_TTL_SECONDS });
+      for (let r = 0; r < batchResults.length; r++) {
+        const existingRows = Array.isArray(batchResults[r]) ? batchResults[r] : [];
+        for (let i = 0; i < existingRows.length; i++) {
+          const row = existingRows[i] || {};
+          const dateStr = String(row.register_date || '').trim();
+          const plate = normalizeTruckPlateValue_(row.truck_plate);
+          const company = String(row.transportation_company || '').trim().toUpperCase();
+          if (dateStr && plate && company) {
+            existingKeys.add(`${dateStr}-${plate}-${company}`);
+          }
+        }
+      }
+    }
 
     const seen = new Set();
     const duplicates = [];
@@ -4069,6 +4124,84 @@ function executeSupabaseBatchGet_(requestBatch, options) {
     if (typeof results[i] === 'undefined') {
       results[i] = [];
     }
+  }
+
+  return results;
+}
+
+function executeSupabaseBatchRequests_(requestBatch) {
+  if (!Array.isArray(requestBatch) || !requestBatch.length) return [];
+
+  const fetchRequests = [];
+  const meta = [];
+
+  for (let i = 0; i < requestBatch.length; i++) {
+    const requestInfo = requestBatch[i] || {};
+    const path = String(requestInfo.path || '');
+    if (!path) {
+      fetchRequests.push(null);
+      meta.push({ index: i, skip: true });
+      continue;
+    }
+
+    const method = String(requestInfo.method || 'GET').toUpperCase();
+    if (method !== 'GET') {
+      throw new Error('executeSupabaseBatchRequests_ currently supports only GET requests.');
+    }
+
+    const headers = Object.assign(
+      {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY
+      },
+      requestInfo.headers || {}
+    );
+
+    fetchRequests.push({
+      url: buildSupabaseUrl_(path),
+      method: method,
+      headers: headers,
+      muteHttpExceptions: true
+    });
+
+    meta.push({ index: i, path: path });
+  }
+
+  const activeRequests = fetchRequests.filter(function(req) { return !!req; });
+  const responses = activeRequests.length ? UrlFetchApp.fetchAll(activeRequests) : [];
+  const results = new Array(requestBatch.length);
+  let responseIdx = 0;
+
+  for (let i = 0; i < meta.length; i++) {
+    const info = meta[i];
+    if (info.skip) {
+      results[info.index] = { data: null, status: 200, headers: {} };
+      continue;
+    }
+
+    const response = responses[responseIdx++];
+    const status = response.getResponseCode();
+    const text = response.getContentText();
+    let data = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        data = text;
+      }
+    }
+
+    if (status < 200 || status >= 300) {
+      const message = data && data.message ? data.message : text;
+      throw new Error('Supabase request failed (' + status + '): ' + (message || 'Unknown error') + ' [' + info.path + ']');
+    }
+
+    results[info.index] = {
+      data: data,
+      status: status,
+      headers: response.getAllHeaders(),
+      raw: response
+    };
   }
 
   return results;
@@ -5510,45 +5643,109 @@ function getWeighResultData(params) {
   dataQueryParts.push('limit=' + Math.max(length, 1));
   dataQueryParts.push('offset=' + start);
 
+  const dataPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + dataQueryParts.join('&');
+  const totalQueryParts = ['select=' + encodeURIComponent('count:id')]
+    .concat(baseFilterParts);
+  const totalPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + totalQueryParts.join('&');
+  const contractQueryParts = ['select=' + encodeURIComponent('contract_no')]
+    .concat(baseFilterParts);
+  contractQueryParts.push('group=contract_no');
+  contractQueryParts.push('order=contract_no.asc');
+  const contractPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + contractQueryParts.join('&');
+  const customerQueryParts = ['select=' + encodeURIComponent('customer_name')]
+    .concat(baseFilterParts);
+  customerQueryParts.push('group=customer_name');
+  customerQueryParts.push('order=customer_name.asc');
+  const customerPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + customerQueryParts.join('&');
+
   let dataRows = [];
   let recordsFiltered = 0;
+  let recordsTotal = 0;
+  let totalResolved = false;
+  let contractRows = [];
+  let customerRows = [];
+
   try {
-    const response = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + dataQueryParts.join('&'), {
-      headers: { Prefer: 'count=exact' },
-      returnResponse: true
-    });
-    dataRows = Array.isArray(response.data) ? response.data : [];
-    const filteredTotal = parseContentRangeTotal_(response.headers);
+    const batchResponses = executeSupabaseBatchRequests_([
+      { path: dataPath, headers: { Prefer: 'count=exact' } },
+      { path: totalPath },
+      { path: contractPath },
+      { path: customerPath }
+    ]);
+
+    const dataResponse = batchResponses[0] || {};
+    dataRows = Array.isArray(dataResponse.data) ? dataResponse.data : [];
+    const filteredTotal = parseContentRangeTotal_(dataResponse.headers);
     recordsFiltered = filteredTotal != null ? filteredTotal : dataRows.length;
-  } catch (e) {
-    Logger.log('getWeighResultData data error: ' + e);
-    dataRows = [];
-    recordsFiltered = 0;
+
+    const totalResponse = batchResponses[1] || {};
+    const totalData = Array.isArray(totalResponse.data) ? totalResponse.data : [];
+    if (totalData.length) {
+      const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
+      const parsedCount = rawCount == null ? NaN : Number(rawCount);
+      if (!isNaN(parsedCount)) {
+        recordsTotal = parsedCount;
+        totalResolved = true;
+      }
+    }
+
+    contractRows = Array.isArray(batchResponses[2] && batchResponses[2].data) ? batchResponses[2].data : [];
+    customerRows = Array.isArray(batchResponses[3] && batchResponses[3].data) ? batchResponses[3].data : [];
+  } catch (batchError) {
+    Logger.log('getWeighResultData batch error: ' + batchError);
+
+    try {
+      const response = supabaseRequest_(dataPath, {
+        headers: { Prefer: 'count=exact' },
+        returnResponse: true
+      });
+      dataRows = Array.isArray(response.data) ? response.data : [];
+      const filteredTotal = parseContentRangeTotal_(response.headers);
+      recordsFiltered = filteredTotal != null ? filteredTotal : dataRows.length;
+    } catch (dataError) {
+      Logger.log('getWeighResultData data fallback error: ' + dataError);
+      dataRows = [];
+      recordsFiltered = 0;
+    }
+
+    try {
+      const totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
+      const totalData = Array.isArray(totalResponse.data) ? totalResponse.data : [];
+      if (totalData.length) {
+        const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
+        const parsedCount = rawCount == null ? NaN : Number(rawCount);
+        if (!isNaN(parsedCount)) {
+          recordsTotal = parsedCount;
+          totalResolved = true;
+        }
+      }
+    } catch (totalError) {
+      Logger.log('getWeighResultData total fallback error: ' + totalError);
+    }
+
+    try {
+      contractRows = supabaseRequest_(contractPath) || [];
+    } catch (contractError) {
+      Logger.log('getWeighResultData contract fallback error: ' + contractError);
+      contractRows = [];
+    }
+
+    try {
+      customerRows = supabaseRequest_(customerPath) || [];
+    } catch (customerError) {
+      Logger.log('getWeighResultData customer fallback error: ' + customerError);
+      customerRows = [];
+    }
+  }
+
+  if (!totalResolved) {
+    recordsTotal = recordsFiltered;
   }
 
   const mappedRows = dataRows.map(function(record) {
     const arr = mapXpplRecordToRowArray_(record, headers);
     return formatRowForClient_(arr, headers);
   });
-  const totalQueryParts = ['select=' + encodeURIComponent('id')]
-    .concat(baseFilterParts);
-  totalQueryParts.push('limit=1');
-  let recordsTotal = 0;
-  try {
-    const totalResponse = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + totalQueryParts.join('&'), {
-      headers: { Prefer: 'count=exact' },
-      returnResponse: true
-    });
-    const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
-    if (totalFromHeader != null) {
-      recordsTotal = totalFromHeader;
-    } else if (Array.isArray(totalResponse.data)) {
-      recordsTotal = totalResponse.data.length;
-    }
-  } catch (e) {
-    Logger.log('getWeighResultData total error: ' + e);
-    recordsTotal = recordsFiltered;
-  }
 
   const summaryFilterParts = baseFilterParts.slice();
   if (searchClause) summaryFilterParts.push(searchClause);
@@ -5559,50 +5756,30 @@ function getWeighResultData(params) {
   const totalWeight = summaryResult.weight;
 
   let availableContracts = [];
-  try {
-    const contractQueryParts = ['select=' + encodeURIComponent('contract_no')]
-      .concat(baseFilterParts);
-    contractQueryParts.push('group=contract_no');
-    contractQueryParts.push('order=contract_no.asc');
-    const contractRows = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + contractQueryParts.join('&')) || [];
-    const contractSet = new Set();
-    for (var j = 0; j < contractRows.length; j++) {
-      var contract = String((contractRows[j] && contractRows[j].contract_no) || '').trim();
-      if (contract) contractSet.add(contract);
-    }
-    availableContracts = Array.from(contractSet).sort(function(a, b) {
-      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-    });
-  } catch (e) {
-    Logger.log('getWeighResultData contract options error: ' + e);
-    availableContracts = [];
+  const contractSet = new Set();
+  for (var j = 0; j < contractRows.length; j++) {
+    var contract = String((contractRows[j] && contractRows[j].contract_no) || '').trim();
+    if (contract) contractSet.add(contract);
   }
+  availableContracts = Array.from(contractSet).sort(function(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   let availableCustomers = [];
-  try {
-    const customerQueryParts = ['select=' + encodeURIComponent('customer_name')]
-      .concat(baseFilterParts);
-    customerQueryParts.push('group=customer_name');
-    customerQueryParts.push('order=customer_name.asc');
-    const customerRows = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + customerQueryParts.join('&')) || [];
-    const customerSet = new Set();
-    for (var k = 0; k < customerRows.length; k++) {
-      var cust = String((customerRows[k] && customerRows[k].customer_name) || '').trim();
-      if (cust) customerSet.add(cust);
-    }
-    availableCustomers = Array.from(customerSet).sort(function(a, b) {
-      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-    });
-  } catch (e) {
-    Logger.log('getWeighResultData customer options error: ' + e);
-    availableCustomers = [];
+  const customerSet = new Set();
+  for (var k = 0; k < customerRows.length; k++) {
+    var cust = String((customerRows[k] && customerRows[k].customer_name) || '').trim();
+    if (cust) customerSet.add(cust);
   }
+  availableCustomers = Array.from(customerSet).sort(function(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   if (!availableCustomers.length && accessibleCustomerNamesForOptions.length) {
     availableCustomers = uniqueSortedList(accessibleCustomerNamesForOptions);
   }
 
-  if (!recordsTotal && recordsFiltered) {
+  if (!totalResolved && recordsFiltered) {
     recordsTotal = recordsFiltered;
   }
 
@@ -5643,19 +5820,33 @@ function fetchWeighResultSummary_(filterParts) {
   let totalWeight = 0;
 
   try {
-    const queryParts = ['select=' + encodeURIComponent(['transportation_company', 'net_weight'].join(','))]
+    const queryParts = ['select=' + encodeURIComponent('transportation_company,count:id,sum:net_weight')]
       .concat(Array.isArray(filterParts) ? filterParts : []);
-    const rows = fetchAllSupabaseRows_(SUPABASE_XPPL_DATABASE_ENDPOINT, queryParts, 500) || [];
+    queryParts.push('group=transportation_company');
+
+    const responses = executeSupabaseBatchRequests_([
+      { path: SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&') }
+    ]);
+
+    const rows = Array.isArray(responses[0] && responses[0].data) ? responses[0].data : [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] || {};
       const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
       const compLower = comp.toLowerCase();
-      summaryTrucks += 1;
-      if (!comp) counts.unassigned += 1;
-      else if (compLower === 'unknown') counts.unknown += 1;
-      else counts.assigned += 1;
+      const rawCount = row.count != null ? row.count : row.count_id;
+      const countValue = rawCount == null ? 0 : Number(rawCount);
+      const safeCount = isNaN(countValue) ? 0 : countValue;
+      summaryTrucks += safeCount;
 
-      totalWeight += parseWeighResultWeight_(row.net_weight);
+      if (!comp) counts.unassigned += safeCount;
+      else if (compLower === 'unknown') counts.unknown += safeCount;
+      else counts.assigned += safeCount;
+
+      const rawWeight = row.sum != null ? row.sum : (row.sum_net_weight != null ? row.sum_net_weight : row.net_weight_sum);
+      const weightValue = rawWeight == null ? 0 : Number(rawWeight);
+      if (!isNaN(weightValue)) {
+        totalWeight += weightValue;
+      }
     }
   } catch (e) {
     Logger.log('fetchWeighResultSummary_ error: ' + e);
