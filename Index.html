@@ -23,6 +23,44 @@
       <?!= include('Login'); ?>
     </template>
 
+    <!-- **MỚI:** Nhúng toàn bộ template các trang con để chuyển trang không cần gọi server -->
+    <template id="template-Dashboard">
+      <?!= include('Dashboard'); ?>
+    </template>
+    <template id="template-Page_Register">
+      <?!= include('Page_Register'); ?>
+    </template>
+    <template id="template-Page_View">
+      <?!= include('Page_View'); ?>
+    </template>
+    <template id="template-Page_TotalList">
+      <?!= include('Page_TotalList'); ?>
+    </template>
+    <template id="template-Page_Account">
+      <?!= include('Page_Account'); ?>
+    </template>
+    <template id="template-Page_Contract">
+      <?!= include('Page_Contract'); ?>
+    </template>
+    <template id="template-Page_Guide">
+      <?!= include('Page_Guide'); ?>
+    </template>
+    <template id="template-Page_XuLyXPPL">
+      <?!= include('Page_XuLyXPPL'); ?>
+    </template>
+    <template id="template-Page_LoginHistory">
+      <?!= include('Page_LoginHistory'); ?>
+    </template>
+    <template id="template-Page_VehicleHistory">
+      <?!= include('Page_VehicleHistory'); ?>
+    </template>
+    <template id="template-XPPL-WeighingStation">
+      <?!= include('XPPL-WeighingStation'); ?>
+    </template>
+    <template id="template-Page_WeighResult">
+      <?!= include('Page_WeighResult'); ?>
+    </template>
+
     <!-- Container chính của ứng dụng, ban đầu sẽ bị ẩn đi -->
     <div id="app-container" style="display: none;">
       <!-- Nội dung ứng dụng (trang đăng nhập hoặc dashboard) sẽ được tải vào đây -->
