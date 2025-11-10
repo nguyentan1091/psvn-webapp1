@@ -233,33 +233,6 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'Time': 'time'
 };
 
-function getVehicleRegistrationSearchColumns_() {
-  if (typeof VEHICLE_REGISTRATION_SEARCH_COLUMNS !== 'undefined' && Array.isArray(VEHICLE_REGISTRATION_SEARCH_COLUMNS)) {
-    return VEHICLE_REGISTRATION_SEARCH_COLUMNS;
-  }
-  return [
-    'register_date::text',
-    'contract_no',
-    'truck_plate',
-    'country',
-    'wheel::text',
-    'trailer_plate',
-    'truck_weight::text',
-    'pay_load::text',
-    'container_no1',
-    'container_no2',
-    'driver_name',
-    'id_passport',
-    'phone_number',
-    'destination_est',
-    'transportation_company',
-    'subcontractor',
-    'vehicle_status',
-    'registration_status',
-    'time::text'
-  ];
-}
-
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
   if (!path) return base;
@@ -859,6 +832,43 @@ function buildSupabaseSearchOr_(columns, searchValue) {
   return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
 }
 
+function getWeighResultSearchColumns_() {
+  const seen = new Set();
+  const columns = [];
+  for (let i = 0; i < XPPL_DB_HEADERS.length; i++) {
+    const header = XPPL_DB_HEADERS[i];
+    const column = XPPL_DB_FIELD_MAP[header];
+    if (!column) continue;
+    let expr = column;
+    const type = XPPL_DB_COLUMN_TYPES[header];
+    if (type === 'date' || type === 'time') {
+      expr = column + '::text';
+    }
+    if (seen.has(expr)) continue;
+    seen.add(expr);
+    columns.push(expr);
+  }
+  return columns;
+}
+
+function getWeighResultSearchColumns_() {
+  const seen = new Set();
+  const columns = [];
+  for (let i = 0; i < XPPL_DB_HEADERS.length; i++) {
+    const header = XPPL_DB_HEADERS[i];
+    const column = XPPL_DB_FIELD_MAP[header];
+    if (!column) continue;
+    let expr = column;
+    const type = XPPL_DB_COLUMN_TYPES[header];
+    if (type === 'date' || type === 'time') {
+      expr = column + '::text';
+    }
+    if (seen.has(expr)) continue;
+    seen.add(expr);
+    columns.push(expr);
+  }
+  return columns;
+}
 
 function normalizeToUtcDate_(date) {
   if (Object.prototype.toString.call(date) !== '[object Date]' || isNaN(date)) return null;
@@ -1235,34 +1245,6 @@ const TRUCK_LIST_TOTAL_SEARCH_COLUMNS = [
   'updated_at::text',
   'updated_by'
 ];
-
-function getTruckListTotalSearchColumns_() {
-  if (typeof TRUCK_LIST_TOTAL_SEARCH_COLUMNS !== 'undefined' && Array.isArray(TRUCK_LIST_TOTAL_SEARCH_COLUMNS)) {
-    return TRUCK_LIST_TOTAL_SEARCH_COLUMNS;
-  }
-  return [
-    'truck_plate',
-    'country',
-    'wheel::text',
-    'trailer_plate',
-    'truck_weight::text',
-    'pay_load::text',
-    'container_no1',
-    'container_no2',
-    'driver_name',
-    'id_passport',
-    'phone_number',
-    'transportation_company',
-    'subcontractor',
-    'vehicle_status',
-    'activity_status',
-    'register_date::text',
-    'time::text',
-    'created_by',
-    'updated_at::text',
-    'updated_by'
-  ];
-}
 
 function coerceNumericRegisterFields_(record) {
   if (!record) return;
@@ -1919,8 +1901,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   }
 
   const searchValue = params.search && params.search.value ? params.search.value : '';
-  const searchColumns = getVehicleRegistrationSearchColumns_();
-  const searchClause = buildSupabaseSearchOr_(searchColumns, searchValue);
+  const searchClause = buildSupabaseSearchOr_(VEHICLE_REGISTRATION_SEARCH_COLUMNS, searchValue);
 
   let sortColumn = defaultSortColumnIndex >= 0 ? VEHICLE_REGISTRATION_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
   let sortDir = 'desc';
@@ -2069,8 +2050,7 @@ function processTruckListTotalServerSide_(params, headers, userSession, defaultS
   }
 
   const searchValue = params.search && params.search.value ? params.search.value : '';
-  const searchColumns = getTruckListTotalSearchColumns_();
-  const searchClause = buildSupabaseSearchOr_(searchColumns, searchValue);
+  const searchClause = buildSupabaseSearchOr_(TRUCK_LIST_TOTAL_SEARCH_COLUMNS, searchValue);
 
   let sortColumn = defaultSortColumnIndex >= 0 ? TRUCK_LIST_TOTAL_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
   let sortDir = 'desc';
@@ -5211,50 +5191,11 @@ function getWeighResultData(params) {
     return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
-  const idxDateOut = headers.indexOf('Date Out');
-  const idxContract = headers.indexOf('ContractNo');
+
   const idxCompany = headers.indexOf('Transportation Company');
   const idxCustomer = headers.indexOf('Customer Name');
-  const idxNetWeight = headers.indexOf('Net Weight');
-  if (idxDateOut === -1 || idxContract === -1 || idxCompany === -1 || idxCustomer === -1) {
+  if (idxCompany === -1 || idxCustomer === -1) {
     return buildEmpty(isUser ? assignedCustomerNames : null);
-  }
-
-  const queryParts = ['select=' + encodeURIComponent('*')];
-  if (from) {
-    const isoFrom = toSupabaseDateString_(from);
-    if (isoFrom) queryParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
-  }
-  if (to) {
-    const isoTo = toSupabaseDateString_(to);
-    if (isoTo) queryParts.push('date_out=lte.' + encodeURIComponent(isoTo));
-  }
-  const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
-  if (contractIn) queryParts.push(contractIn);
-  const customerIn = buildSupabaseInFilter_('customer_name', customerFilter);
-  if (customerIn) queryParts.push(customerIn);
-  queryParts.push('order=date_out.desc');
-
-  let records = [];
-  try {
-    const res = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&'));
-    records = Array.isArray(res) ? res : [];
-  } catch (e) {
-    Logger.log('getWeighResultData error: ' + e);
-    records = [];
-  }
-
-  const rows = records.map(function (record) {
-    return mapXpplRecordToRowArray_(record, headers);
-  });
-
-
-  if (!rows.length) {
-    var fallbackCustomers = null;
-    if (isUser) {
-      fallbackCustomers = assignedCustomerNames.length ? assignedCustomerNames : customerFilter;
-    }
-    return buildEmpty(fallbackCustomers);
   }
 
   const assignedCustomerLowerSet = assignedCustomerNames.length
@@ -5264,172 +5205,223 @@ function getWeighResultData(params) {
     ? new Set(customerFilter.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
     : null;
 
-  let accessibleCustomerLowerSet = null;
   let accessibleCustomerNamesForOptions = [];
   if (isUser) {
-    if (assignedCustomerLowerSet && assignedCustomerLowerSet.size) {
-      accessibleCustomerLowerSet = assignedCustomerLowerSet;
+    if (assignedCustomerNames.length) {
       accessibleCustomerNamesForOptions = assignedCustomerNames.slice();
-    } else if (requestedCustomerLowerSet && requestedCustomerLowerSet.size) {
-      accessibleCustomerLowerSet = requestedCustomerLowerSet;
+    } else if (customerFilter.length) {
       accessibleCustomerNamesForOptions = customerFilter.slice();
     } else {
       return buildEmpty(assignedCustomerNames);
     }
   }
 
-  let filterCustomerLowerSet = null;
+  let effectiveCustomerFilter = customerFilter.slice();
   if (isUser) {
-    if (assignedCustomerLowerSet && assignedCustomerLowerSet.size) {
-      if (requestedCustomerLowerSet && requestedCustomerLowerSet.size) {
-        const intersection = [];
-        requestedCustomerLowerSet.forEach(function(name){
-          if (assignedCustomerLowerSet.has(name)) {
-            intersection.push(name);
-          }
+    if (assignedCustomerNames.length) {
+      if (customerFilter.length) {
+        const intersection = customerFilter.filter(function(name) {
+          return assignedCustomerLowerSet.has(String(name || '').trim().toLowerCase());
         });
-        filterCustomerLowerSet = new Set(intersection);
-        if (filterCustomerLowerSet.size === 0) {
-          return buildEmpty(accessibleCustomerNamesForOptions.length ? accessibleCustomerNamesForOptions : assignedCustomerNames);
+        if (!intersection.length) {
+          const fallback = accessibleCustomerNamesForOptions.length
+            ? accessibleCustomerNamesForOptions
+            : assignedCustomerNames;
+        
+          return buildEmpty(fallback);
         }
+        effectiveCustomerFilter = intersection;
       } else {
-        filterCustomerLowerSet = assignedCustomerLowerSet;
+        effectiveCustomerFilter = assignedCustomerNames.slice();
       }
     } else {
-      filterCustomerLowerSet = requestedCustomerLowerSet;
+      effectiveCustomerFilter = customerFilter.slice();
     }
-  } else {
-    filterCustomerLowerSet = requestedCustomerLowerSet;
   }
 
-  const restrictByCustomer = Boolean(accessibleCustomerLowerSet && accessibleCustomerLowerSet.size);
+  const baseFilterParts = [];
+  if (from) {
+    const isoFrom = toSupabaseDateString_(from);
+    if (isoFrom) baseFilterParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
+  }
+  if (to) {
+    const isoTo = toSupabaseDateString_(to);
+    if (isoTo) baseFilterParts.push('date_out=lte.' + encodeURIComponent(isoTo));
+  }
+  const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
+  if (contractIn) baseFilterParts.push(contractIn);
+  const customerIn = buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
+  if (customerIn) baseFilterParts.push(customerIn);
 
-  const contractSet = contractFilter.length
-    ? new Set(contractFilter.map(function(v){ return String(v); }))
-    : null;
-  const customerSet = filterCustomerLowerSet && filterCustomerLowerSet.size
-    ? filterCustomerLowerSet
-    : null;
+  const start = Math.max(0, Number(params.start || 0));
+  let length = Number(params.length);
+  if (!isFinite(length) || length <= 0) length = 50;
 
-  const baseRows = [];
-  const optionContracts = new Set();
-  const optionCustomers = new Set();
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var dateKey = _toDateKey(row[idxDateOut]);
-    if (from && (!dateKey || dateKey < from)) continue;
-    if (to && (!dateKey || dateKey > to)) continue;
-
-    var rowContract = String(stripLeadingApostrophe(row[idxContract]) || '').trim();
-    var rowCustomer = String(stripLeadingApostrophe(row[idxCustomer]) || '').trim();
-    var rowCustomerKey = rowCustomer.toLowerCase();
-
-    if (restrictByCustomer && (!rowCustomerKey || !accessibleCustomerLowerSet.has(rowCustomerKey))) continue;
-  
-    if (rowContract) optionContracts.add(rowContract);
-    if (rowCustomer) optionCustomers.add(rowCustomer);
-
-    if (contractSet && !contractSet.has(rowContract)) continue;
-    if (customerSet && (!rowCustomerKey || !customerSet.has(rowCustomerKey))) continue;
-
-    baseRows.push(row);
+  const orderInfo = Array.isArray(params.order) && params.order.length ? params.order[0] : null;
+  let sortColumn = 'date_out';
+  let sortDir = 'desc';
+  if (orderInfo && orderInfo.column != null) {
+    const offset = session.role === 'admin' ? 2 : 0;
+    const idx = Number(orderInfo.column) - offset;
+    if (!isNaN(idx) && idx >= 0 && idx < headers.length) {
+      const mapped = XPPL_DB_FIELD_MAP[headers[idx]];
+      if (mapped) sortColumn = mapped;
+    }
+    if (String(orderInfo.dir).toLowerCase() === 'asc') sortDir = 'asc';
   }
 
-  var availableContracts = Array.from(optionContracts).sort(function(a, b) {
-    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  const searchValue = params.search && params.search.value ? params.search.value : '';
+  const searchColumns = getWeighResultSearchColumns_();
+  const searchClause = buildSupabaseSearchOr_(searchColumns, searchValue);
+
+  const dataFilterParts = baseFilterParts.slice();
+  if (searchClause) dataFilterParts.push(searchClause);
+  if (params.onlyUnknown) {
+    dataFilterParts.push('transportation_company=ilike.' + encodeURIComponent('Unknown'));
+  } else if (params.excludeUnknown) {
+    dataFilterParts.push('transportation_company=not.ilike.' + encodeURIComponent('Unknown'));
+  }
+
+  const dataQueryParts = ['select=' + encodeURIComponent('*')]
+    .concat(dataFilterParts);
+  dataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+  dataQueryParts.push('limit=' + Math.max(length, 1));
+  dataQueryParts.push('offset=' + start);
+
+  let dataRows = [];
+  let recordsFiltered = 0;
+  try {
+    const response = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + dataQueryParts.join('&'), {
+      headers: { Prefer: 'count=exact' },
+      returnResponse: true
+    });
+    dataRows = Array.isArray(response.data) ? response.data : [];
+    const filteredTotal = parseContentRangeTotal_(response.headers);
+    recordsFiltered = filteredTotal != null ? filteredTotal : dataRows.length;
+  } catch (e) {
+    Logger.log('getWeighResultData data error: ' + e);
+    dataRows = [];
+    recordsFiltered = 0;
+  }
+
+  const mappedRows = dataRows.map(function(record) {
+    const arr = mapXpplRecordToRowArray_(record, headers);
+    return formatRowForClient_(arr, headers);
   });
-  var availableCustomers = Array.from(optionCustomers).sort(function(a, b) {
-    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-  });
+  const totalQueryParts = ['select=' + encodeURIComponent('id')]
+    .concat(baseFilterParts);
+  totalQueryParts.push('limit=1');
+  let recordsTotal = 0;
+  try {
+    const totalResponse = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + totalQueryParts.join('&'), {
+      headers: { Prefer: 'count=exact' },
+      returnResponse: true
+    });
+    const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
+    if (totalFromHeader != null) {
+      recordsTotal = totalFromHeader;
+    } else if (Array.isArray(totalResponse.data)) {
+      recordsTotal = totalResponse.data.length;
+    }
+  } catch (e) {
+    Logger.log('getWeighResultData total error: ' + e);
+    recordsTotal = recordsFiltered;
+  }
+
+  const summaryFilterParts = baseFilterParts.slice();
+  if (searchClause) summaryFilterParts.push(searchClause);
+  const summaryQueryParts = ['select=' + encodeURIComponent('transportation_company,count:count(id),total_weight:sum(net_weight)')]
+    .concat(summaryFilterParts);
+  summaryQueryParts.push('group=transportation_company');
+
+  const counts = { unassigned: 0, unknown: 0, assigned: 0 };
+  let summaryTrucks = 0;
+  let totalWeight = 0;
+  try {
+    const summaryRows = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + summaryQueryParts.join('&')) || [];
+    for (var i = 0; i < summaryRows.length; i++) {
+      var row = summaryRows[i] || {};
+      var comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+      var compLower = comp.toLowerCase();
+      var count = parseInt(row.count, 10);
+      if (!isFinite(count)) count = 0;
+      summaryTrucks += count;
+      if (!comp) counts.unassigned += count;
+      else if (compLower === 'unknown') counts.unknown += count;
+      else counts.assigned += count;
+
+      var weightVal = row.total_weight;
+      if (weightVal == null && row.sum != null) weightVal = row.sum;
+      var weightNum = Number(weightVal);
+      if (!Number.isFinite(weightNum)) {
+        var parsed = Number(String(weightVal == null ? '' : weightVal).replace(/,/g, ''));
+        weightNum = Number.isFinite(parsed) ? parsed : 0;
+      }
+      totalWeight += weightNum;
+    }
+  } catch (e) {
+    Logger.log('getWeighResultData summary error: ' + e);
+  }
+
+  let availableContracts = [];
+  try {
+    const contractQueryParts = ['select=' + encodeURIComponent('contract_no')]
+      .concat(baseFilterParts);
+    contractQueryParts.push('group=contract_no');
+    contractQueryParts.push('order=contract_no.asc');
+    const contractRows = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + contractQueryParts.join('&')) || [];
+    const contractSet = new Set();
+    for (var j = 0; j < contractRows.length; j++) {
+      var contract = String((contractRows[j] && contractRows[j].contract_no) || '').trim();
+      if (contract) contractSet.add(contract);
+    }
+    availableContracts = Array.from(contractSet).sort(function(a, b) {
+      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  } catch (e) {
+    Logger.log('getWeighResultData contract options error: ' + e);
+    availableContracts = [];
+  }
+
+  let availableCustomers = [];
+  try {
+    const customerQueryParts = ['select=' + encodeURIComponent('customer_name')]
+      .concat(baseFilterParts);
+    customerQueryParts.push('group=customer_name');
+    customerQueryParts.push('order=customer_name.asc');
+    const customerRows = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + customerQueryParts.join('&')) || [];
+    const customerSet = new Set();
+    for (var k = 0; k < customerRows.length; k++) {
+      var cust = String((customerRows[k] && customerRows[k].customer_name) || '').trim();
+      if (cust) customerSet.add(cust);
+    }
+    availableCustomers = Array.from(customerSet).sort(function(a, b) {
+      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  } catch (e) {
+    Logger.log('getWeighResultData customer options error: ' + e);
+    availableCustomers = [];
+  }
+
   if (!availableCustomers.length && accessibleCustomerNamesForOptions.length) {
     availableCustomers = uniqueSortedList(accessibleCustomerNamesForOptions);
   }
 
-  var totalRecords = baseRows.length;
-  if (!totalRecords) {
-    return {
-      draw: draw,
-      recordsTotal: 0,
-      recordsFiltered: 0,
-      data: [],
-      counts: { unassigned: 0, unknown: 0, assigned: 0 },
-      summary: { trucks: 0, weight: 0 },
-      options: { contracts: availableContracts, customers: availableCustomers }
-    };
+  if (!recordsTotal && recordsFiltered) {
+    recordsTotal = recordsFiltered;
   }
 
-  const searchValue = (params.search && params.search.value ? String(params.search.value) : '').toLowerCase();
-  let filteredForSearch = baseRows;
-  if (searchValue) {
-    filteredForSearch = [];
-    for (var j = 0; j < baseRows.length; j++) {
-      if (weighResultRowMatchesQuery_(baseRows[j], headers, searchValue)) {
-        filteredForSearch.push(baseRows[j]);
-      }
-    }
+  if (!recordsTotal && isUser && accessibleCustomerNamesForOptions.length && !mappedRows.length) {
+    return buildEmpty(accessibleCustomerNamesForOptions);
   }
-
-  const counts = { unassigned: 0, unknown: 0, assigned: 0 };
-  let totalWeight = 0;
-  for (var k = 0; k < filteredForSearch.length; k++) {
-    var comp = String(stripLeadingApostrophe(filteredForSearch[k][idxCompany]) || '').trim();
-    if (!comp) counts.unassigned++;
-    else if (comp.toLowerCase() === 'unknown') counts.unknown++;
-    else counts.assigned++;
-
-    if (idxNetWeight > -1) {
-      var rawWeight = stripLeadingApostrophe(filteredForSearch[k][idxNetWeight]);
-      if (typeof rawWeight === 'string') {
-        rawWeight = rawWeight.replace(/,/g, '');
-      }
-      var weightNum = Number(rawWeight);
-      if (Number.isFinite(weightNum)) {
-        totalWeight += weightNum;
-      }
-    }
-  }
-
-  let filtered = filteredForSearch;
-  if (params.onlyUnknown) {
-    filtered = filtered.filter(function(row) {
-      var comp = String(stripLeadingApostrophe(row[idxCompany]) || '').trim().toLowerCase();
-      return comp === 'unknown';
-    });
-  } else if (params.excludeUnknown) {
-    filtered = filtered.filter(function(row) {
-      var comp = String(stripLeadingApostrophe(row[idxCompany]) || '').trim().toLowerCase();
-      return comp !== 'unknown';
-    });
-  }
-
-  const order = Array.isArray(params.order) ? params.order[0] : null;
-  if (order && order.column != null) {
-    const offset = session.role === 'admin' ? 2 : 0;
-    const idx = Number(order.column) - offset;
-    if (idx >= 0 && idx < headers.length) {
-      const dir = (order.dir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
-      filtered.sort(function(a, b) {
-        const va = formatWeighResultCell_(headers[idx], a[idx]);
-        const vb = formatWeighResultCell_(headers[idx], b[idx]);
-        return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
-      });
-    }
-  }
-
-  const start = Math.max(0, Number(params.start || 0));
-  const length = Math.max(0, Number(params.length || 50));
-  const pageRows = filtered.slice(start, start + length);
-  const data = pageRows.map(function(row) {
-    return formatRowForClient_(row, headers);
-  });
 
   return {
     draw: draw,
-    recordsTotal: totalRecords,
-    recordsFiltered: filtered.length,
-    data: data,
+    recordsTotal: recordsTotal,
+    recordsFiltered: recordsFiltered,
+    data: mappedRows,
     counts: counts,
-    summary: { trucks: filteredForSearch.length, weight: totalWeight },
+    summary: { trucks: summaryTrucks, weight: totalWeight },
     options: { contracts: availableContracts, customers: availableCustomers }
   };
 }
