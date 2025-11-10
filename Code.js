@@ -5610,7 +5610,7 @@ function getWeighResultData(params) {
 
   const start = Math.max(0, Number(params.start || 0));
   let length = Number(params.length);
-  if (!isFinite(length) || length <= 0) length = 50;
+  if (!isFinite(length) || length <= 0) length = 10;
 
   const orderInfo = Array.isArray(params.order) && params.order.length ? params.order[0] : null;
   let sortColumn = 'date_out';
