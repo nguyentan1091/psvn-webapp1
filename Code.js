@@ -407,6 +407,61 @@ function fetchAllSupabaseRows_(endpoint, queryParts, chunkSize) {
   return collected;
 }
 
+function fetchTruckListTotalRowsForPlates_(plates, selectFields) {
+  if (!Array.isArray(plates) || !plates.length) {
+    return { rows: [], isEmpty: false };
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  for (let i = 0; i < plates.length; i++) {
+    const normalizedPlate = normalizeTruckPlateValue_(plates[i]);
+    if (!normalizedPlate || seen.has(normalizedPlate)) continue;
+    seen.add(normalizedPlate);
+    normalized.push(normalizedPlate);
+  }
+
+  if (!normalized.length) {
+    return { rows: [], isEmpty: false };
+  }
+
+  const selectClause = Array.isArray(selectFields) && selectFields.length
+    ? selectFields.join(',')
+    : '*';
+  const filter = buildSupabaseInFilter_('truck_plate', normalized);
+  if (!filter) {
+    return { rows: [], isEmpty: false };
+  }
+
+  const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT
+    + '?select=' + encodeURIComponent(selectClause)
+    + '&' + filter;
+
+  const rows = supabaseRequest_(query) || [];
+  if (Array.isArray(rows) && rows.length) {
+    return { rows: rows, isEmpty: false };
+  }
+
+  try {
+    const totalResponse = supabaseRequest_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?select=' + encodeURIComponent('id') + '&limit=1',
+      {
+        headers: { Prefer: 'count=exact' },
+        returnResponse: true
+      }
+    );
+
+    const totalFromHeader = parseContentRangeTotal_(totalResponse.headers);
+    const totalRows = Array.isArray(totalResponse.data) ? totalResponse.data.length : 0;
+    const effectiveTotal = totalFromHeader != null ? totalFromHeader : totalRows;
+    return { rows: [], isEmpty: effectiveTotal === 0 };
+  } catch (countError) {
+    Logger.log('fetchTruckListTotalRowsForPlates_ count error: ' + countError);
+  }
+
+  return { rows: [], isEmpty: false };
+}
+
 function fetchContractDataRows_(selectFields, filterParams) {
   const fields = Array.isArray(selectFields) && selectFields.length
     ? selectFields.join(',')
@@ -2664,16 +2719,27 @@ const TOTAL_LIST_EMPTY_MESSAGE_VI = 'Danh sách xe tổng chưa có dữ liệu.
 const TOTAL_LIST_EMPTY_MESSAGE_EN = 'The total vehicle list has no data. Unable to register. Please contact PSVN.';
 
 function checkVehiclesAgainstTotalList(vehicles) {
-  let rows = fetchAllSupabaseRows_(
-    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
-    [
-      'select=' + encodeURIComponent(['truck_plate', 'transportation_company'].join(','))
-    ],
-    1000
-  );
-  if (!Array.isArray(rows)) rows = [];
+  if (!Array.isArray(vehicles) || !vehicles.length) {
+    return { isValid: true };
+  }
 
-  if (!rows.length) {
+  const normalizedSet = new Set();
+  vehicles.forEach(function (vehicle) {
+    const normalizedPlate = normalizeTruckPlateValue_(vehicle['Truck Plate']);
+    if (normalizedPlate) normalizedSet.add(normalizedPlate);
+  });
+
+  if (!normalizedSet.size) {
+    return { isValid: true };
+  }
+
+  const fetchResult = fetchTruckListTotalRowsForPlates_(
+    Array.from(normalizedSet),
+    ['truck_plate', 'transportation_company']
+  );
+  const rows = Array.isArray(fetchResult.rows) ? fetchResult.rows : [];
+
+  if (!rows.length && fetchResult.isEmpty) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2692,7 +2758,7 @@ function checkVehiclesAgainstTotalList(vehicles) {
     });
   });
 
-  if (!totalListMap.size) {
+  if (rows.length > 0 && !totalListMap.size) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2755,16 +2821,27 @@ function checkVehiclesAgainstTotalList(vehicles) {
 // LOGIC XỬ LÝ ĐĂNG KÝ XE – Kiểm tra Activity Status
 // =================================================================
 function checkVehicleActivityStatus(vehicles) {
-  let rows = fetchAllSupabaseRows_(
-    SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
-    [
-      'select=' + encodeURIComponent(['truck_plate', 'activity_status'].join(','))
-    ],
-    1000
-  );
-  if (!Array.isArray(rows)) rows = [];
+  if (!Array.isArray(vehicles) || !vehicles.length) {
+    return { isValid: true };
+  }
 
-  if (!rows.length) {
+  const normalizedSet = new Set();
+  vehicles.forEach(function (vehicle) {
+    const normalizedPlate = normalizeTruckPlateValue_(vehicle['Truck Plate']);
+    if (normalizedPlate) normalizedSet.add(normalizedPlate);
+  });
+
+  if (!normalizedSet.size) {
+    return { isValid: true };
+  }
+
+  const fetchResult = fetchTruckListTotalRowsForPlates_(
+    Array.from(normalizedSet),
+    ['truck_plate', 'activity_status']
+  );
+  const rows = Array.isArray(fetchResult.rows) ? fetchResult.rows : [];
+
+  if (!rows.length && fetchResult.isEmpty) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
@@ -2779,7 +2856,7 @@ function checkVehicleActivityStatus(vehicles) {
     activityMap.set(normalized, String(row.activity_status == null ? '' : row.activity_status).trim().toLowerCase());
   });
 
-  if (!activityMap.size) {
+  if (rows.length > 0 && !activityMap.size) {
     return {
       isValid: false,
       message: TOTAL_LIST_EMPTY_MESSAGE_VI,
