@@ -43,8 +43,8 @@
   </div>
 
   <!-- Actions & Summary -->
-  <div class="row g-3 mb-3 align-items-stretch" id="wr-overview">
-    <div class="col-12 col-xl-7">
+  <div class="row g-3 mb-3" id="wr-overview">
+    <div class="col-12">
       <div class="wr-status-panel h-100">
         <div class="wr-action-group" id="wr-actions">
           <button id="wr-match-company" type="button" class="wr-action-btn wr-action-btn--primary">
@@ -62,9 +62,26 @@
             </span>
           </button>
         </div>
-        <div class="row g-3">
-          <div class="col-sm-4">
-            <div class="wr-status-card wr-status-card--pending h-100">
+        <div class="row g-3 align-items-stretch" id="wr-summary-cards">
+          <div class="col-12 col-md-6 col-xl-4 col-xxl-3 d-flex">
+            <div class="xppl-summary-card w-100 h-100">
+              <div class="xppl-summary-label" data-translate="wr_summary_total_trucks_label">Tổng số xe</div>
+              <div class="xppl-summary-value" id="wr-summary-trucks">0</div>
+              <div class="xppl-summary-sub" data-translate="wr_summary_total_trucks_sub">Bao gồm cả xe chưa xác định đơn vị vận tải</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-4 col-xxl-3 d-flex">
+            <div class="xppl-summary-card xppl-summary-card--weight w-100 h-100">
+              <div class="xppl-summary-header">
+                <span class="xppl-summary-title" data-translate="wr_summary_total_weight_label">Tổng khối lượng (Kg)</span>
+                <span class="xppl-summary-chip"><i class="fas fa-weight-hanging me-1"></i>Kg</span>
+              </div>
+              <div class="xppl-summary-value" id="wr-summary-weight">0</div>
+              <div class="xppl-summary-sub" data-translate="wr_summary_total_weight_sub">Tổng khối lượng trong ngày kể cả xe không xác định</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-4 col-xl-4 col-xxl-2 d-flex">
+            <div class="wr-status-card wr-status-card--pending w-100">
               <div class="wr-status-icon"><i class="fas fa-hourglass-half"></i></div>
               <div class="wr-status-info">
                 <div class="wr-status-label" data-translate="wr_status_unassigned">Chưa gắn đơn vị vận chuyển</div>
@@ -72,8 +89,8 @@
               </div>
             </div>
           </div>
-          <div class="col-sm-4">
-            <div class="wr-status-card wr-status-card--unknown h-100">
+          <div class="col-12 col-md-4 col-xl-4 col-xxl-2 d-flex">
+            <div class="wr-status-card wr-status-card--unknown w-100">
               <div class="wr-status-icon"><i class="fas fa-question-circle"></i></div>
               <div class="wr-status-info">
                 <div class="wr-status-label" data-translate="wr_status_unknown">Không xác định đơn vị vận chuyển</div>
@@ -81,35 +98,14 @@
               </div>
             </div>
           </div>
-          <div class="col-sm-4">
-            <div class="wr-status-card wr-status-card--assigned h-100">
+          <div class="col-12 col-md-4 col-xl-4 col-xxl-2 d-flex">
+            <div class="wr-status-card wr-status-card--assigned w-100">
               <div class="wr-status-icon"><i class="fas fa-check-circle"></i></div>
               <div class="wr-status-info">
                 <div class="wr-status-label" data-translate="wr_status_assigned">Đã xác định đơn vị vận chuyển</div>
                 <div class="wr-status-value" id="wr-sum-assigned">0</div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-xl-5">
-      <div class="row g-3 xppl-summary-row h-100">
-        <div class="col-sm-5 col-lg-4 d-flex">
-          <div class="xppl-summary-card w-100">
-            <div class="xppl-summary-label" data-translate="wr_summary_total_trucks_label">Tổng số xe</div>
-            <div class="xppl-summary-value" id="wr-summary-trucks">0</div>
-            <div class="xppl-summary-sub" data-translate="wr_summary_total_trucks_sub">Số lượng xe phù hợp với bộ lọc</div>
-          </div>
-        </div>
-        <div class="col-sm-7 col-lg-8 d-flex">
-          <div class="xppl-summary-card xppl-summary-card--weight w-100">
-            <div class="xppl-summary-header">
-              <span class="xppl-summary-title" data-translate="wr_summary_total_weight_label">Tổng khối lượng (Kg)</span>
-              <span class="xppl-summary-chip"><i class="fas fa-weight-hanging me-1"></i>Kg</span>
-            </div>
-            <div class="xppl-summary-value" id="wr-summary-weight">0</div>
-            <div class="xppl-summary-sub" data-translate="wr_summary_total_weight_sub">Khối lượng đã ghi nhận theo bộ lọc</div>
           </div>
         </div>
       </div>
