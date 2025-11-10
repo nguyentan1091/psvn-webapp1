@@ -428,18 +428,26 @@ function fetchTruckListTotalRowsForPlates_(plates, selectFields) {
   const selectClause = Array.isArray(selectFields) && selectFields.length
     ? selectFields.join(',')
     : '*';
-  const filter = buildSupabaseInFilter_('truck_plate', normalized);
-  if (!filter) {
-    return { rows: [], isEmpty: false };
-  }
 
-  const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT
-    + '?select=' + encodeURIComponent(selectClause)
-    + '&' + filter;
+  const batches = chunkArray_(normalized, SUPABASE_IN_FILTER_BATCH_SIZE);
+  const collectedRows = [];
 
-  const rows = supabaseRequest_(query) || [];
-  if (Array.isArray(rows) && rows.length) {
-    return { rows: rows, isEmpty: false };
+  batches.forEach(function (batch) {
+    const filter = buildSupabaseInFilter_('truck_plate', batch);
+    if (!filter) return;
+
+    const query = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT
+      + '?select=' + encodeURIComponent(selectClause)
+      + '&' + filter;
+
+    const rows = supabaseRequest_(query) || [];
+    if (!Array.isArray(rows) || !rows.length) return;
+
+    Array.prototype.push.apply(collectedRows, rows);
+  });
+
+  if (collectedRows.length) {
+    return { rows: collectedRows, isEmpty: false };
   }
 
   try {
