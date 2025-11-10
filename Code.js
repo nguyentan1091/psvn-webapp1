@@ -171,6 +171,10 @@ const SUPABASE_USER_CACHE_PREFIX = 'supabase_user_cache::';
 const SUPABASE_USER_CACHE_TTL_SECONDS = 60;
 const SUPABASE_USER_MISS_CACHE_PREFIX = 'supabase_user_miss::';
 const SUPABASE_USER_MISS_CACHE_TTL_SECONDS = 45;
+const ACTIVE_CONTRACT_MAP_CACHE_KEY = 'active_contract_map_cache';
+const ACTIVE_CONTRACT_MAP_CACHE_TTL_SECONDS = 60;
+let ACTIVE_CONTRACT_MAP_MEMORY_CACHE = null;
+let ACTIVE_CONTRACT_MAP_MEMORY_CACHE_EXPIRES_AT = 0;
 const SUPABASE_IN_FILTER_BATCH_SIZE = 20;
 const SUPABASE_USER_SELECT_FIELDS = [
   'username',
@@ -3601,38 +3605,66 @@ function checkForExistingRegistrations(recordsToCheck, sessionToken) {
   try {
     const normalizedRecords = [];
     const uniqueDates = new Set();
+    const uniqueCompaniesForFilter = new Set();
 
     recordsToCheck.forEach(function (rec) {
       const regDate = normalizeDate(rec['Register Date']);
       const isoDate = toSupabaseDateString_(regDate) || '';
       const normalizedPlate = normalizeTruckPlateValue_(rec['Truck Plate']);
       const displayPlate = resolveTruckPlateDisplay_(rec['Truck Plate'], normalizedPlate);
-      const company = String(rec['Transportation Company'] || '').trim().toUpperCase();
+      const companyRaw = String(rec['Transportation Company'] || '').trim();
+      const company = companyRaw.toUpperCase();
       if (!isoDate || !normalizedPlate || !company) return;
       normalizedRecords.push({ date: isoDate, plate: normalizedPlate, company: company, display: displayPlate });
       uniqueDates.add(isoDate);
+      if (companyRaw) {
+        uniqueCompaniesForFilter.add(companyRaw);
+        if (companyRaw !== company) {
+          uniqueCompaniesForFilter.add(company);
+        }
+      }
     });
 
     if (!normalizedRecords.length) return [];
 
-    const dateFilter = buildSupabaseInFilter_('register_date', Array.from(uniqueDates));
+    const dateChunks = chunkArray_(Array.from(uniqueDates), SUPABASE_IN_FILTER_BATCH_SIZE);
+    const companyValues = Array.from(uniqueCompaniesForFilter);
+    const companyChunks = companyValues.length
+      ? chunkArray_(companyValues, SUPABASE_IN_FILTER_BATCH_SIZE)
+      : [null];
     const existingKeys = new Set();
-    if (dateFilter) {
-      const existingRows = supabaseRequest_(
-        SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + encodeURIComponent(['register_date', 'truck_plate', 'transportation_company'].join(',')) + '&' + dateFilter
-      ) || [];
+    const selectParam = encodeURIComponent(['register_date', 'truck_plate', 'transportation_company'].join(','));
+    dateChunks.forEach(function (dateChunk) {
+      const dateFilter = buildSupabaseInFilter_('register_date', dateChunk);
+      if (!dateFilter) return;
 
-      if (Array.isArray(existingRows)) {
-        existingRows.forEach(function (row) {
-          const dateStr = String(row.register_date || '').trim();
-          const plate = normalizeTruckPlateValue_(row.truck_plate);
-          const company = String(row.transportation_company || '').trim().toUpperCase();
-          if (dateStr && plate && company) {
-            existingKeys.add(`${dateStr}-${plate}-${company}`);
+      companyChunks.forEach(function (companyChunk) {
+        const filters = [dateFilter];
+        if (Array.isArray(companyChunk) && companyChunk.length) {
+          const companyFilter = buildSupabaseInFilter_('transportation_company', companyChunk);
+          if (companyFilter) {
+            filters.push(companyFilter);
           }
-        });
-      }
-    }
+        }
+
+        let query = SUPABASE_VEHICLE_REG_ENDPOINT + '?select=' + selectParam;
+        if (filters.length) {
+          query += '&' + filters.join('&');
+        }
+
+        const existingRows = supabaseRequest_(query) || [];
+        if (Array.isArray(existingRows)) {
+          existingRows.forEach(function (row) {
+            const dateStr = String(row.register_date || '').trim();
+            const plate = normalizeTruckPlateValue_(row.truck_plate);
+            const company = String(row.transportation_company || '').trim().toUpperCase();
+            if (dateStr && plate && company) {
+              existingKeys.add(`${dateStr}-${plate}-${company}`);
+            }
+          });
+        }
+      });
+    });
 
     const seen = new Set();
     const duplicates = [];
@@ -4308,6 +4340,20 @@ function getUserSession(sessionToken) {
 
 // Trả về Map: company (UPPER) -> Set(contractNo) chỉ chứa hợp đồng Active
 function buildActiveContractMap_() {
+  if (
+    ACTIVE_CONTRACT_MAP_MEMORY_CACHE instanceof Map &&
+    Date.now() < ACTIVE_CONTRACT_MAP_MEMORY_CACHE_EXPIRES_AT
+  ) {
+    return ACTIVE_CONTRACT_MAP_MEMORY_CACHE;
+  }
+
+  const cachedMap = readActiveContractMapCache_();
+  if (cachedMap) {
+    ACTIVE_CONTRACT_MAP_MEMORY_CACHE = cachedMap;
+    ACTIVE_CONTRACT_MAP_MEMORY_CACHE_EXPIRES_AT = Date.now() + ACTIVE_CONTRACT_MAP_CACHE_TTL_SECONDS * 1000;
+    return cachedMap;
+  }
+
   const rows = fetchContractDataRows_(
     ['contract_no', 'transportation_company', 'status']
   );
@@ -4324,7 +4370,62 @@ function buildActiveContractMap_() {
     if (!map.has(comp)) map.set(comp, new Set());
     map.get(comp).add(no);
   });
+
+  ACTIVE_CONTRACT_MAP_MEMORY_CACHE = map;
+  ACTIVE_CONTRACT_MAP_MEMORY_CACHE_EXPIRES_AT = Date.now() + ACTIVE_CONTRACT_MAP_CACHE_TTL_SECONDS * 1000;
+  cacheActiveContractMap_(map);
   return map;
+}
+
+function cacheActiveContractMap_(map) {
+  if (!(map instanceof Map)) return;
+  try {
+    const entries = [];
+    map.forEach(function (contracts, company) {
+      if (!company) return;
+      const list = contracts instanceof Set ? Array.from(contracts) : [];
+      entries.push({ company: company, contracts: list });
+    });
+    safeScriptCachePutJSON_(
+      ACTIVE_CONTRACT_MAP_CACHE_KEY,
+      { entries: entries },
+      ACTIVE_CONTRACT_MAP_CACHE_TTL_SECONDS
+    );
+  } catch (cacheError) {
+    Logger.log('cacheActiveContractMap_ error: ' + cacheError);
+  }
+}
+
+function readActiveContractMapCache_() {
+  try {
+    const cached = safeScriptCacheGetJSON_(ACTIVE_CONTRACT_MAP_CACHE_KEY);
+    if (!cached || !Array.isArray(cached.entries)) return null;
+    const map = new Map();
+    cached.entries.forEach(function (entry) {
+      if (!entry || !entry.company) return;
+      const company = String(entry.company == null ? '' : entry.company).trim().toUpperCase();
+      if (!company) return;
+      const contracts = entry.contracts;
+      const set = new Set();
+      if (Array.isArray(contracts)) {
+        contracts.forEach(function (contractNo) {
+          const value = String(contractNo == null ? '' : contractNo).trim();
+          if (value) set.add(value);
+        });
+      }
+      map.set(company, set);
+    });
+    return map;
+  } catch (cacheError) {
+    Logger.log('readActiveContractMapCache_ error: ' + cacheError);
+    return null;
+  }
+}
+
+function invalidateActiveContractMapCache_() {
+  ACTIVE_CONTRACT_MAP_MEMORY_CACHE = null;
+  ACTIVE_CONTRACT_MAP_MEMORY_CACHE_EXPIRES_AT = 0;
+  safeScriptCacheRemove_(ACTIVE_CONTRACT_MAP_CACHE_KEY);
 }
 
 // true nếu Contract No thuộc đúng Company và Active
@@ -4450,6 +4551,7 @@ function upsertContract(contract, sessionToken) {
     if (!Array.isArray(result) || !result.length) {
       throw new Error('Không tìm thấy ID để cập nhật.');
     }
+    invalidateActiveContractMapCache_();
     return 'Đã cập nhật hợp đồng.';
   }
 
@@ -4461,6 +4563,7 @@ function upsertContract(contract, sessionToken) {
   if (!Array.isArray(insertResult) || !insertResult.length) {
     throw new Error('Không thể tạo hợp đồng mới.');
   }
+  invalidateActiveContractMapCache_();
   return 'Đã tạo hợp đồng mới.';
 }
 
@@ -4486,6 +4589,9 @@ function deleteContracts(ids, sessionToken) {
   });
 
   const count = Array.isArray(result) ? result.length : 0;
+  if (count > 0) {
+    invalidateActiveContractMapCache_();
+  }
   return `Đã xoá ${count} hợp đồng.`;
 }
 
