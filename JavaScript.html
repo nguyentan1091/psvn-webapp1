@@ -2398,61 +2398,68 @@ function initRegisterPage() {
 
   let dateControl = $('#formRegisterDate');
 
-  google.script.run
-    .withSuccessHandler(status => {
-      if (userSession.role === 'admin') {
-        const nowVietnam = getVietnamNowClient();
-        const today = new Date(nowVietnam.getTime());
-        const todayInput = getVietnamIsoDate(today);
-        dateControl.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
-        dateControl = $('#formRegisterDate');
-        $('#upload-date-note').text('');
-        $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
-        $('#registration-locked-overlay').addClass('d-none');
-        const contentCards = $('#registration-content .card');
-        contentCards.removeClass('opacity-50 disabled-card');
-        contentCards.find('input, select, button').prop('disabled', false);
-        refreshUploadSaveButtonState();
-      } else {
-        startRegistrationTimer(status);
-      }
-    })
-    .withFailureHandler(showError)
-    .checkRegistrationTime();
-
   $('#manualEntryForm').off('submit').on('submit', handleManualAdd);
   $('#uploadButton').off('click').on('click', handleFileUpload);
   $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
 
-  google.script.run
-    .withSuccessHandler(list => {
-      allowedCompanies = (list || []).filter(Boolean);
-      const $sel = $('#formTransportationCompany');
+  const applyRegistrationStatusForAdmin = () => {
+    const nowVietnam = getVietnamNowClient();
+    const today = new Date(nowVietnam.getTime());
+    const todayInput = getVietnamIsoDate(today);
+    dateControl.replaceWith(`<input type="date" id="formRegisterDate" class="form-control form-control-sm" value="${todayInput}">`);
+    dateControl = $('#formRegisterDate');
+    $('#upload-date-note').text('');
+    $('#registration-open-notice, #registration-closed-notice').addClass('d-none');
+    $('#registration-locked-overlay').addClass('d-none');
+    const contentCards = $('#registration-content .card');
+    contentCards.removeClass('opacity-50 disabled-card');
+    contentCards.find('input, select, button').prop('disabled', false);
+    refreshUploadSaveButtonState();
+  };
 
-      if (isRole('user')) {
-        const me = String((userSession.contractor || '')).trim();
-        if (me) {
-          $sel.html(`<option value="${me}">${me}</option>`)
-              .val(me)
-              .prop('disabled', true)
-              .addClass('bg-light');
-        } else {
-          const firstOption = t.select_company_option || 'Chọn đơn vị';
-          const html = [`<option value="">${firstOption}</option>`,
-                        ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
-          $sel.html(html).prop('disabled', false).removeClass('bg-light');
-        }
-      } else {
-        const firstOption = t.select_company_option || 'Chọn đơn vị';
-        const html = [`<option value="">${firstOption}</option>`,
-                      ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
-        $sel.html(html).prop('disabled', false).removeClass('bg-light');
+  const populateTransportCompanies = (list) => {
+    allowedCompanies = (list || []).filter(Boolean);
+    const $sel = $('#formTransportationCompany');
+
+    if (isRole('user')) {
+      const me = String((userSession.contractor || '')).trim();
+      if (me) {
+        $sel.html(`<option value="${me}">${me}</option>`)
+            .val(me)
+            .prop('disabled', true)
+            .addClass('bg-light');
+        return;
       }
+    }
+
+    const firstOption = t.select_company_option || 'Chọn đơn vị';
+    const options = [`<option value="">${firstOption}</option>`,
+                    ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
+    $sel.html(options)
+        .prop('disabled', false)
+        .removeClass('bg-light');
+  };
+
+  google.script.run
+    .withSuccessHandler(data => {
+      const result = (data && typeof data === 'object') ? data : {};
+      const status = result.registrationStatus || null;
+      const companies = Array.isArray(result.transportCompanies) ? result.transportCompanies : [];
+      const contractNos = typeof result.activeContractNos === 'undefined' ? undefined : result.activeContractNos;
+
+      if (userSession.role === 'admin') {
+        applyRegistrationStatusForAdmin();
+      } else {
+        startRegistrationTimer(status);
+      }
+
+      populateTransportCompanies(companies);
+      loadActiveContractNosForRegister(contractNos);
+      refreshUploadSaveButtonState();
     })
     .withFailureHandler(showError)
-    .getTransportCompanies();
+    .getRegisterPageInitData(userSession.token);
 
-  loadActiveContractNosForRegister();
   refreshUploadSaveButtonState();
 }
 
@@ -6319,15 +6326,21 @@ function bindContractToolbar(isAdmin) {
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 //nạp Số HĐ cho trang Đăng ký xe
-function loadActiveContractNosForRegister() { 
+function loadActiveContractNosForRegister(prefetched) {
+  const apply = (arr) => {
+    const safeArr = Array.isArray(arr) ? arr : [];
+    const $dl = $('#contractNoList').empty();
+    safeArr.forEach(no => $dl.append(`<option value="${esc(no)}"></option>`));
+    initComboBox('#manual-contractNo', safeArr);
+  };
+
+  if (typeof prefetched !== 'undefined') {
+    apply(prefetched);
+    return;
+  }
   google.script.run
     .withSuccessHandler(arr => {
-      // vẫn nạp datalist để fallback (không bắt buộc, nhưng giữ như cũ)
-      const $dl = $('#contractNoList').empty();
-      (arr || []).forEach(no => $dl.append(`<option value="${esc(no)}"></option>`));
-
-      // ✅ khởi tạo combobox nhìn & dùng như select
-      initComboBox('#manual-contractNo', arr || []);
+      apply(arr || []);
     })
     .withFailureHandler(showError)
     .getActiveContractNos(userSession.token);
