@@ -855,9 +855,9 @@ const translations = {
     "wr_status_unknown": "Không xác định đơn vị vận chuyển",
     "wr_status_assigned": "Đã xác định đơn vị vận chuyển",
     "wr_summary_total_trucks_label": "Tổng số xe",
-    "wr_summary_total_trucks_sub": "Số lượng xe phù hợp với bộ lọc",
+    "wr_summary_total_trucks_sub": "Bao gồm cả xe chưa xác định đơn vị vận tải",
     "wr_summary_total_weight_label": "Tổng khối lượng (Kg)",
-    "wr_summary_total_weight_sub": "Khối lượng đã ghi nhận theo bộ lọc",
+    "wr_summary_total_weight_sub": "Tổng khối lượng trong ngày kể cả xe không xác định",
     "wr_unknown_modal_title": "Xe không xác định đơn vị vận chuyển",
     "wr_result_card_title": "Kết quả bốc hàng",
     "wr_matching_loading": "Đang đối chiếu...",
@@ -1193,9 +1193,9 @@ const translations = {
     "wr_status_unknown": "Transport company unknown",
     "wr_status_assigned": "Transport company identified",
     "wr_summary_total_trucks_label": "Total trucks",
-    "wr_summary_total_trucks_sub": "Vehicles matching the filters",
+    "wr_summary_total_trucks_sub": "Includes transport company unknown",
     "wr_summary_total_weight_label": "Total weight (Kg)",
-    "wr_summary_total_weight_sub": "Recorded weight within the filters",
+    "wr_summary_total_weight_sub": "Total weight including transport company unknown",
     "wr_unknown_modal_title": "Transport company not identified",
     "wr_result_card_title": "Weighing results",
     "wr_matching_loading": "Matching transport companies...",
@@ -3205,7 +3205,7 @@ function initializeDataTable(config) {
         deleteButton,
         selectAllCheckbox,
         enableSelect = true,
-        pageLength = 50,
+        pageLength = 10,
         order: initialOrder
     } = config;
 
@@ -4512,7 +4512,7 @@ function initTotalListPage() {
         ordering: true,
         deferRender: true,
         paging: true,
-        pageLength: parseInt($('#total-list-page-length-select').val() || '50', 10),
+        pageLength: parseInt($('#total-list-page-length-select').val() || '10', 10),
         columns: columns,
         // Không dùng scrollX để tránh lệch header/body
         // scrollX: false,
@@ -6141,7 +6141,7 @@ function buildContractTable(isAdmin) {
   contractTable = $('#contractTable').DataTable({
     processing: true,
     serverSide: true,
-    pageLength: 50,
+    pageLength: 10,
     scrollX: true,
     ajax: function(dtReq, callback) {
       const params = {
@@ -6461,7 +6461,7 @@ function initXPPLWeighingStationPage() {
       title: h
     })),
     autoWidth: true,
-    pageLength: 50,
+    pageLength: 10,
     lengthChange: false,
     searching: true,
     paging: true,
@@ -7063,7 +7063,7 @@ $('#xppl-form-export').off('click.xppl').on('click.xppl', function () {
 
   if ($.fn.DataTable.isDataTable('#xppl-table')) $('#xppl-table').DataTable().destroy();
   xpplDT = $('#xppl-table').DataTable({
-    paging:true, pageLength:50, lengthChange:false, searching:true, ordering:true,
+    paging:true, pageLength:10, lengthChange:false, searching:true, ordering:true,
     autoWidth:false, deferRender:true, scrollX:true, serverSide:false,
     processing:true, searchDelay:300, orderMulti:false,
     columns: [
@@ -7592,19 +7592,38 @@ function getWrFilters(){
 }
 
 function updateWrSummary(counts, overview){
-  const formatNumber = value => {
-    if (value == null) return '0';
-    const cleaned = typeof value === 'string' ? value.replace(/,/g, '') : value;
-    const num = typeof cleaned === 'number' ? cleaned : Number(cleaned);
-    return Number.isFinite(num) ? num.toLocaleString('en-US') : '0';
+  const parseNumber = value => {
+    if (value == null) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/,/g, '').trim();
+      if (!cleaned) return 0;
+      const num = Number(cleaned);
+      return Number.isFinite(num) ? num : 0;
+    }
+    return 0;
   };
 
-  $('#wr-sum-unassign').text(formatNumber(counts?.unassigned));
-  $('#wr-sum-unknown').text(formatNumber(counts?.unknown));
-  $('#wr-sum-assigned').text(formatNumber(counts?.assigned));
+  const formatNumber = value => {
+    const num = parseNumber(value);
+    return num.toLocaleString('en-US');
+  };
 
-  $('#wr-summary-trucks').text(formatNumber(overview?.trucks));
-  $('#wr-summary-weight').text(formatNumber(overview?.weight));
+  const unassigned = parseNumber(counts?.unassigned);
+  const unknown = parseNumber(counts?.unknown);
+  const assigned = parseNumber(counts?.assigned);
+
+  $('#wr-sum-unassign').text(formatNumber(unassigned));
+  $('#wr-sum-unknown').text(formatNumber(unknown));
+  $('#wr-sum-assigned').text(formatNumber(assigned));
+
+  const derivedTotal = unassigned + unknown + assigned;
+  const overviewTotal = parseNumber(overview?.trucks);
+  const totalTrucks = overviewTotal || derivedTotal;
+  const totalWeight = parseNumber(overview?.weight);
+
+  $('#wr-summary-trucks').text(formatNumber(totalTrucks));
+  $('#wr-summary-weight').text(formatNumber(totalWeight));
 }
 
 function updateWrAdvancedFilters(options){
@@ -7918,7 +7937,7 @@ function buildWeighResultTables(isAdmin) {
   wrResultTable = $('#wr-result-table').DataTable({
     processing:true,
     serverSide:true,
-    pageLength:50,
+    pageLength:10,
     autoWidth:false,
     deferRender:true,
     columnDefs:[{ targets:'_all', className:'text-nowrap' }],
@@ -8044,7 +8063,7 @@ function buildWeighResultTables(isAdmin) {
     wrUnknownTable = $('#wr-unknown-table').DataTable({
       processing:true,
       serverSide:true,
-      pageLength:50,
+      pageLength:10,
       autoWidth:false,
       deferRender:true,
       columnDefs:[{ targets:'_all', className:'text-nowrap' }],
