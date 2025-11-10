@@ -233,6 +233,29 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'Time': 'time'
 };
 
+const VEHICLE_REGISTRATION_SEARCH_COLUMNS = [
+  'register_date::text',
+  'contract_no',
+  'truck_plate',
+  'country',
+  'wheel',
+  'trailer_plate',
+  'truck_weight::text',
+  'pay_load::text',
+  'container_no1',
+  'container_no2',
+  'driver_name',
+  'id_passport',
+  'phone_number',
+  'destination_est',
+  'transportation_company',
+  'subcontractor',
+  'vehicle_status',
+  'registration_status',
+  'time::text',
+  'created_by'
+];
+
 function buildSupabaseUrl_(path) {
   const base = SUPABASE_URL.replace(/\/$/, '');
   if (!path) return base;
@@ -5330,38 +5353,16 @@ function getWeighResultData(params) {
 
   const summaryFilterParts = baseFilterParts.slice();
   if (searchClause) summaryFilterParts.push(searchClause);
-  const summaryQueryParts = ['select=' + encodeURIComponent('transportation_company,count:count(id),total_weight:sum(net_weight)')]
-    .concat(summaryFilterParts);
-  summaryQueryParts.push('group=transportation_company');
-
-  const counts = { unassigned: 0, unknown: 0, assigned: 0 };
-  let summaryTrucks = 0;
-  let totalWeight = 0;
-  try {
-    const summaryRows = supabaseRequest_(SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + summaryQueryParts.join('&')) || [];
-    for (var i = 0; i < summaryRows.length; i++) {
-      var row = summaryRows[i] || {};
-      var comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-      var compLower = comp.toLowerCase();
-      var count = parseInt(row.count, 10);
-      if (!isFinite(count)) count = 0;
-      summaryTrucks += count;
-      if (!comp) counts.unassigned += count;
-      else if (compLower === 'unknown') counts.unknown += count;
-      else counts.assigned += count;
-
-      var weightVal = row.total_weight;
-      if (weightVal == null && row.sum != null) weightVal = row.sum;
-      var weightNum = Number(weightVal);
-      if (!Number.isFinite(weightNum)) {
-        var parsed = Number(String(weightVal == null ? '' : weightVal).replace(/,/g, ''));
-        weightNum = Number.isFinite(parsed) ? parsed : 0;
-      }
-      totalWeight += weightNum;
-    }
-  } catch (e) {
-    Logger.log('getWeighResultData summary error: ' + e);
+  if (params.onlyUnknown) {
+    summaryFilterParts.push('transportation_company=ilike.' + encodeURIComponent('Unknown'));
+  } else if (params.excludeUnknown) {
+    summaryFilterParts.push('transportation_company=not.ilike.' + encodeURIComponent('Unknown'));
   }
+
+  const summaryResult = fetchWeighResultSummary_(summaryFilterParts);
+  const counts = summaryResult.counts;
+  const summaryTrucks = summaryResult.trucks;
+  const totalWeight = summaryResult.weight;
 
   let availableContracts = [];
   try {
@@ -5424,6 +5425,49 @@ function getWeighResultData(params) {
     summary: { trucks: summaryTrucks, weight: totalWeight },
     options: { contracts: availableContracts, customers: availableCustomers }
   };
+}
+
+function parseWeighResultWeight_(value) {
+  if (value === null || value === undefined || value === '') {
+    return 0;
+  }
+  if (typeof value === 'number') {
+    return isFinite(value) ? value : 0;
+  }
+  const cleaned = String(value)
+    .replace(/,/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+  if (!cleaned) return 0;
+  const parsed = Number(cleaned);
+  return isFinite(parsed) ? parsed : 0;
+}
+
+function fetchWeighResultSummary_(filterParts) {
+  const counts = { unassigned: 0, unknown: 0, assigned: 0 };
+  let summaryTrucks = 0;
+  let totalWeight = 0;
+
+  try {
+    const queryParts = ['select=' + encodeURIComponent(['transportation_company', 'net_weight'].join(','))]
+      .concat(Array.isArray(filterParts) ? filterParts : []);
+    const rows = fetchAllSupabaseRows_(SUPABASE_XPPL_DATABASE_ENDPOINT, queryParts, 500) || [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
+      const compLower = comp.toLowerCase();
+      summaryTrucks += 1;
+      if (!comp) counts.unassigned += 1;
+      else if (compLower === 'unknown') counts.unknown += 1;
+      else counts.assigned += 1;
+
+      totalWeight += parseWeighResultWeight_(row.net_weight);
+    }
+  } catch (e) {
+    Logger.log('fetchWeighResultSummary_ error: ' + e);
+  }
+
+  return { counts: counts, trucks: summaryTrucks, weight: totalWeight };
 }
 
 function updateWeighResultCompany(payload, sessionToken) {
