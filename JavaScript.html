@@ -516,6 +516,13 @@ function invalidateAllPageCache() {
     pageCache.clear();
 }
 
+function getPageTemplateHtml(pageName) {
+    if (!pageName) return null;
+    const template = document.getElementById(`template-${pageName}`);
+    if (!template) return null;
+    return template.innerHTML;
+}
+
 function clearLoginFallbackTimer() {
     if (loginFallbackTimer) {
         clearTimeout(loginFallbackTimer);
@@ -1546,92 +1553,83 @@ function renderLoginTemplate() {
 
 function loadLoginPage() {
   if (renderLoginTemplate()) {
+      clearLoginFallbackTimer();
       return;
   }
 
-  google.script.run
-    .withSuccessHandler(html => {
-        document.body.className = 'login-view-active';
-        $('#app-container').html(html);
-        try {
-            setLanguage(currentLang);
-        } catch (err) {
-            if (typeof console !== 'undefined' && console.warn) {
-                console.warn('setLanguage failed while loading login page:', err);
-            }
-        }
-        bindLoginEvents();
-        clearLoginFallbackTimer();
-        showApp();
-    })
-    .withFailureHandler(showError)
-    .include('Login');
+  showError(new Error('Không tìm thấy template đăng nhập.'));
 }
 
 function loadDashboard() {
   invalidateAllPageCache();
   showLoader();
-  google.script.run
-    .withSuccessHandler(html => {
-        // Dòng mã thêm vào:
-        document.body.className = ''; // Xóa "dấu" để trả về layout dashboard mặc định
-        $('#app-container').html(html);
-        // Ẩn các menu theo phân quyền
-        if (userSession) {
-          const hideMenuItem = page => {
-            const item = $(`#sidebar-wrapper .list-group-item[data-page="${page}"]`);
-            item.addClass('d-none disabled').removeClass('active');
-            const parent = item.closest('.collapse');
-            if (parent.length && parent.find('.list-group-item[data-page]:not(.d-none)').length === 0) {
-              parent.addClass('d-none');
-              parent.prev('a').addClass('d-none');
-            }
-          };
+  const dashboardHtml = getPageTemplateHtml('Dashboard');
+  if (!dashboardHtml) {
+      showError(new Error('Không tìm thấy template Dashboard.'));
+      return;
+  }
 
-          const role = getUserRole();
-          if (role === 'user-supervision') {
-            hideMenuItem('Page_Register');
-            hideMenuItem('Page_TotalList');
-            hideMenuItem('Page_Contract');
-            hideMenuItem('Page_XuLyXPPL');
-            hideMenuItem('XPPL-WeighingStation');
-            hideMenuItem('Page_LoginHistory');
-            hideMenuItem('Page_VehicleHistory');
-            hideMenuItem('Page_Guide');
-            $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
-            const viewLink = $('#sidebar-wrapper .list-group-item[data-page="Page_View"]');
-            viewLink.removeClass('d-none disabled').addClass('active');
-            viewLink.closest('.collapse').addClass('show');
-          } else if (role === 'admin-xppl') {
-            hideMenuItem('Page_Register');
-            hideMenuItem('Page_Contract');
-            hideMenuItem('Page_XuLyXPPL');
-            hideMenuItem('Page_LoginHistory');
-            hideMenuItem('Page_VehicleHistory');
-            $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
-          } else if (role !== 'admin') {
-            hideMenuItem('Page_XuLyXPPL');
-            hideMenuItem('Page_LoginHistory');
-            hideMenuItem('Page_VehicleHistory');
-            const active = $('#sidebar-wrapper .list-group-item[data-page].active');
-            if (active.data('page') === 'Page_XuLyXPPL') {
-              active.removeClass('active');
-              $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
-            }
-          }
-        if (!hasAnyRole(['admin', 'admin-xppl'])) {
-            hideMenuItem('XPPL-WeighingStation');
-          }
-        }
-        setupDashboardListeners();
-        const defaultPageLink = $('#sidebar-wrapper .list-group-item[data-page].active');
-        defaultPageLink.closest('.collapse').addClass('show');
-        const pageTitleKey = defaultPageLink.data('title-key');
-        loadPage(defaultPageLink.data('page'), pageTitleKey, true);
-        showApp();
-    })
-    .withFailureHandler(showError)
-    .include('Dashboard');
+  document.body.className = '';
+  $('#app-container').html(dashboardHtml);
+  if (userSession) {
+    const hideMenuItem = page => {
+      const item = $(`#sidebar-wrapper .list-group-item[data-page="${page}"]`);
+      item.addClass('d-none disabled').removeClass('active');
+      const parent = item.closest('.collapse');
+      if (parent.length && parent.find('.list-group-item[data-page]:not(.d-none)').length === 0) {
+        parent.addClass('d-none');
+        parent.prev('a').addClass('d-none');
+      }
+    };
+
+    const role = getUserRole();
+    if (role === 'user-supervision') {
+      hideMenuItem('Page_Register');
+      hideMenuItem('Page_TotalList');
+      hideMenuItem('Page_Contract');
+      hideMenuItem('Page_XuLyXPPL');
+      hideMenuItem('XPPL-WeighingStation');
+      hideMenuItem('Page_LoginHistory');
+      hideMenuItem('Page_VehicleHistory');
+      hideMenuItem('Page_Guide');
+      $('#sidebar-wrapper .list-group-item[data-page]').removeClass('active');
+      const viewLink = $('#sidebar-wrapper .list-group-item[data-page="Page_View"]');
+      viewLink.removeClass('d-none disabled').addClass('active');
+      viewLink.closest('.collapse').addClass('show');
+    } else if (role === 'admin-xppl') {
+      hideMenuItem('Page_Register');
+      hideMenuItem('Page_Contract');
+      hideMenuItem('Page_XuLyXPPL');
+      hideMenuItem('Page_LoginHistory');
+      hideMenuItem('Page_VehicleHistory');
+      $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
+    } else if (role !== 'admin') {
+      hideMenuItem('Page_XuLyXPPL');
+      hideMenuItem('Page_LoginHistory');
+      hideMenuItem('Page_VehicleHistory');
+      const active = $('#sidebar-wrapper .list-group-item[data-page].active');
+      if (active.data('page') === 'Page_XuLyXPPL') {
+        active.removeClass('active');
+        $('#sidebar-wrapper .list-group-item[data-page="Page_View"]').addClass('active').closest('.collapse').addClass('show');
+      }
+    }
+    if (!hasAnyRole(['admin', 'admin-xppl'])) {
+        hideMenuItem('XPPL-WeighingStation');
+    }
+  }
+  setupDashboardListeners();
+  const defaultPageLink = $('#sidebar-wrapper .list-group-item[data-page].active');
+  defaultPageLink.closest('.collapse').addClass('show');
+  const pageTitleKey = defaultPageLink.data('title-key');
+  loadPage(defaultPageLink.data('page'), pageTitleKey, true);
+  try {
+      setLanguage(currentLang);
+  } catch (err) {
+      if (typeof console !== 'undefined' && console.warn) {
+          console.warn('setLanguage failed while loading dashboard template:', err);
+      }
+  }
+  showApp();
 }
 
 function runPageInitializer(pageName) {
@@ -1718,13 +1716,15 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
       return;
     }
 
-    google.script.run
-        .withSuccessHandler(html => {
-            cachePageHtml(pageName, html);
-            renderPageContent(pageName, html, isInitialLoad);
-        })
-        .withFailureHandler(showError)
-        .include(pageName);
+    const templateHtml = getPageTemplateHtml(pageName);
+    if (!templateHtml) {
+        if (!isInitialLoad) Swal.close();
+        showError(new Error(`Không tìm thấy template cho trang ${pageName}.`));
+        return;
+    }
+
+    cachePageHtml(pageName, templateHtml);
+    renderPageContent(pageName, templateHtml, isInitialLoad);
 }
 
 function setupDashboardListeners() {
