@@ -5820,30 +5820,27 @@ function fetchWeighResultSummary_(filterParts) {
   let totalWeight = 0;
 
   try {
-    const queryParts = ['select=' + encodeURIComponent('transportation_company,count:id,sum:net_weight')]
+    const queryParts = ['select=' + encodeURIComponent('transportation_company,net_weight')]
       .concat(Array.isArray(filterParts) ? filterParts : []);
-    queryParts.push('group=transportation_company');
 
-    const responses = executeSupabaseBatchRequests_([
-      { path: SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + queryParts.join('&') }
-    ]);
+    const rows = fetchAllSupabaseRows_(
+      SUPABASE_XPPL_DATABASE_ENDPOINT,
+      queryParts,
+      1000
+    );
 
-    const rows = Array.isArray(responses[0] && responses[0].data) ? responses[0].data : [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] || {};
       const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
       const compLower = comp.toLowerCase();
-      const rawCount = row.count != null ? row.count : row.count_id;
-      const countValue = rawCount == null ? 0 : Number(rawCount);
-      const safeCount = isNaN(countValue) ? 0 : countValue;
-      summaryTrucks += safeCount;
 
-      if (!comp) counts.unassigned += safeCount;
-      else if (compLower === 'unknown') counts.unknown += safeCount;
-      else counts.assigned += safeCount;
+      summaryTrucks++;
 
-      const rawWeight = row.sum != null ? row.sum : (row.sum_net_weight != null ? row.sum_net_weight : row.net_weight_sum);
-      const weightValue = rawWeight == null ? 0 : Number(rawWeight);
+      if (!comp) counts.unassigned++;
+      else if (compLower === 'unknown') counts.unknown++;
+      else counts.assigned++;
+
+      const weightValue = parseWeighResultWeight_(row.net_weight);
       if (!isNaN(weightValue)) {
         totalWeight += weightValue;
       }
