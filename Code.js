@@ -5353,11 +5353,6 @@ function getWeighResultData(params) {
 
   const summaryFilterParts = baseFilterParts.slice();
   if (searchClause) summaryFilterParts.push(searchClause);
-  if (params.onlyUnknown) {
-    summaryFilterParts.push('transportation_company=ilike.' + encodeURIComponent('Unknown'));
-  } else if (params.excludeUnknown) {
-    summaryFilterParts.push('transportation_company=not.ilike.' + encodeURIComponent('Unknown'));
-  }
 
   const summaryResult = fetchWeighResultSummary_(summaryFilterParts);
   const counts = summaryResult.counts;
