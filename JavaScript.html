@@ -1896,62 +1896,90 @@ async function collectLoginContext(options = {}) {
     return context;
 }
 
+//Hàm login
 async function handleLogin(e) {
     e.preventDefault();
     const loginBtn = $('#loginBtn');
     loginBtn.find('.spinner-border').removeClass('d-none');
     loginBtn.prop('disabled', true);
 
-    let context = {};
-    try {
-        context = await collectLoginContext({
-            ipTimeoutMs: 4000,
-            locationTimeoutMs: 6000,
-            locationMaximumAgeMs: 60 * 1000
-        });
-    } catch (err) {
-        console.warn('collectLoginContext failed:', err);
-        context = {};
-    }
-
-    const userAgent = getUserAgentString();
-    if (userAgent && !context.userAgent) {
-        context.userAgent = userAgent;
-    }
-
+    // 1. Chỉ lấy thông tin đăng nhập cốt lõi
     const credentials = {
         username: $('#username').val(),
-        password: $('#password').val(),
-        context
+        password: $('#password').val()
+        // KHÔNG gửi context (IP/Geo) vội
     };
 
+    // 2. GỌI SERVER NGAY LẬP TỨC
     google.script.run
         .withSuccessHandler(session => {
+            // 3. Xử lý thành công
             const normalizedSession = (session && typeof session === 'object') ? session : {};
             const isValid = !!(normalizedSession.isLoggedIn && normalizedSession.token);
+            
             if (isValid) {
                 userSession = normalizedSession;
                 setSessionFlag();
                 persistUserSession(userSession);
-                loadDashboard();
+                
+                // 4. HIỂN THỊ DASHBOARD NGAY LẬP TỨC
+                // Người dùng sẽ thấy trang chính ngay tại đây
+                loadDashboard(); 
                 setupInactivityTimer();
+                
+                // 5. SAU KHI ĐÃ VÀO TRANG, âm thầm thu thập context
+                //    và gửi lên server trong một lệnh gọi riêng.
+                (async () => {
+                    let context = {};
+                    try {
+                        context = await collectLoginContext({
+                            ipTimeoutMs: 4000,       // Giới hạn thời gian chờ IP
+                            locationTimeoutMs: 6000, // Giới hạn thời gian chờ Vị trí
+                            locationMaximumAgeMs: 60 * 1000
+                        });
+                    } catch (err) {
+                        console.warn('collectLoginContext (background) failed:', err);
+                        context = {};
+                    }
+                    
+                    // Lấy User Agent nếu có
+                    const userAgent = getUserAgentString();
+                    if (userAgent && !context.userAgent) {
+                        context.userAgent = userAgent;
+                    }
+
+                    // 6. Gửi context lên server ở chế độ "bắn và quên" (fire-and-forget)
+                    if (userSession.token) {
+                        google.script.run
+                            .withFailureHandler(err => console.error('logClientContext failed:', err))
+                            .logClientContext(userSession.token, context); // Gọi hàm mới
+                    }
+                })(); // <== Chạy hàm async ngay lập tức
+                
+                // Tải các tài nguyên khác cho trang
+                ensureVietnamTime();
+                google.script.run
+                  .withSuccessHandler(list => { allowedCompanies = (list || []).filter(Boolean); })
+                  .withFailureHandler(showError)
+                  .getTransportCompanies();
+
             } else {
+                // Xử lý nếu server trả về lỗi (ví dụ: sai pass)
                 userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
                 clearStoredSession();
                 clearSessionFlag();
                 showError({ message: translations[currentLang].login_failed });
-                userSession = { isLoggedIn: false, role: null, contractor: null, token: null };
-                clearStoredSession();
                 loginBtn.find('.spinner-border').addClass('d-none');
                 loginBtn.prop('disabled', false);                
             }
         })
         .withFailureHandler(error => {
+            // Xử lý lỗi (sai pass, tài khoản khóa, v.v.)
             showError(error);
             loginBtn.find('.spinner-border').addClass('d-none');
             loginBtn.prop('disabled', false);
         })
-        .checkLogin(credentials);
+        .checkLogin(credentials); // Gọi hàm checkLogin (đã được tối ưu ở bước 2)
 }
 
 function buildCacheBustingUrl() {
@@ -2386,6 +2414,7 @@ function handleChangePassword(e) {
         .changePassword({ currentPassword, newPassword }, userSession.token);
 }
 
+// ====== TỐI ƯU HÓA TẢI TRANG ĐĂNG KÝ (NEW) ======
 function initRegisterPage() {
   ensureVietnamTime();
   const t = translations[currentLang];
@@ -2402,6 +2431,81 @@ function initRegisterPage() {
   $('#uploadButton').off('click').on('click', handleFileUpload);
   $('#saveUploadBtn').off('click').on('click', handleSaveUploadedData);
 
+  const isAdmin = isRole('admin');
+  
+  // -----
+  // 1. TẢI TRẠNG THÁI GIỜ NGAY LẬP TỨC (RẤT NHANH)
+  // -----
+  // (Hiển thị đồng hồ đếm ngược ngay lập tức)
+  google.script.run
+    .withSuccessHandler(status => {
+      if (isAdmin) {
+        applyRegistrationStatusForAdmin();
+      } else {
+        startRegistrationTimer(status || null);
+      }
+    })
+    .withFailureHandler(error => {
+      // Ngay cả khi lỗi, vẫn thử chạy timer với trạng thái rỗng
+      if (isAdmin) {
+        applyRegistrationStatusForAdmin();
+      } else {
+        startRegistrationTimer(null); 
+      }
+      showError(error);
+    })
+    .checkRegistrationTime(); // Chỉ gọi hàm check giờ (rất nhanh)
+
+  // -----
+  // 2. TẢI SONG SONG DROPDOWN "ĐƠN VỊ VẬN CHUYỂN"
+  // -----
+  // (Hàm này sẽ được tối ưu ở server)
+  const $selCompany = $('#formTransportationCompany');
+  if (isRole('user')) {
+    const me = String((userSession.contractor || '')).trim();
+    if (me) {
+      $selCompany.html(`<option value="${me}">${me}</option>`)
+          .val(me)
+          .prop('disabled', true)
+          .addClass('bg-light');
+      // Dù là user, vẫn gọi hàm getTransportCompanies để nạp vào biến global `allowedCompanies`
+      google.script.run.withSuccessHandler(list => { 
+        allowedCompanies = (list || []).filter(Boolean); 
+      }).getTransportCompanies();
+    }
+  } else {
+    // Admin/Role khác thì tải danh sách
+    $selCompany.prop('disabled', true).html(`<option value="">${t.loading_page || 'Đang tải...'}</option>`);
+    google.script.run
+      .withSuccessHandler(list => {
+        allowedCompanies = (list || []).filter(Boolean);
+        const firstOption = t.select_company_option || 'Chọn đơn vị';
+        const options = [`<option value="">${firstOption}</option>`,
+                        ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
+        $selCompany.html(options)
+            .prop('disabled', false)
+            .removeClass('bg-light');
+      })
+      .withFailureHandler(showError)
+      .getTransportCompanies(); // Gọi hàm đã tối ưu
+  }
+  
+  // -----
+  // 3. TẢI SONG SONG DROPDOWN "SỐ HỢP ĐỒNG"
+  // -----
+  // (Hàm này sẽ được tối ưu ở server)
+  // Hiển thị "Đang tải..." cho combobox
+  initComboBox('#manual-contractNo', ['Đang tải...']); 
+  google.script.run
+    .withSuccessHandler(contractNos => {
+      loadActiveContractNosForRegister(contractNos || []); // Nạp dữ liệu vào combobox
+    })
+    .withFailureHandler(showError)
+    .getActiveContractNos(userSession.token); // Gọi hàm đã tối ưu
+
+  // -----
+  // 4. CÁC THIẾT LẬP KHÁC (giữ nguyên)
+  // -----
   const applyRegistrationStatusForAdmin = () => {
     const nowVietnam = getVietnamNowClient();
     const today = new Date(nowVietnam.getTime());
@@ -2416,49 +2520,6 @@ function initRegisterPage() {
     contentCards.find('input, select, button').prop('disabled', false);
     refreshUploadSaveButtonState();
   };
-
-  const populateTransportCompanies = (list) => {
-    allowedCompanies = (list || []).filter(Boolean);
-    const $sel = $('#formTransportationCompany');
-
-    if (isRole('user')) {
-      const me = String((userSession.contractor || '')).trim();
-      if (me) {
-        $sel.html(`<option value="${me}">${me}</option>`)
-            .val(me)
-            .prop('disabled', true)
-            .addClass('bg-light');
-        return;
-      }
-    }
-
-    const firstOption = t.select_company_option || 'Chọn đơn vị';
-    const options = [`<option value="">${firstOption}</option>`,
-                    ...allowedCompanies.map(c => `<option value="${c}">${c}</option>`)].join('');
-    $sel.html(options)
-        .prop('disabled', false)
-        .removeClass('bg-light');
-  };
-
-  google.script.run
-    .withSuccessHandler(data => {
-      const result = (data && typeof data === 'object') ? data : {};
-      const status = result.registrationStatus || null;
-      const companies = Array.isArray(result.transportCompanies) ? result.transportCompanies : [];
-      const contractNos = typeof result.activeContractNos === 'undefined' ? undefined : result.activeContractNos;
-
-      if (userSession.role === 'admin') {
-        applyRegistrationStatusForAdmin();
-      } else {
-        startRegistrationTimer(status);
-      }
-
-      populateTransportCompanies(companies);
-      loadActiveContractNosForRegister(contractNos);
-      refreshUploadSaveButtonState();
-    })
-    .withFailureHandler(showError)
-    .getRegisterPageInitData(userSession.token);
 
   refreshUploadSaveButtonState();
 }
