@@ -1453,6 +1453,25 @@ function logLoginAttempt(username, outcome, context) {
   }
 }
 
+/**
+ * Được gọi từ client SAU KHI đăng nhập thành công
+ * để ghi lại context (IP, Geo) một cách bất đồng bộ.
+ */
+function logClientContext(sessionToken, context) {
+  try {
+    // Xác thực token nhanh từ cache hoặc Supabase
+    const session = validateSession(sessionToken); 
+    if (session && session.isLoggedIn && session.username) {
+      // Gọi hàm log gốc với context nhận được
+      logLoginAttempt(session.username, 'Success', context || {});
+    }
+  } catch (e) {
+    // Ghi log lỗi nhưng không ném ra client, 
+    // vì đây là lệnh gọi "bắn và quên"
+    Logger.log('logClientContext failed: ' + e.message);
+  }
+}
+
 function ensureSupervisionAccount_() {
   try {
     const existing = getSupabaseUserByUsername_(SUPERVISION_DEFAULT_USERNAME);
@@ -1478,20 +1497,20 @@ function checkLogin(credentials) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const username = String(credentials.username == null ? '' : credentials.username).trim();
 
-  const loginContext = credentials && typeof credentials.context === 'object' ? credentials.context : {};
+  //const loginContext = credentials && typeof credentials.context === 'object' ? credentials.context : {};
 
   try {
     const lockoutUntil = scriptProperties.getProperty(`lockout_until_${username}`);
     if (lockoutUntil && new Date().getTime() < parseFloat(lockoutUntil)) {
       const timeLeft = Math.ceil((parseFloat(lockoutUntil) - new Date().getTime()) / (60 * 1000));
-      logLoginAttempt(username, 'Locked', loginContext);      
+      //logLoginAttempt(username, 'Locked', loginContext);      
       throw new Error(`Tài khoản của bạn đã bị tạm khóa. Vui lòng thử lại sau ${timeLeft} phút.`);
     }
 
     const userRecord = getSupabaseUserByUsername_(username);
 
     if (!userRecord || String(userRecord.password_hash == null ? '' : userRecord.password_hash) !== String(credentials.password == null ? '' : credentials.password)) {
-      logLoginAttempt(username, 'Failure', loginContext);
+      //logLoginAttempt(username, 'Failure', loginContext);
       let failedAttempts = parseInt(scriptProperties.getProperty(`failed_attempts_${username}`) || '0') + 1;
       if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
         let lockoutLevel = parseInt(scriptProperties.getProperty(`lockout_level_${username}`) || '0') + 1;
@@ -1514,7 +1533,7 @@ function checkLogin(credentials) {
 
     if (activeToken) {
       if (tokenExpiry && nowMs < tokenExpiry.getTime()) {
-        logLoginAttempt(username, 'Rejected-ActiveSession', loginContext);        
+        //logLoginAttempt(username, 'Rejected-ActiveSession', loginContext);        
         throw new Error('Tài khoản này đã được đăng nhập trên một thiết bị khác.');
       }
       clearUserSession_(username, activeToken, { skipSupabaseUpdate: true });
@@ -1542,7 +1561,7 @@ function checkLogin(credentials) {
       });
     } catch (updateError) {
       clearUserSession_(username, activeToken);
-      logLoginAttempt(username, 'Failure-UpdateSession', loginContext);      
+      //logLoginAttempt(username, 'Failure-UpdateSession', loginContext);      
       throw updateError;
     }
 
@@ -1561,7 +1580,7 @@ function checkLogin(credentials) {
       token: newSessionToken
     };
 
-    logLoginAttempt(username, 'Success', loginContext);
+    //logLoginAttempt(username, 'Success', loginContext);
     cacheSession_(userSession);
 
     return userSession;
@@ -4748,26 +4767,31 @@ function getContractorOptions() {
 }
 
 
-//Lấy danh sách "Đơn vị vận chuyển" từ Supabase truck_list_total
+// Yêu cầu Supabase chỉ trả về các tên công ty duy nhất
 function getTransportCompanies() {
   try {
-    let rows = fetchAllSupabaseRows_(
-      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
-      [
-        'select=' + encodeURIComponent(['transportation_company'].join(','))
-      ],
-      1000
+    // Sử dụng "group=" để lấy giá trị duy nhất (distinct)
+    // và "order=" để Supabase sắp xếp
+    const queryParts = [
+      'select=transportation_company',
+      'group=transportation_company',
+      'transportation_company=not.is.null', // Bỏ qua các dòng trống
+      'order=transportation_company.asc'
+    ];
+    
+    // Không dùng fetchAllSupabaseRows_ (dùng để tải hàng loạt)
+    // Chỉ dùng 1 lệnh supabaseRequest_ để lấy danh sách duy nhất
+    const rows = supabaseRequest_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&')
     );
-    if (!Array.isArray(rows)) rows = [];
 
-    if (!Array.isArray(rows) || !rows.length) return [];
+    if (!Array.isArray(rows)) return [];
 
-    const set = new Set();
-    rows.forEach(function (row) {
-      const value = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-      if (value) set.add(value);
-    });
-    return Array.from(set).sort();
+    // Dữ liệu trả về đã là danh sách duy nhất và đã được sắp xếp
+    return rows
+      .map(row => String(row.transportation_company == null ? '' : row.transportation_company).trim())
+      .filter(Boolean); // Lọc lại nếu có rỗng (dù đã dùng not.is.null)
+
   } catch (e) {
     Logger.log('getTransportCompanies error: ' + e);
     return [];
@@ -4775,6 +4799,7 @@ function getTransportCompanies() {
 }
 
 //Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
+// Yêu cầu Supabase lọc "Active" và trả về danh sách duy nhất
 function getActiveContractNos(sessionToken) {
   const session = validateSession(sessionToken);
   const role = String(session.role == null ? '' : session.role).toLowerCase();
@@ -4782,23 +4807,39 @@ function getActiveContractNos(sessionToken) {
 
   if (role !== 'admin' && !contractor) return [];
 
-  const rows = fetchContractDataRows_(['contract_no', 'transportation_company', 'status']);
-  if (!rows.length) return [];
+  // Thêm điều kiện lọc vào thẳng truy vấn Supabase
+  const filterParams = [
+    'status=eq.Active', // 1. Chỉ lấy hợp đồng Active
+    'contract_no=not.is.null'
+  ];
 
-  const seen = new Set();
-  rows.forEach(function (row) {
-    const status = String(row.status == null ? '' : row.status).trim().toLowerCase();
-    if (status !== 'active') return;  
+  if (role !== 'admin') {
+    // 2. User thường chỉ thấy hợp đồng của mình
+    filterParams.push('transportation_company=eq.' + encodeURIComponent(contractor));
+  }
 
-    const comp = String(row.transportation_company == null ? '' : row.transportation_company).trim();
-    if (role !== 'admin' && contractor && comp !== contractor) return;
+  // 3. Yêu cầu Supabase trả về danh sách duy nhất và đã sắp xếp
+  filterParams.push('select=contract_no');
+  filterParams.push('group=contract_no');
+  filterParams.push('order=contract_no.asc');
+  
+  try {
+    // Dùng supabaseRequest_ thay vì fetchContractDataRows_ (vốn không hỗ trợ group)
+    const rows = supabaseRequest_(
+      SUPABASE_CONTRACT_DATA_ENDPOINT + '?' + filterParams.join('&')
+    );
 
-    const contractNo = String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim();
-    if (!contractNo || seen.has(contractNo)) return;
-    seen.add(contractNo);
-  });
+    if (!Array.isArray(rows)) return [];
 
-  return Array.from(seen).sort();
+    // Dữ liệu trả về đã là danh sách duy nhất, active, đúng quyền và đã sắp xếp
+    return rows
+      .map(row => String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim())
+      .filter(Boolean);
+
+  } catch (e) {
+    Logger.log('getActiveContractNos error: ' + e);
+    return [];
+  }
 }
 
 
