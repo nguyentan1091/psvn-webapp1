@@ -176,6 +176,10 @@ const ACTIVE_CONTRACT_MAP_CACHE_TTL_SECONDS = 60;
 let ACTIVE_CONTRACT_MAP_MEMORY_CACHE = null;
 let ACTIVE_CONTRACT_MAP_MEMORY_CACHE_EXPIRES_AT = 0;
 const SUPABASE_IN_FILTER_BATCH_SIZE = 20;
+const TRANSPORT_COMPANY_CACHE_KEY = 'transport_company_list_cache';
+const TRANSPORT_COMPANY_CACHE_TTL_SECONDS = 60;
+let TRANSPORT_COMPANY_MEMORY_CACHE = null;
+let TRANSPORT_COMPANY_MEMORY_CACHE_EXPIRES_AT = 0;
 const SUPABASE_USER_SELECT_FIELDS = [
   'username',
   'password_hash',
@@ -4769,33 +4773,79 @@ function getContractorOptions() {
 
 // Yêu cầu Supabase chỉ trả về các tên công ty duy nhất
 function getTransportCompanies() {
+  const cached = readTransportCompanyCache_();
+  if (cached !== null) {
+    return cached;
+  }
+
   try {
-    // Sử dụng "group=" để lấy giá trị duy nhất (distinct)
-    // và "order=" để Supabase sắp xếp
-    const queryParts = [
-      'select=transportation_company',
-      'group=transportation_company',
-      'transportation_company=not.is.null', // Bỏ qua các dòng trống
-      'order=transportation_company.asc'
-    ];
-    
-    // Không dùng fetchAllSupabaseRows_ (dùng để tải hàng loạt)
-    // Chỉ dùng 1 lệnh supabaseRequest_ để lấy danh sách duy nhất
-    const rows = supabaseRequest_(
-      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + queryParts.join('&')
+    const rows = fetchAllSupabaseRows_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+      [
+        'select=transportation_company',
+        'transportation_company=not.is.null',
+        'order=transportation_company.asc'
+      ]
     );
 
-    if (!Array.isArray(rows)) return [];
+    const seen = new Set();
+    const companies = [];
+    const collator = (typeof Intl !== 'undefined' && Intl.Collator)
+      ? new Intl.Collator('vi', { sensitivity: 'base' })
+      : null;
 
-    // Dữ liệu trả về đã là danh sách duy nhất và đã được sắp xếp
-    return rows
-      .map(row => String(row.transportation_company == null ? '' : row.transportation_company).trim())
-      .filter(Boolean); // Lọc lại nếu có rỗng (dù đã dùng not.is.null)
+    if (Array.isArray(rows)) {
+      rows.forEach(function (row) {
+        const value = String(row && row.transportation_company != null ? row.transportation_company : '').trim();
+        if (!value) return;
+        const key = value.toUpperCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        companies.push(value);
+      });
+    }
 
+    if (companies.length > 1) {
+      if (collator) {
+        companies.sort(collator.compare);
+      } else {
+        companies.sort();
+      }
+    }
+
+    writeTransportCompanyCache_(companies);
+    return companies.slice();
   } catch (e) {
     Logger.log('getTransportCompanies error: ' + e);
     return [];
   }
+}
+
+function readTransportCompanyCache_() {
+  const now = Date.now();
+  if (Array.isArray(TRANSPORT_COMPANY_MEMORY_CACHE) && now < TRANSPORT_COMPANY_MEMORY_CACHE_EXPIRES_AT) {
+    return TRANSPORT_COMPANY_MEMORY_CACHE.slice();
+  }
+
+  const cached = safeScriptCacheGetJSON_(TRANSPORT_COMPANY_CACHE_KEY);
+  if (cached && Array.isArray(cached.list)) {
+    TRANSPORT_COMPANY_MEMORY_CACHE = cached.list.slice();
+    TRANSPORT_COMPANY_MEMORY_CACHE_EXPIRES_AT = now + TRANSPORT_COMPANY_CACHE_TTL_SECONDS * 1000;
+    return TRANSPORT_COMPANY_MEMORY_CACHE.slice();
+  }
+
+  return null;
+}
+
+function writeTransportCompanyCache_(list) {
+  const safeList = Array.isArray(list) ? list.slice() : [];
+  TRANSPORT_COMPANY_MEMORY_CACHE = safeList;
+  TRANSPORT_COMPANY_MEMORY_CACHE_EXPIRES_AT = Date.now() + TRANSPORT_COMPANY_CACHE_TTL_SECONDS * 1000;
+  safeScriptCachePutJSON_(
+    TRANSPORT_COMPANY_CACHE_KEY,
+    { list: safeList },
+    TRANSPORT_COMPANY_CACHE_TTL_SECONDS
+  );
 }
 
 //Lấy Contract No (Status = Active) cho dropdown “Số HĐ” ở trang Đăng ký xe
@@ -4806,43 +4856,47 @@ function getActiveContractNos(sessionToken) {
   const contractor = String(session.contractor == null ? '' : session.contractor).trim();
 
   if (role !== 'admin' && !contractor) return [];
-
-  // Thêm điều kiện lọc vào thẳng truy vấn Supabase
-  const filterParams = [
-    'status=eq.Active', // 1. Chỉ lấy hợp đồng Active
-    'contract_no=not.is.null'
-  ];
-
-  if (role !== 'admin') {
-    // 2. User thường chỉ thấy hợp đồng của mình
-    filterParams.push('transportation_company=eq.' + encodeURIComponent(contractor));
-  }
-
-  // 3. Yêu cầu Supabase trả về danh sách duy nhất và đã sắp xếp
-  filterParams.push('select=contract_no');
-  filterParams.push('group=contract_no');
-  filterParams.push('order=contract_no.asc');
   
   try {
-    // Dùng supabaseRequest_ thay vì fetchContractDataRows_ (vốn không hỗ trợ group)
-    const rows = supabaseRequest_(
-      SUPABASE_CONTRACT_DATA_ENDPOINT + '?' + filterParams.join('&')
-    );
+    const map = buildActiveContractMap_();
+    if (!(map instanceof Map)) return [];
+    const collator = (typeof Intl !== 'undefined' && Intl.Collator)
+      ? new Intl.Collator('vi', { sensitivity: 'base', numeric: true })
+      : null;
+    let list = [];
 
-    if (!Array.isArray(rows)) return [];
+    if (role === 'admin') {
+      const all = new Set();
+      map.forEach(function (contracts) {
+        if (!(contracts instanceof Set)) return;
+        contracts.forEach(function (no) { all.add(no); });
+      });
+      list = Array.from(all);
+    } else {
+      const companyKey = contractor.toUpperCase();
+      const contracts = map.get(companyKey);
+      if (contracts instanceof Set) {
+        list = Array.from(contracts);
+      }
+    }
 
-    // Dữ liệu trả về đã là danh sách duy nhất, active, đúng quyền và đã sắp xếp
-    return rows
-      .map(row => String(row.contract_no == null ? '' : row.contract_no).replace(/^'+/, '').trim())
-      .filter(Boolean);
+    if (list.length > 1) {
+      if (collator) {
+        list.sort(collator.compare);
+      } else {
+        list.sort();
+      }
+    }
+
+    return list.map(function (no) {
+      return String(no == null ? '' : no).replace(/^'+/, '').trim();
+    }).filter(Boolean);
 
   } catch (e) {
     Logger.log('getActiveContractNos error: ' + e);
     return [];
   }
 }
-
-
 
 // ====== GS: Trả về danh sách biển số đang có để đánh dấu trùng ======
 function getExistingTruckPlates(sessionToken) {
