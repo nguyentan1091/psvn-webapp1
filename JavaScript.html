@@ -3649,7 +3649,8 @@ function initViewPage() {
     lengthControl: '#page-length-select',
     deleteButton: showSelectActions ? '#deleteSelectedBtn' : null,
     selectAllCheckbox: showSelectActions ? '#selectAllCheckbox' : null,
-    enableSelect: showSelectActions
+    enableSelect: showSelectActions,
+    pageLength: parseInt($('#page-length-select').val() || '10', 10)
   });
 
 // ===== Summary cards for registered vehicles =====
@@ -4649,7 +4650,7 @@ function initTotalListPage() {
     
     // Page length
     $('#total-list-page-length-select').off('change').on('change', function () {
-        const len = parseInt(this.value || '50', 10);
+        const len = parseInt(this.value || '10', 10);
         totalListTable.page.len(len).draw();
     });
 
