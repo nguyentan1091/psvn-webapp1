@@ -5733,9 +5733,11 @@ function getWeighResultData(params) {
     dataFilterParts.push('transportation_company=not.ilike.' + encodeURIComponent('Unknown'));
   }
 
-  const dataQueryParts = ['select=' + encodeURIComponent('*')]
+  const baseDataQueryParts = ['select=' + encodeURIComponent('*')]
     .concat(dataFilterParts);
-  dataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+  baseDataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
+
+  const dataQueryParts = baseDataQueryParts.slice();
   dataQueryParts.push('limit=' + Math.max(length, 1));
   dataQueryParts.push('offset=' + start);
 
@@ -5761,6 +5763,8 @@ function getWeighResultData(params) {
   let contractRows = [];
   let customerRows = [];
 
+  const shouldFetchAllRows = start === 0 && length > 1000;
+
   try {
     const batchResponses = executeSupabaseBatchRequests_([
       { path: dataPath, headers: { Prefer: 'count=exact' } },
@@ -5773,6 +5777,17 @@ function getWeighResultData(params) {
     dataRows = Array.isArray(dataResponse.data) ? dataResponse.data : [];
     const filteredTotal = parseContentRangeTotal_(dataResponse.headers);
     recordsFiltered = filteredTotal != null ? filteredTotal : dataRows.length;
+
+    if (shouldFetchAllRows && recordsFiltered > dataRows.length) {
+      try {
+        const fullRows = fetchAllSupabaseRows_(SUPABASE_XPPL_DATABASE_ENDPOINT, baseDataQueryParts, length);
+        if (Array.isArray(fullRows) && fullRows.length) {
+          dataRows = fullRows.slice(0, length);
+        }
+      } catch (fullFetchError) {
+        Logger.log('getWeighResultData full fetch error: ' + fullFetchError);
+      }
+    }
 
     const totalResponse = batchResponses[1] || {};
     const totalData = Array.isArray(totalResponse.data) ? totalResponse.data : [];
@@ -5798,6 +5813,17 @@ function getWeighResultData(params) {
       dataRows = Array.isArray(response.data) ? response.data : [];
       const filteredTotal = parseContentRangeTotal_(response.headers);
       recordsFiltered = filteredTotal != null ? filteredTotal : dataRows.length;
+
+      if (shouldFetchAllRows && recordsFiltered > dataRows.length) {
+        try {
+          const fullRows = fetchAllSupabaseRows_(SUPABASE_XPPL_DATABASE_ENDPOINT, baseDataQueryParts, length);
+          if (Array.isArray(fullRows) && fullRows.length) {
+            dataRows = fullRows.slice(0, length);
+          }
+        } catch (fallbackFullFetchError) {
+          Logger.log('getWeighResultData fallback full fetch error: ' + fallbackFullFetchError);
+        }
+      }
     } catch (dataError) {
       Logger.log('getWeighResultData data fallback error: ' + dataError);
       dataRows = [];
