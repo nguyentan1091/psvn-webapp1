@@ -22,6 +22,9 @@ let registeredVehicleTable, totalListTable, usersTable;
 let loginHistoryTable, vehicleHistoryTable;
 let wrResultTable, wrUnknownTable;
 let wrAdvancedFilterOptions = { contracts: [], customers: [] };
+let wrAdvancedFiltersLoaded = false;
+let wrSearchKeyword = '';
+let wrSearchTimer = null;
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
@@ -7423,8 +7426,16 @@ function initWeighResultPage() {
     .attr('aria-expanded', 'false')
     .attr('data-translate', 'wr_adv_toggle_show')
     .text((translations[currentLang] && translations[currentLang].wr_adv_toggle_show) || 'Bộ lọc nâng cao');
-  $('#wr-contracts, #wr-customers').prop('disabled', true).empty();
+  const filterTranslations = translations[currentLang] || translations.vi || {};
+  const loadingLabel = filterTranslations.wr_loading_options
+    || filterTranslations.xppl_loading_data
+    || filterTranslations.loading_processing
+    || 'Đang tải dữ liệu...';
+  $('#wr-contracts, #wr-customers')
+    .prop('disabled', true)
+    .html(`<option value="" disabled>${esc(loadingLabel)}</option>`);
   wrAdvancedFilterOptions = { contracts: [], customers: [] };
+  wrAdvancedFiltersLoaded = false;
 
   google.script.run
     .withSuccessHandler(list => {
@@ -7468,6 +7479,9 @@ function initWeighResultPage() {
       .text(t[key] || (isHidden ? 'Bộ lọc nâng cao' : 'Ẩn bộ lọc nâng cao'));
     $(this).attr('aria-expanded', String(!isHidden));
     if (!isHidden) {
+      if (!wrAdvancedFiltersLoaded) {
+        reloadWrTables();
+      }
       applyWrAdvancedFilters(t);
     }
   });
@@ -7498,10 +7512,17 @@ function initWeighResultPage() {
     });
   });
 
-  $('#wr-search').off('input keyup').on('input', function(){
-    const val = String(this.value || '').trim();
-    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.search(val).draw();
-    if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
+  const $wrSearch = $('#wr-search');
+  const initialKeyword = setWrSearchKeyword($wrSearch.val());
+  if ($wrSearch.length && String($wrSearch.val() || '') !== initialKeyword) {
+    $wrSearch.val(initialKeyword);
+  }
+  $wrSearch.off('input keyup change').on('input keyup change', function(){
+    const normalized = setWrSearchKeyword(this.value);
+    if (this.value !== normalized) {
+      this.value = normalized;
+    }
+    scheduleWrSearch(isAdmin);
   });
 
   $('#wr-date-from, #wr-date-to').off('change').on('change', function(){
@@ -7816,13 +7837,49 @@ function syncWrCustomerSelection(selected) {
   }
 }
 
+function normalizeWrSearchValue(value) {
+  if (value == null) return '';
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+function setWrSearchKeyword(value) {
+  const normalized = normalizeWrSearchValue(value);
+  wrSearchKeyword = normalized;
+  return normalized;
+}
+
+function getWrSearchKeyword() {
+  if (typeof wrSearchKeyword !== 'string') {
+    wrSearchKeyword = '';
+  }
+  return wrSearchKeyword;
+}
+
+function scheduleWrSearch(isAdmin) {
+  if (wrSearchTimer) {
+    clearTimeout(wrSearchTimer);
+    wrSearchTimer = null;
+  }
+  wrSearchTimer = setTimeout(() => {
+    const keyword = getWrSearchKeyword();
+    if ($.fn.DataTable.isDataTable('#wr-result-table')) {
+      wrResultTable.search(keyword, false, false).draw();
+    }
+    if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) {
+      wrUnknownTable.search(keyword, false, false).draw();
+    }
+    wrSearchTimer = null;
+  }, 200);
+}
+
 function getWrFilters(){
+  const keyword = setWrSearchKeyword($('#wr-search').val());
   const filter = {
     dateFrom: $('#wr-date-from').val(),
     dateTo: $('#wr-date-to').val(),
     contracts: uniqueCasePreserveOrder($('#wr-contracts').val() || []),
     customers: uniqueCasePreserveOrder($('#wr-customers').val() || []),
-    keyword: String($('#wr-search').val() || '').trim()
+    keyword
   };
 
   if (isRole('user')) {
@@ -7886,6 +7943,7 @@ function updateWrAdvancedFilters(options){
     contracts: sanitizeWrAdvancedList(options.contracts),
     customers: sanitizeWrAdvancedList(options.customers)
   };
+  wrAdvancedFiltersLoaded = true;
   applyWrAdvancedFilters();
 }
 
@@ -8148,14 +8206,17 @@ function buildWeighResultTables(isAdmin) {
     deferRender:true,
     columnDefs:[{ targets:'_all', className:'text-nowrap' }],
     ajax: function(dtReq, callback){
+      const keyword = getWrSearchKeyword();
+      const filter = getWrFilters();
+      filter.keyword = keyword;
       const req = {
         draw: dtReq.draw,
         start: dtReq.start,
         length: dtReq.length,
-        search: dtReq.search,
+        search: { value: keyword, regex: false },
         order: dtReq.order,
         sessionToken: userSession.token,
-        filter: getWrFilters(),
+        filter,
         excludeUnknown: true
       };
       callServerWithRetry('getWeighResultData', [req], {
@@ -8275,14 +8336,17 @@ function buildWeighResultTables(isAdmin) {
       columnDefs:[{ targets:'_all', className:'text-nowrap' }],
   
       ajax: function(dtReq, callback){
+        const keyword = getWrSearchKeyword();
+        const filter = getWrFilters();
+        filter.keyword = keyword;
         const req = {
           draw: dtReq.draw,
           start: dtReq.start,
           length: dtReq.length,
-          search: dtReq.search,
+          search: { value: keyword, regex: false },
           order: dtReq.order,
           sessionToken: userSession.token,
-          filter: getWrFilters(),
+          filter,
           onlyUnknown: true
         };
         callServerWithRetry('getWeighResultData', [req], {
@@ -8361,7 +8425,12 @@ function buildWeighResultTables(isAdmin) {
       showWrEditDialog(row);
     });
 
-    updateUnknownSelectionState();    
+    updateUnknownSelectionState();
+  }
+
+  const currentKeyword = getWrSearchKeyword();
+  if (currentKeyword) {
+    scheduleWrSearch(isAdmin);
   }
 }
 
