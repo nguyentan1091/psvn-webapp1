@@ -5580,6 +5580,7 @@ function getWeighResultData(params) {
   const f = params.filter || {};
   const from = _toDateKey(f.dateFrom);
   const to = _toDateKey(f.dateTo);
+  const filterKeyword = typeof f.keyword === 'string' ? String(f.keyword).trim() : '';
   const normalizeListInput = function(value) {
     if (value == null) return [];
     if (Array.isArray(value)) {
@@ -5637,7 +5638,7 @@ function getWeighResultData(params) {
     };
   };
 
-  if (!from && !to && !contractFilter.length && !customerFilter.length && !(params.search && params.search.value)) {
+  if (!from && !to && !contractFilter.length && !customerFilter.length && !filterKeyword && !(params.search && params.search.value)) {
     return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
@@ -5720,7 +5721,7 @@ function getWeighResultData(params) {
     if (String(orderInfo.dir).toLowerCase() === 'asc') sortDir = 'asc';
   }
 
-  const searchValue = params.search && params.search.value ? params.search.value : '';
+  const searchValue = params.search && params.search.value ? params.search.value : filterKeyword;
   const searchColumns = getWeighResultSearchColumns_();
   const searchClause = buildSupabaseSearchOr_(searchColumns, searchValue);
 
