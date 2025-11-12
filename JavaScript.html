@@ -21,6 +21,7 @@ let inactivityTimer;
 let registeredVehicleTable, totalListTable, usersTable;
 let loginHistoryTable, vehicleHistoryTable;
 let wrResultTable, wrUnknownTable;
+let wrAdvancedFilterOptions = { contracts: [], customers: [] };
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
@@ -7423,6 +7424,7 @@ function initWeighResultPage() {
     .attr('data-translate', 'wr_adv_toggle_show')
     .text((translations[currentLang] && translations[currentLang].wr_adv_toggle_show) || 'Bộ lọc nâng cao');
   $('#wr-contracts, #wr-customers').prop('disabled', true).empty();
+  wrAdvancedFilterOptions = { contracts: [], customers: [] };
 
   google.script.run
     .withSuccessHandler(list => {
@@ -7465,26 +7467,39 @@ function initWeighResultPage() {
       .attr('data-translate', key)
       .text(t[key] || (isHidden ? 'Bộ lọc nâng cao' : 'Ẩn bộ lọc nâng cao'));
     $(this).attr('aria-expanded', String(!isHidden));
+    if (!isHidden) {
+      applyWrAdvancedFilters(t);
+    }
   });
 
   $('#wr-match-company').off('click').on('click', function(e){
     e.preventDefault();
     const t = translations[currentLang] || translations.vi || {};
-    showLoading(t.wr_matching_loading || 'Đang đối chiếu...');
-    const filter = getWrFilters();
-    google.script.run
-      .withSuccessHandler(msg => {
-        Swal.close();
-        const t2 = translations[currentLang] || translations.vi || {};
-        Swal.fire(t2.success_title || 'Thành công', msg, 'success');
-        reloadWrTables();
-      })
-      .withFailureHandler(showError)
-      .matchTransportationCompanies(filter, userSession.token);
+    Swal.fire({
+      icon: 'warning',
+      title: t.wr_match_confirm_title || 'Đối chiếu dữ liệu?',
+      text: t.wr_match_confirm_message || 'Thao tác này sẽ đối chiếu nhanh thông tin phương tiện cho các xe chưa xác định đơn vị vận chuyển.',
+      showCancelButton: true,
+      confirmButtonText: t.confirm_button || 'Xác nhận',
+      cancelButtonText: t.cancel_button || 'Huỷ'
+    }).then(result => {
+      if (!result.isConfirmed) return;
+      showLoading(t.wr_matching_loading || 'Đang đối chiếu...');
+      const filter = getWrFilters();
+      google.script.run
+        .withSuccessHandler(msg => {
+          Swal.close();
+          const t2 = translations[currentLang] || translations.vi || {};
+          Swal.fire(t2.success_title || 'Thành công', msg, 'success');
+          reloadWrTables();
+        })
+        .withFailureHandler(showError)
+        .matchTransportationCompanies(filter, userSession.token);
+    });
   });
 
   $('#wr-search').off('input keyup').on('input', function(){
-    const val = this.value;
+    const val = String(this.value || '').trim();
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.search(val).draw();
     if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
   });
@@ -7703,6 +7718,69 @@ function uniqueCasePreserveOrder(list) {
   return out;
 }
 
+function sanitizeWrAdvancedList(values) {
+  const arr = Array.isArray(values) ? values : [];
+  return uniqueCasePreserveOrder(arr.map(val => {
+    if (val == null) return '';
+    return String(val).trim();
+  }));
+}
+
+function renderWrAdvancedSelect(selector, values, t) {
+  const $sel = $(selector);
+  if (!$sel.length) return;
+
+  const currentSet = new Set(parseMultiValueInput($sel.val()).map(v => v.toLowerCase()));
+  $sel.empty();
+
+  const list = sanitizeWrAdvancedList(values);
+
+  if (!list.length) {
+    const label = t.no_data_title || 'Không có dữ liệu';
+    $sel.append(`<option value="" disabled>${esc(label)}</option>`);
+    $sel.val([]);
+    $sel.prop('disabled', true);
+    return;
+  }
+
+  list.forEach(val => {
+    const isSelected = currentSet.has(val.toLowerCase());
+    const opt = new Option(val, val, false, isSelected);
+    $sel.append(opt);
+  });
+
+  const selected = list.filter(val => currentSet.has(val.toLowerCase()));
+
+  $sel.val(selected);
+  $sel.prop('disabled', false);
+
+  if (selector === '#wr-customers' && isRole('user')) {
+    const sanitized = sanitizeWrCustomerSelection($sel.val());
+    if (sanitized.length) {
+      const normalizedList = list.map(val => val.toLowerCase());
+      const sanitizedExisting = sanitized.filter(name => normalizedList.includes(name.toLowerCase()));
+      const finalSelection = sanitizedExisting.length ? sanitizedExisting : sanitized;
+      $sel.val(finalSelection);
+    } else {
+      const allowed = getWrAllowedCustomers();
+      if (allowed.length) {
+        const normalizedList = list.map(val => val.toLowerCase());
+        const allowedExisting = allowed.filter(name => normalizedList.includes(name.toLowerCase()));
+        const finalSelection = allowedExisting.length ? allowedExisting : allowed;
+        $sel.val(finalSelection);
+      } else {
+        $sel.val([]);
+      }
+    }
+  }
+}
+
+function applyWrAdvancedFilters(tOverride) {
+  const t = tOverride || translations[currentLang] || translations.vi || {};
+  renderWrAdvancedSelect('#wr-contracts', wrAdvancedFilterOptions.contracts, t);
+  renderWrAdvancedSelect('#wr-customers', wrAdvancedFilterOptions.customers, t);
+}
+
 function getWrAllowedCustomers() {
   if (!userSession || !isRole('user')) return [];
   const raw = userSession.customerName || userSession.customerNames || '';
@@ -7743,7 +7821,8 @@ function getWrFilters(){
     dateFrom: $('#wr-date-from').val(),
     dateTo: $('#wr-date-to').val(),
     contracts: uniqueCasePreserveOrder($('#wr-contracts').val() || []),
-    customers: uniqueCasePreserveOrder($('#wr-customers').val() || [])
+    customers: uniqueCasePreserveOrder($('#wr-customers').val() || []),
+    keyword: String($('#wr-search').val() || '').trim()
   };
 
   if (isRole('user')) {
@@ -7803,60 +7882,11 @@ function updateWrSummary(counts, overview){
 
 function updateWrAdvancedFilters(options){
   if (!options || typeof options !== 'object') return;
-  const t = translations[currentLang] || translations.vi || {};  
-
-  function refreshSelect(selector, values) {
-    const $sel = $(selector);
-    if (!$sel.length) return;
-
-    const currentSet = new Set(parseMultiValueInput($sel.val()).map(v => v.toLowerCase()));
-    $sel.empty();
-
-    const list = Array.isArray(values)
-      ? uniqueCasePreserveOrder(values)
-      : [];
-
-    if (!list.length) {
-      const label = t.no_data_title || 'Không có dữ liệu';
-      $sel.append(`<option value="" disabled>${esc(label)}</option>`);
-      $sel.val([]);
-      $sel.prop('disabled', true);
-      return;
-    }
-
-    list.forEach(val => {
-      const isSelected = currentSet.has(val.toLowerCase());
-      const opt = new Option(val, val, false, isSelected);
-      $sel.append(opt);
-    });
-
-    const selected = list.filter(val => currentSet.has(val.toLowerCase()));
-    $sel.val(selected);
-    $sel.prop('disabled', false);
-
-    if (selector === '#wr-customers' && isRole('user')) {
-      const sanitized = sanitizeWrCustomerSelection($sel.val());
-      if (sanitized.length) {
-        const normalizedList = list.map(val => val.toLowerCase());
-        const sanitizedExisting = sanitized.filter(name => normalizedList.includes(name.toLowerCase()));
-        const finalSelection = sanitizedExisting.length ? sanitizedExisting : sanitized;
-        $sel.val(finalSelection);
-      } else {
-        const allowed = getWrAllowedCustomers();
-        if (allowed.length) {
-          const normalizedList = list.map(val => val.toLowerCase());
-          const allowedExisting = allowed.filter(name => normalizedList.includes(name.toLowerCase()));
-          const finalSelection = allowedExisting.length ? allowedExisting : allowed;
-          $sel.val(finalSelection);
-        } else {
-          $sel.val([]);
-        }
-      }
-    }
-  }
-
-  refreshSelect('#wr-contracts', options.contracts);
-  refreshSelect('#wr-customers', options.customers);
+  wrAdvancedFilterOptions = {
+    contracts: sanitizeWrAdvancedList(options.contracts),
+    customers: sanitizeWrAdvancedList(options.customers)
+  };
+  applyWrAdvancedFilters();
 }
 
 function reloadWrTables(){
