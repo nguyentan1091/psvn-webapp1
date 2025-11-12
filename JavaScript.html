@@ -62,6 +62,7 @@ const MAX_RETRY_DELAY = 5000;
 const VIETNAM_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 let wrReloadTimer = null;
+let wrLastValidDateRange = { from: null, to: null };
 
 let serverBusyToastEl = null;
 let serverBusyToastTimer = null;
@@ -3371,7 +3372,15 @@ function initializeDataTable(config) {
                 "previous": translations[currentLang].dt_paginate_previous || "Trước"
             }
         },
-        drawCallback: function(settings) {
+        // === BẮT ĐẦU THAY ĐỔI ===
+        // 1. XÓA BỎ drawCallback
+        // drawCallback: function(settings) {
+        //     requestAnimationFrame(() => this.api().columns.adjust());
+        // }
+
+        // 2. THÊM VÀO initComplete
+        initComplete: function(settings, json) {
+            // Chỉ gọi adjust 1 lần duy nhất sau khi tải xong lần đầu
             requestAnimationFrame(() => this.api().columns.adjust());
         }
     };
@@ -7408,6 +7417,7 @@ function initWeighResultPage() {
   yesterday.setDate(yesterday.getDate() - 1);
   $('#wr-date-from').val(formatDateInput(yesterday));
   $('#wr-date-to').val(formatDateInput(yesterday));
+  updateWrLastValidDateRange();
   $('#wr-adv-toggle')
     .attr('aria-expanded', 'false')
     .attr('data-translate', 'wr_adv_toggle_show')
@@ -7425,14 +7435,25 @@ function initWeighResultPage() {
 
   if (isAdmin) {
     $('#wr-unknown-btn').off('click').on('click', function(){
-      const modalEl = document.getElementById('wr-unknown-modal');
-      const modal = new bootstrap.Modal(modalEl);
-      modal.show();
-      if ($.fn.DataTable.isDataTable('#wr-unknown-table')) {
-        wrUnknownTable.columns.adjust();
-      }
+      const t = translations[currentLang] || translations.vi || {};
+      Swal.fire({
+        icon: 'warning',
+        title: t.wr_unknown_confirm_title || 'Mở danh sách chưa xác định?',
+        text: t.wr_unknown_confirm_message || 'Bạn có chắc muốn xem danh sách xe chưa xác định đơn vị vận chuyển?',
+        showCancelButton: true,
+        confirmButtonText: t.confirm_button || 'Xác nhận',
+        cancelButtonText: t.cancel_button || 'Huỷ'
+      }).then(result => {
+        if (!result.isConfirmed) return;
+        const modalEl = document.getElementById('wr-unknown-modal');
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        if ($.fn.DataTable.isDataTable('#wr-unknown-table')) {
+          wrUnknownTable.columns.adjust();
+        }
+      });
     });
-  }  
+  }
 
   $('#wr-adv-toggle').off('click').on('click', function(e){
     e.preventDefault();
@@ -7462,13 +7483,18 @@ function initWeighResultPage() {
       .matchTransportationCompanies(filter, userSession.token);
   });
 
-  $('#wr-search').off('keyup').on('keyup', function(){
+  $('#wr-search').off('input keyup').on('input', function(){
     const val = this.value;
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.search(val).draw();
     if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.search(val).draw();
   });
 
-  $('#wr-date-from, #wr-date-to, #wr-contracts, #wr-customers').off('change').on('change', reloadWrTables);
+  $('#wr-date-from, #wr-date-to').off('change').on('change', function(){
+    if (validateWrDateRange({ changedInput: this })) {
+      reloadWrTables();
+    }
+  });
+  $('#wr-contracts, #wr-customers').off('change').on('change', reloadWrTables);
 
   $('#wr-reload').off('click').on('click', function(e){ e.preventDefault(); wrResultTable.ajax.reload(); });
   if (isAdmin) $('#wr-unknown-reload').off('click').on('click', function(e){ e.preventDefault(); wrUnknownTable.ajax.reload(); });
@@ -7571,6 +7597,87 @@ function formatTimeForDisplay(value) {
 }
 
 function formatDateInput(d){ return d.toISOString().slice(0,10); }
+
+function parseDateOnly(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function updateWrLastValidDateRange() {
+  wrLastValidDateRange = {
+    from: $('#wr-date-from').val() || null,
+    to: $('#wr-date-to').val() || null
+  };
+}
+
+function validateWrDateRange(options = {}) {
+  const { showAlert = true, changedInput = null } = options;
+  const t = translations[currentLang] || translations.vi || {};
+  const fromVal = $('#wr-date-from').val();
+  const toVal = $('#wr-date-to').val();
+
+  if (!fromVal || !toVal) {
+    updateWrLastValidDateRange();
+    return true;
+  }
+
+  const fromDate = parseDateOnly(fromVal);
+  const toDate = parseDateOnly(toVal);
+
+  if (!fromDate || !toDate) {
+    updateWrLastValidDateRange();
+    return true;
+  }
+
+  if (toDate < fromDate) {
+    if (showAlert) {
+      Swal.fire(
+        t.wr_date_range_invalid_title || 'Khoảng ngày không hợp lệ',
+        t.wr_date_range_invalid_message || 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.',
+        'warning'
+      );
+    }
+    if (changedInput) {
+      if (changedInput.id === 'wr-date-from' && wrLastValidDateRange.from) {
+        $('#wr-date-from').val(wrLastValidDateRange.from);
+      } else if (changedInput.id === 'wr-date-to' && wrLastValidDateRange.to) {
+        $('#wr-date-to').val(wrLastValidDateRange.to);
+      }
+    } else {
+      if (wrLastValidDateRange.from) $('#wr-date-from').val(wrLastValidDateRange.from);
+      if (wrLastValidDateRange.to) $('#wr-date-to').val(wrLastValidDateRange.to);
+    }
+    return false;
+  }
+
+  const maxEndDate = new Date(fromDate.getTime());
+  maxEndDate.setMonth(maxEndDate.getMonth() + 3);
+
+  if (toDate > maxEndDate) {
+    if (showAlert) {
+      Swal.fire(
+        t.wr_date_range_limit_title || 'Vượt quá giới hạn thời gian',
+        t.wr_date_range_limit_message || 'Chỉ được lọc dữ liệu trong phạm vi tối đa 3 tháng.',
+        'warning'
+      );
+    }
+    if (changedInput) {
+      if (changedInput.id === 'wr-date-from' && wrLastValidDateRange.from) {
+        $('#wr-date-from').val(wrLastValidDateRange.from);
+      } else if (changedInput.id === 'wr-date-to' && wrLastValidDateRange.to) {
+        $('#wr-date-to').val(wrLastValidDateRange.to);
+      }
+    } else {
+      if (wrLastValidDateRange.from) $('#wr-date-from').val(wrLastValidDateRange.from);
+      if (wrLastValidDateRange.to) $('#wr-date-to').val(wrLastValidDateRange.to);
+    }
+    return false;
+  }
+
+  updateWrLastValidDateRange();
+  return true;
+}
 
 function parseMultiValueInput(value) {
   if (value == null) return [];
@@ -7753,6 +7860,7 @@ function updateWrAdvancedFilters(options){
 }
 
 function reloadWrTables(){
+  if (!validateWrDateRange({ showAlert: false })) return;
   if (wrReloadTimer) clearTimeout(wrReloadTimer);
   wrReloadTimer = setTimeout(() => {
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
