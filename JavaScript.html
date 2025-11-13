@@ -3272,7 +3272,8 @@ function initializeDataTable(config) {
         selectAllCheckbox,
         enableSelect = true,
         pageLength = 10,
-        order: initialOrder
+        order: initialOrder,
+        onDataLoaded
     } = config;
 
     if ($.fn.DataTable.isDataTable(`#${tableId}`)) {
@@ -3301,6 +3302,9 @@ function initializeDataTable(config) {
         const handleSuccess = data => {
             try {
                 dtCallback(data);
+                if (typeof onDataLoaded === 'function') {
+                    onDataLoaded(data, { error: false });
+                }
             } finally {
                 finalize();
             }
@@ -3312,12 +3316,16 @@ function initializeDataTable(config) {
                 if (!handled) {
                     showError(err);
                 }
-                dtCallback({
+                const emptyResult = {
                     draw: drawValue || 0,
                     recordsTotal: 0,
                     recordsFiltered: 0,
                     data: []
-                });
+                };
+                dtCallback(emptyResult);
+                if (typeof onDataLoaded === 'function') {
+                    onDataLoaded(emptyResult, { error: true, originalError: err });
+                }
             } finally {
                 finalize();
             }
@@ -3724,11 +3732,11 @@ function initViewPage() {
     deleteButton: showSelectActions ? '#deleteSelectedBtn' : null,
     selectAllCheckbox: showSelectActions ? '#selectAllCheckbox' : null,
     enableSelect: showSelectActions,
-    pageLength: parseInt($('#page-length-select').val() || '10', 10)
+    pageLength: parseInt($('#page-length-select').val() || '10', 10),
+    onDataLoaded: handleRegisteredSummaryUpdate
   });
 
 // ===== Summary cards for registered vehicles =====
-let useServerSummary = false;
 
 const updateSummaryValues = (total, pending, approved) => {
   $('#stat-total').text(typeof total === 'number' ? total : 0);
@@ -3750,59 +3758,27 @@ const countStatuses = rows => {
   return { pending, approved };
 };
 
-
-$('#registeredVehicleTable')
-  .off('xhr.dt.summary xhr.dt')
-  .on('xhr.dt.summary', function (_e, _settings, json) {
-    try {
-      if (json && json.summary) {
-        useServerSummary = true;
-        updateSummaryValues(
-          typeof json.summary.total === 'number' ? json.summary.total : 0,
-          typeof json.summary.pending === 'number' ? json.summary.pending : 0,
-          typeof json.summary.approved === 'number' ? json.summary.approved : 0
-        );
-
-      } else {
-        useServerSummary = false;
-        const rows = (json && json.data && json.data.length) ? json.data : [];
-        const { pending, approved } = countStatuses(rows);
-        const totalValue = (json && typeof json.recordsFiltered === 'number')
-          ? json.recordsFiltered
-          : rows.length;
-        updateSummaryValues(totalValue, pending, approved);
-      }
-    } catch (err) {
-      if (console && console.warn) console.warn('xhr.dt summary error:', err);
+const handleRegisteredSummaryUpdate = (json) => {
+  try {
+    if (json && json.summary) {
+      updateSummaryValues(
+        typeof json.summary.total === 'number' ? json.summary.total : 0,
+        typeof json.summary.pending === 'number' ? json.summary.pending : 0,
+        typeof json.summary.approved === 'number' ? json.summary.approved : 0
+      );
+      return;
     }
-  });
-
-$('#registeredVehicleTable')
-  .off('draw.dt.summaryLocal')
-  .on('draw.dt.summaryLocal', function () {
-    try {
-      if (useServerSummary) return;
-
-      const dt = $.fn.DataTable.isDataTable('#registeredVehicleTable')
-        ? $('#registeredVehicleTable').DataTable()
-        : null;
-      if (!dt) {
-        updateSummaryValues(0, 0, 0);
-        return;
-      }
-
-      const rows = dt.rows({ search: 'applied' }).data().toArray();
-      if (!rows || !rows.length) {
-        updateSummaryValues(0, 0, 0);
-        return;
-      }
-
-      const { pending, approved } = countStatuses(rows);
-      updateSummaryValues(rows.length, pending, approved);
-    } catch (err2) {
-      if (console && console.warn) console.warn('draw.dt summaryLocal error:', err2);
-    }
-  });
+    const rows = (json && Array.isArray(json.data)) ? json.data : [];
+    const { pending, approved } = countStatuses(rows);
+    const totalValue = (json && typeof json.recordsFiltered === 'number')
+      ? json.recordsFiltered
+      : rows.length;
+    updateSummaryValues(totalValue, pending, approved);
+  } catch (err) {
+    if (console && console.warn) console.warn('registered summary update error:', err);
+    updateSummaryValues(0, 0, 0);
+  }
+};
 
   // ----- Phần còn lại giữ nguyên -----
   if (isUser) {
