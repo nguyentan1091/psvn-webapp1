@@ -260,7 +260,7 @@ const VEHICLE_REGISTRATION_SEARCH_FIELDS = [
   { column: 'subcontractor', type: 'text' },
   { column: 'vehicle_status', type: 'text' },
   { column: 'registration_status', type: 'text' },
-  { column: 'created_by', type: 'text' }
+  { column: 'created_by', type: 'text', castToText: true }
 ];
 
 function buildSupabaseUrl_(path) {
@@ -1002,7 +1002,8 @@ function buildVehicleRegistrationSearchClause_(searchValue) {
     const field = VEHICLE_REGISTRATION_SEARCH_FIELDS[i];
     if (!field || !field.column) continue;
     if (field.type === 'text') {
-      conditions.push(`${field.column}.ilike.${likeValue}`);
+      const columnExpr = field.castToText ? `${field.column}::text` : field.column;
+      conditions.push(`${columnExpr}.ilike.${likeValue}`);
       continue;
     }
     if (field.type === 'number' && numericTerm != null) {
