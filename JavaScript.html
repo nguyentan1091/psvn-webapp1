@@ -3650,19 +3650,20 @@ function initViewPage() {
       .getRegisteredContractOptions({ dateString }, userSession.token);
   }
 
+  const reloadRegisteredVehicleTable = (resetPaging = true) => {
+    if (typeof registeredVehicleTable === 'undefined' || !registeredVehicleTable) return;
+    registeredVehicleTable.ajax.reload(null, resetPaging);
+  };
+
   function handleDateChange() {
     refreshContractOptions({ resetSelection: true });
-    if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) {
-      registeredVehicleTable.draw();
-    }
+    reloadRegisteredVehicleTable(true);
   }
 
   dateInput.off('change.view').on('change.view', handleDateChange);
 
   contractFilter.off('change.view').on('change.view', function () {
-    if (typeof registeredVehicleTable !== 'undefined' && registeredVehicleTable) {
-      registeredVehicleTable.draw();
-    }
+    reloadRegisteredVehicleTable(true);
   });
 
   refreshContractOptions({ resetSelection: true });
