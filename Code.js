@@ -2159,24 +2159,43 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   // === TÍNH SUMMARY TRỰC TIẾP TỪ DỮ LIỆU ĐÃ LỌC ===
   let summary = null;
   if (includeSummary) {
-    let pending = 0;
-    let approved = 0;
+    const fallbackCounts = { pending: 0, approved: 0 };
 
-    // rows là dữ liệu thô từ Supabase, có field registration_status
     rows.forEach(function (row) {
-      const status = String(row.registration_status == null ? '' : row.registration_status).toLowerCase();
+      const status = String(row && row.registration_status ? row.registration_status : '').toLowerCase();
       if (status === 'approved') {
-        approved++;
+        fallbackCounts.approved++;
       } else if (status === 'pending approval') {
-        pending++;
+        fallbackCounts.pending++;
       }
     });
 
+    const extractStatusCount = function (response) {
+      if (!response) return null;
+      const payload = Array.isArray(response)
+        ? response
+        : (Array.isArray(response.data) ? response.data : null);
+      if (payload && payload.length) {
+        const first = payload[0];
+        if (first && first.count != null) {
+          const parsed = Number(first.count);
+          if (isFinite(parsed)) return parsed;
+        }
+      }
+      if (response && response.headers) {
+        const totalFromHeader = parseContentRangeTotal_(response.headers);
+        if (totalFromHeader != null) return totalFromHeader;
+      }
+      return null;
+    };
+
+    const pendingCount = extractStatusCount(pendingSummaryResponse);
+    const approvedCount = extractStatusCount(approvedSummaryResponse);
+
     summary = {
-      // tổng số bản ghi sau khi filter (đúng với DataTable)
       total: recordsFiltered,
-      pending: pending,
-      approved: approved
+      pending: pendingCount != null ? pendingCount : fallbackCounts.pending,
+      approved: approvedCount != null ? approvedCount : fallbackCounts.approved
     };
   }
 
