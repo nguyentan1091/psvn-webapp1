@@ -242,14 +242,14 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
 };
 
 const VEHICLE_REGISTRATION_SEARCH_COLUMNS = [
-  'register_date::text',
+  'register_date',
   'contract_no',
   'truck_plate',
   'country',
   'wheel',
   'trailer_plate',
-  'truck_weight::text',
-  'pay_load::text',
+  'truck_weight',
+  'pay_load',
   'container_no1',
   'container_no2',
   'driver_name',
@@ -260,7 +260,7 @@ const VEHICLE_REGISTRATION_SEARCH_COLUMNS = [
   'subcontractor',
   'vehicle_status',
   'registration_status',
-  'time::text',
+  'time',
   'created_by'
 ];
 
@@ -2057,25 +2057,34 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     { path: totalPath }
   ];
 
-  let summaryQueryParts = null;
+  const buildStatusCountQueryParts = function (statusValue) {
+    const statusFilters = filterParts.slice();
+    if (searchClause) statusFilters.push(searchClause);
+    statusFilters.push('registration_status=eq.' + encodeURIComponent(statusValue));
+    return ['select=' + encodeURIComponent('count:id')].concat(statusFilters);
+  };
+
+  let pendingSummaryParts = null;
+  let approvedSummaryParts = null;
   if (includeSummary) {
-    summaryQueryParts = ['select=' + encodeURIComponent('registration_status,count:id')]
-      .concat(filterParts.slice());
-    if (searchClause) summaryQueryParts.push(searchClause);
-    summaryQueryParts.push('group=registration_status');
-    batchRequests.push({ path: SUPABASE_VEHICLE_REG_ENDPOINT + '?' + summaryQueryParts.join('&') });
+    pendingSummaryParts = buildStatusCountQueryParts('Pending approval');
+    approvedSummaryParts = buildStatusCountQueryParts('Approved');
+    batchRequests.push({ path: SUPABASE_VEHICLE_REG_ENDPOINT + '?' + pendingSummaryParts.join('&') });
+    batchRequests.push({ path: SUPABASE_VEHICLE_REG_ENDPOINT + '?' + approvedSummaryParts.join('&') });
   }
 
   let dataResponse;
   let totalResponse;
-  let summaryResponse = null;
+  let pendingSummaryResponse = null;
+  let approvedSummaryResponse = null;
 
   try {
     const batchResponses = executeSupabaseBatchRequests_(batchRequests);
     dataResponse = batchResponses[0];
     totalResponse = batchResponses[1];
     if (includeSummary) {
-      summaryResponse = batchResponses[2];
+      pendingSummaryResponse = batchResponses[2];
+      approvedSummaryResponse = batchResponses[3];
     }
   } catch (batchError) {
     Logger.log('getRegisteredDataServerSide batch error: ' + batchError);
@@ -2084,12 +2093,26 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
       returnResponse: true
     });
     totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
-    if (includeSummary && summaryQueryParts) {
-      try {
-        summaryResponse = { data: supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + summaryQueryParts.join('&')) || [] };
-      } catch (summaryError) {
-        Logger.log('getRegisteredDataServerSide summary fallback error: ' + summaryError);
-        summaryResponse = { data: [] };
+    if (includeSummary) {
+      if (pendingSummaryParts) {
+        try {
+          pendingSummaryResponse = {
+            data: supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + pendingSummaryParts.join('&')) || []
+          };
+        } catch (pendingError) {
+          Logger.log('getRegisteredDataServerSide pending summary fallback error: ' + pendingError);
+          pendingSummaryResponse = { data: [] };
+        }
+      }
+      if (approvedSummaryParts) {
+        try {
+          approvedSummaryResponse = {
+            data: supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + approvedSummaryParts.join('&')) || []
+          };
+        } catch (approvedError) {
+          Logger.log('getRegisteredDataServerSide approved summary fallback error: ' + approvedError);
+          approvedSummaryResponse = { data: [] };
+        }
       }
     }
   }
@@ -2111,22 +2134,19 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   const mappedRows = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
   const data = mappedRows.map(function (row) { return formatRowForClient_(row, headers); });
 
+  const extractCountValue = function (response) {
+    const rows = Array.isArray(response && response.data) ? response.data : [];
+    if (!rows.length) return 0;
+    const rawCount = rows[0] && (rows[0].count != null ? rows[0].count : rows[0].count_id);
+    const parsedCount = rawCount == null ? NaN : Number(rawCount);
+    return isNaN(parsedCount) ? 0 : parsedCount;
+  };
+
   let summary = null;
   if (includeSummary) {
-    let pending = 0;
-    let approved = 0;
-    let total = 0;
-    const summaryRows = Array.isArray(summaryResponse && summaryResponse.data) ? summaryResponse.data : [];
-    for (let i = 0; i < summaryRows.length; i++) {
-      const row = summaryRows[i];
-      const status = String(row && row.registration_status || '').trim().toLowerCase();
-      const count = Number(row && (row.count != null ? row.count : row.count_id));
-      const safeCount = isNaN(count) ? 0 : count;
-      total += safeCount;
-      if (status === 'pending approval') pending += safeCount;
-      else if (status === 'approved') approved += safeCount;
-    }
-    summary = { total: total || recordsFiltered, pending: pending, approved: approved };
+    const pending = extractCountValue(pendingSummaryResponse);
+    const approved = extractCountValue(approvedSummaryResponse);
+    summary = { total: recordsFiltered, pending: pending, approved: approved };
   }
 
   return {
