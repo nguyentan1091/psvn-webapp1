@@ -3707,6 +3707,49 @@ function initViewPage() {
       ]
     : baseColumns;
 
+  // ===== Summary cards for registered vehicles =====
+  const updateSummaryValues = (total, pending, approved) => {
+    $('#stat-total').text(typeof total === 'number' ? total : 0);
+    $('#stat-pending').text(typeof pending === 'number' ? pending : 0);
+    $('#stat-approved').text(typeof approved === 'number' ? approved : 0);
+  };
+
+  const countStatuses = rows => {
+    let pending = 0;
+    let approved = 0;
+    rows.forEach(row => {
+      const status = String(row['Registration Status'] || '').toLowerCase();
+      if (status === 'approved') {
+        approved += 1;
+      } else if (status === 'pending approval') {
+        pending += 1;
+      }
+    });
+    return { pending, approved };
+  };
+
+  const handleRegisteredSummaryUpdate = json => {
+    try {
+      if (json && json.summary) {
+        updateSummaryValues(
+          typeof json.summary.total === 'number' ? json.summary.total : 0,
+          typeof json.summary.pending === 'number' ? json.summary.pending : 0,
+          typeof json.summary.approved === 'number' ? json.summary.approved : 0
+        );
+        return;
+      }
+      const rows = (json && Array.isArray(json.data)) ? json.data : [];
+      const { pending, approved } = countStatuses(rows);
+      const totalValue = (json && typeof json.recordsFiltered === 'number')
+        ? json.recordsFiltered
+        : rows.length;
+      updateSummaryValues(totalValue, pending, approved);
+    } catch (err) {
+      if (console && console.warn) console.warn('registered summary update error:', err);
+      updateSummaryValues(0, 0, 0);
+    }
+  };
+
   // --- Khởi tạo DataTable ---
   registeredVehicleTable = initializeDataTable({
     tableId: 'registeredVehicleTable',
@@ -3735,50 +3778,6 @@ function initViewPage() {
     pageLength: parseInt($('#page-length-select').val() || '10', 10),
     onDataLoaded: handleRegisteredSummaryUpdate
   });
-
-// ===== Summary cards for registered vehicles =====
-
-const updateSummaryValues = (total, pending, approved) => {
-  $('#stat-total').text(typeof total === 'number' ? total : 0);
-  $('#stat-pending').text(typeof pending === 'number' ? pending : 0);
-  $('#stat-approved').text(typeof approved === 'number' ? approved : 0);
-};
-
-const countStatuses = rows => {
-  let pending = 0;
-  let approved = 0;
-  rows.forEach(row => {
-    const status = String(row['Registration Status'] || '').toLowerCase();
-    if (status === 'approved') {
-      approved += 1;
-    } else if (status === 'pending approval') {
-      pending += 1;
-    }
-  });
-  return { pending, approved };
-};
-
-const handleRegisteredSummaryUpdate = (json) => {
-  try {
-    if (json && json.summary) {
-      updateSummaryValues(
-        typeof json.summary.total === 'number' ? json.summary.total : 0,
-        typeof json.summary.pending === 'number' ? json.summary.pending : 0,
-        typeof json.summary.approved === 'number' ? json.summary.approved : 0
-      );
-      return;
-    }
-    const rows = (json && Array.isArray(json.data)) ? json.data : [];
-    const { pending, approved } = countStatuses(rows);
-    const totalValue = (json && typeof json.recordsFiltered === 'number')
-      ? json.recordsFiltered
-      : rows.length;
-    updateSummaryValues(totalValue, pending, approved);
-  } catch (err) {
-    if (console && console.warn) console.warn('registered summary update error:', err);
-    updateSummaryValues(0, 0, 0);
-  }
-};
 
   // ----- Phần còn lại giữ nguyên -----
   if (isUser) {
