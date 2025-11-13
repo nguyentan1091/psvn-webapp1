@@ -242,7 +242,10 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
 };
 
 const VEHICLE_REGISTRATION_SEARCH_FIELDS = [
+  // Tìm theo ngày: dùng type 'date' để dùng logic xử lý date-range
   { column: 'register_date', type: 'date' },
+
+  // Các cột text
   { column: 'contract_no', type: 'text' },
   { column: 'truck_plate', type: 'text' },
   { column: 'country', type: 'text' },
@@ -260,7 +263,6 @@ const VEHICLE_REGISTRATION_SEARCH_FIELDS = [
   { column: 'subcontractor', type: 'text' },
   { column: 'vehicle_status', type: 'text' },
   { column: 'registration_status', type: 'text' },
-  { column: 'created_by', type: 'text', castToText: true }
 ];
 
 function buildSupabaseUrl_(path) {
@@ -933,60 +935,6 @@ function parseVehicleRegistrationSearchNumber_(value) {
   return isFinite(parsed) ? String(parsed) : null;
 }
 
-function buildVehicleRegistrationDateConditions_(column, range) {
-  if (!range) return [];
-  if (range.exact) {
-    return [`${column}.eq.${range.exact}`];
-  }
-  if (range.start && range.end) {
-    return [`and(${column}.gte.${range.start},${column}.lt.${range.end})`];
-  }
-  return [];
-}
-
-function parseVehicleRegistrationSearchDateRange_(value) {
-  if (!value) return null;
-  const trimmed = String(value).trim();
-  const yearMatch = trimmed.match(/^(\d{4})$/);
-  if (yearMatch) {
-    const year = parseInt(yearMatch[1], 10);
-    if (!isNaN(year)) {
-      const nextYear = year + 1;
-      return {
-        start: year + '-01-01',
-        end: nextYear + '-01-01'
-      };
-    }
-  }
-
-  const yearMonthMatch = trimmed.match(/^(\d{4})-(\d{1,2})$/);
-  if (yearMonthMatch) {
-    const year = parseInt(yearMonthMatch[1], 10);
-    const month = parseInt(yearMonthMatch[2], 10);
-    if (!isNaN(year) && month >= 1 && month <= 12) {
-      const paddedMonth = ('0' + month).slice(-2);
-      let nextYear = year;
-      let nextMonth = month + 1;
-      if (nextMonth > 12) {
-        nextMonth = 1;
-        nextYear += 1;
-      }
-      const paddedNextMonth = ('0' + nextMonth).slice(-2);
-      return {
-        start: year + '-' + paddedMonth + '-01',
-        end: nextYear + '-' + paddedNextMonth + '-01'
-      };
-    }
-  }
-
-  const iso = toSupabaseDateString_(trimmed);
-  if (iso) {
-    return { exact: iso };
-  }
-
-  return null;
-}
-
 function buildVehicleRegistrationSearchClause_(searchValue) {
   if (!Array.isArray(VEHICLE_REGISTRATION_SEARCH_FIELDS) || !VEHICLE_REGISTRATION_SEARCH_FIELDS.length) {
     return '';
@@ -995,7 +943,6 @@ function buildVehicleRegistrationSearchClause_(searchValue) {
   if (!sanitized) return '';
   const likeValue = `%${sanitized}%`;
   const numericTerm = parseVehicleRegistrationSearchNumber_(sanitized);
-  const dateRange = parseVehicleRegistrationSearchDateRange_(sanitized);
   const conditions = [];
 
   for (let i = 0; i < VEHICLE_REGISTRATION_SEARCH_FIELDS.length; i++) {
@@ -1006,15 +953,10 @@ function buildVehicleRegistrationSearchClause_(searchValue) {
       conditions.push(`${columnExpr}.ilike.${likeValue}`);
       continue;
     }
+    
     if (field.type === 'number' && numericTerm != null) {
       conditions.push(`${field.column}.eq.${numericTerm}`);
       continue;
-    }
-    if (field.type === 'date' && dateRange) {
-      const dateConditions = buildVehicleRegistrationDateConditions_(field.column, dateRange);
-      if (dateConditions.length) {
-        Array.prototype.push.apply(conditions, dateConditions);
-      }
     }
   }
 
@@ -2109,17 +2051,20 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     if (contract) filterParts.push('contract_no=eq.' + encodeURIComponent(contract));
   }
 
+  // Role filtering
   if (userRole === 'user') {
     const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
     if (!contractor) return buildEmptyResult_(draw, includeSummary);
     filterParts.push('transportation_company=eq.' + encodeURIComponent(contractor));
   } else if (userRole === 'user-supervision') {
-    filterParts.push('registration_status=eq.' + encodeURIComponent('Approved'));
+    filterParts.push('registration_status=eq.Approved');
   }
 
+  // SEARCH CLAUSE
   const searchValue = params.search && params.search.value ? params.search.value : '';
   const searchClause = buildVehicleRegistrationSearchClause_(searchValue);
 
+  // SORT
   let sortColumn = defaultSortColumnIndex >= 0 ? VEHICLE_REGISTRATION_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
   let sortDir = 'desc';
   if (Array.isArray(params.order) && params.order.length) {
@@ -2129,15 +2074,14 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
       const mapped = VEHICLE_REGISTRATION_COLUMN_MAP[headers[idx]];
       if (mapped) sortColumn = mapped;
     }
-    if (String(orderInfo.dir).toLowerCase() === 'asc') {
-      sortDir = 'asc';
-    }
+    if (String(orderInfo.dir).toLowerCase() === 'asc') sortDir = 'asc';
   }
   if (!sortColumn) sortColumn = 'time';
 
   const filteredParts = filterParts.slice();
   if (searchClause) filteredParts.push(searchClause);
 
+  // MAIN DATA QUERY
   const dataQueryParts = ['select=' + encodeURIComponent(VEHICLE_REGISTRATION_SELECT_FIELDS.join(','))]
     .concat(filteredParts);
   dataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
@@ -2145,7 +2089,9 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   dataQueryParts.push('offset=' + start);
 
   const dataPath = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + dataQueryParts.join('&');
-  const totalQueryParts = ['select=' + encodeURIComponent('count:id')].concat(filterParts);
+
+  // TOTAL COUNT QUERY
+  const totalQueryParts = ['select=count:id'].concat(filterParts);
   const totalPath = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + totalQueryParts.join('&');
 
   const batchRequests = [
@@ -2153,18 +2099,21 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     { path: totalPath }
   ];
 
-  const buildStatusCountQueryParts = function (statusValue) {
+  // FIX SUMMARY COUNT — đúng trạng thái thực tế trong DB
+  function buildStatusCountQueryParts(statusValue) {
     const statusFilters = filterParts.slice();
     if (searchClause) statusFilters.push(searchClause);
     statusFilters.push('registration_status=eq.' + encodeURIComponent(statusValue));
-    return ['select=' + encodeURIComponent('count:id')].concat(statusFilters);
-  };
+    return ['select=count:id'].concat(statusFilters);
+  }
 
   let pendingSummaryParts = null;
   let approvedSummaryParts = null;
+
   if (includeSummary) {
     pendingSummaryParts = buildStatusCountQueryParts('Pending approval');
     approvedSummaryParts = buildStatusCountQueryParts('Approved');
+
     batchRequests.push({ path: SUPABASE_VEHICLE_REG_ENDPOINT + '?' + pendingSummaryParts.join('&') });
     batchRequests.push({ path: SUPABASE_VEHICLE_REG_ENDPOINT + '?' + approvedSummaryParts.join('&') });
   }
@@ -2183,33 +2132,13 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
       approvedSummaryResponse = batchResponses[3];
     }
   } catch (batchError) {
-    Logger.log('getRegisteredDataServerSide batch error: ' + batchError);
-    dataResponse = supabaseRequest_(dataPath, {
-      headers: { Prefer: 'count=exact' },
-      returnResponse: true
-    });
+    Logger.log('Error batch: ' + batchError);
+    dataResponse = supabaseRequest_(dataPath, { headers: { Prefer: 'count=exact' }, returnResponse: true });
     totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
+
     if (includeSummary) {
-      if (pendingSummaryParts) {
-        try {
-          pendingSummaryResponse = {
-            data: supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + pendingSummaryParts.join('&')) || []
-          };
-        } catch (pendingError) {
-          Logger.log('getRegisteredDataServerSide pending summary fallback error: ' + pendingError);
-          pendingSummaryResponse = { data: [] };
-        }
-      }
-      if (approvedSummaryParts) {
-        try {
-          approvedSummaryResponse = {
-            data: supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + approvedSummaryParts.join('&')) || []
-          };
-        } catch (approvedError) {
-          Logger.log('getRegisteredDataServerSide approved summary fallback error: ' + approvedError);
-          approvedSummaryResponse = { data: [] };
-        }
-      }
+      pendingSummaryResponse = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + pendingSummaryParts.join('&'));
+      approvedSummaryResponse = supabaseRequest_(SUPABASE_VEHICLE_REG_ENDPOINT + '?' + approvedSummaryParts.join('&'));
     }
   }
 
@@ -2217,32 +2146,38 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
   const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
 
+  // TOTAL RECORDS
   let recordsTotal = recordsFiltered;
   const totalData = Array.isArray(totalResponse && totalResponse.data) ? totalResponse.data : [];
-  if (totalData.length) {
-    const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
-    const parsedCount = rawCount == null ? NaN : Number(rawCount);
-    if (!isNaN(parsedCount)) {
-      recordsTotal = parsedCount;
-    }
+  if (totalData.length && totalData[0].count != null) {
+    recordsTotal = Number(totalData[0].count);
   }
 
-  const mappedRows = rows.map(function (row) { return mapVehicleRegistrationRowToArray_(row, headers); });
-  const data = mappedRows.map(function (row) { return formatRowForClient_(row, headers); });
+  const mappedRows = rows.map(r => mapVehicleRegistrationRowToArray_(r, headers));
+  const data = mappedRows.map(r => formatRowForClient_(r, headers));
 
-  const extractCountValue = function (response) {
-    const rows = Array.isArray(response && response.data) ? response.data : [];
-    if (!rows.length) return 0;
-    const rawCount = rows[0] && (rows[0].count != null ? rows[0].count : rows[0].count_id);
-    const parsedCount = rawCount == null ? NaN : Number(rawCount);
-    return isNaN(parsedCount) ? 0 : parsedCount;
-  };
-
+  // === TÍNH SUMMARY TRỰC TIẾP TỪ DỮ LIỆU ĐÃ LỌC ===
   let summary = null;
   if (includeSummary) {
-    const pending = extractCountValue(pendingSummaryResponse);
-    const approved = extractCountValue(approvedSummaryResponse);
-    summary = { total: recordsFiltered, pending: pending, approved: approved };
+    let pending = 0;
+    let approved = 0;
+
+    // rows là dữ liệu thô từ Supabase, có field registration_status
+    rows.forEach(function (row) {
+      const status = String(row.registration_status == null ? '' : row.registration_status).toLowerCase();
+      if (status === 'approved') {
+        approved++;
+      } else if (status === 'pending approval') {
+        pending++;
+      }
+    });
+
+    summary = {
+      // tổng số bản ghi sau khi filter (đúng với DataTable)
+      total: recordsFiltered,
+      pending: pending,
+      approved: approved
+    };
   }
 
   return {
