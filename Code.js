@@ -241,27 +241,26 @@ const VEHICLE_REGISTRATION_COLUMN_MAP = {
   'Time': 'time'
 };
 
-const VEHICLE_REGISTRATION_SEARCH_COLUMNS = [
-  'register_date',
-  'contract_no',
-  'truck_plate',
-  'country',
-  'wheel',
-  'trailer_plate',
-  'truck_weight',
-  'pay_load',
-  'container_no1',
-  'container_no2',
-  'driver_name',
-  'id_passport',
-  'phone_number',
-  'destination_est',
-  'transportation_company',
-  'subcontractor',
-  'vehicle_status',
-  'registration_status',
-  'time',
-  'created_by'
+const VEHICLE_REGISTRATION_SEARCH_FIELDS = [
+  { column: 'register_date', type: 'date' },
+  { column: 'contract_no', type: 'text' },
+  { column: 'truck_plate', type: 'text' },
+  { column: 'country', type: 'text' },
+  { column: 'wheel', type: 'number' },
+  { column: 'trailer_plate', type: 'text' },
+  { column: 'truck_weight', type: 'number' },
+  { column: 'pay_load', type: 'number' },
+  { column: 'container_no1', type: 'text' },
+  { column: 'container_no2', type: 'text' },
+  { column: 'driver_name', type: 'text' },
+  { column: 'id_passport', type: 'text' },
+  { column: 'phone_number', type: 'text' },
+  { column: 'destination_est', type: 'text' },
+  { column: 'transportation_company', type: 'text' },
+  { column: 'subcontractor', type: 'text' },
+  { column: 'vehicle_status', type: 'text' },
+  { column: 'registration_status', type: 'text' },
+  { column: 'created_by', type: 'text' }
 ];
 
 function buildSupabaseUrl_(path) {
@@ -922,6 +921,102 @@ function buildSupabaseSearchOr_(columns, searchValue) {
     if (!column) continue;
     conditions.push(`${column}.ilike.${likeValue}`);
   }
+  if (!conditions.length) return '';
+  return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
+}
+
+function parseVehicleRegistrationSearchNumber_(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!/^[-]?\d+(?:\.\d+)?$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return isFinite(parsed) ? String(parsed) : null;
+}
+
+function buildVehicleRegistrationDateConditions_(column, range) {
+  if (!range) return [];
+  if (range.exact) {
+    return [`${column}.eq.${range.exact}`];
+  }
+  if (range.start && range.end) {
+    return [`and(${column}.gte.${range.start},${column}.lt.${range.end})`];
+  }
+  return [];
+}
+
+function parseVehicleRegistrationSearchDateRange_(value) {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  const yearMatch = trimmed.match(/^(\d{4})$/);
+  if (yearMatch) {
+    const year = parseInt(yearMatch[1], 10);
+    if (!isNaN(year)) {
+      const nextYear = year + 1;
+      return {
+        start: year + '-01-01',
+        end: nextYear + '-01-01'
+      };
+    }
+  }
+
+  const yearMonthMatch = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+  if (yearMonthMatch) {
+    const year = parseInt(yearMonthMatch[1], 10);
+    const month = parseInt(yearMonthMatch[2], 10);
+    if (!isNaN(year) && month >= 1 && month <= 12) {
+      const paddedMonth = ('0' + month).slice(-2);
+      let nextYear = year;
+      let nextMonth = month + 1;
+      if (nextMonth > 12) {
+        nextMonth = 1;
+        nextYear += 1;
+      }
+      const paddedNextMonth = ('0' + nextMonth).slice(-2);
+      return {
+        start: year + '-' + paddedMonth + '-01',
+        end: nextYear + '-' + paddedNextMonth + '-01'
+      };
+    }
+  }
+
+  const iso = toSupabaseDateString_(trimmed);
+  if (iso) {
+    return { exact: iso };
+  }
+
+  return null;
+}
+
+function buildVehicleRegistrationSearchClause_(searchValue) {
+  if (!Array.isArray(VEHICLE_REGISTRATION_SEARCH_FIELDS) || !VEHICLE_REGISTRATION_SEARCH_FIELDS.length) {
+    return '';
+  }
+  const sanitized = sanitizeHistorySearchTerm_(searchValue);
+  if (!sanitized) return '';
+  const likeValue = `%${sanitized}%`;
+  const numericTerm = parseVehicleRegistrationSearchNumber_(sanitized);
+  const dateRange = parseVehicleRegistrationSearchDateRange_(sanitized);
+  const conditions = [];
+
+  for (let i = 0; i < VEHICLE_REGISTRATION_SEARCH_FIELDS.length; i++) {
+    const field = VEHICLE_REGISTRATION_SEARCH_FIELDS[i];
+    if (!field || !field.column) continue;
+    if (field.type === 'text') {
+      conditions.push(`${field.column}.ilike.${likeValue}`);
+      continue;
+    }
+    if (field.type === 'number' && numericTerm != null) {
+      conditions.push(`${field.column}.eq.${numericTerm}`);
+      continue;
+    }
+    if (field.type === 'date' && dateRange) {
+      const dateConditions = buildVehicleRegistrationDateConditions_(field.column, dateRange);
+      if (dateConditions.length) {
+        Array.prototype.push.apply(conditions, dateConditions);
+      }
+    }
+  }
+
   if (!conditions.length) return '';
   return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
 }
@@ -2022,7 +2117,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   }
 
   const searchValue = params.search && params.search.value ? params.search.value : '';
-  const searchClause = buildSupabaseSearchOr_(VEHICLE_REGISTRATION_SEARCH_COLUMNS, searchValue);
+  const searchClause = buildVehicleRegistrationSearchClause_(searchValue);
 
   let sortColumn = defaultSortColumnIndex >= 0 ? VEHICLE_REGISTRATION_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
   let sortDir = 'desc';
