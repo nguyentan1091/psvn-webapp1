@@ -1994,6 +1994,13 @@ function buildEmptyResult_(draw, includeSummary) {
   return result;
 }
 
+function resolveVehicleRegistrationDateString_(value) {
+  const raw = value == null ? '' : String(value).trim();
+  if (raw) return raw;
+  const vietnamNow = getVietnamCurrentTime();
+  return vietnamNow && vietnamNow.dateString ? vietnamNow.dateString : '';
+}
+
 function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   params = params || {};
   const userSession = validateSession(params.sessionToken);
@@ -2003,6 +2010,8 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
   if (sheetName !== VEHICLE_REGISTRATION_CACHE_KEY) {
     throw new Error('Unsupported dataset for Supabase processing: ' + sheetName);
   }
+
+  params.dateString = resolveVehicleRegistrationDateString_(params.dateString);
 
   const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
   const cachedResult = cacheKey ? safeScriptCacheGetJSON_(cacheKey) : null;
@@ -2039,12 +2048,12 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   const userRole = String(userSession.role || '').toLowerCase();
 
   const filterParts = [];
-  const dateFilter = params.dateString ? String(params.dateString).trim() : '';
-  if (dateFilter) {
-    const iso = toSupabaseDateString_(dateFilter);
-    if (iso) filterParts.push('register_date=eq.' + encodeURIComponent(iso));
-    else return buildEmptyResult_(draw, includeSummary);
-  }
+  const dateFilter = resolveVehicleRegistrationDateString_(params.dateString);
+  if (!dateFilter) return buildEmptyResult_(draw, includeSummary);
+  const iso = toSupabaseDateString_(dateFilter);
+  if (!iso) return buildEmptyResult_(draw, includeSummary);
+  params.dateString = dateFilter;
+  filterParts.push('register_date=eq.' + encodeURIComponent(iso));
 
   if (params.contractNo) {
     const contract = String(params.contractNo).replace(/^'+/, '').trim();
