@@ -3581,12 +3581,13 @@ function initViewPage() {
   const dateInput = useDateInput ? $('#date-filter-input') : $('#date-filter-select');
 
   const getSelectedDateString = () => {
+    const fallbackDate = () => getFormattedDate(getVietnamNowClient());
+    const rawValue = (dateInput.val() || '').trim();
     if (useDateInput) {
-      const raw = (dateInput.val() || '').trim();
-      const parsed = parseDateValue(raw);
-      return parsed ? getFormattedDate(parsed) : getFormattedDate(getVietnamNowClient());
+      const parsed = parseDateValue(rawValue);
+      return parsed ? getFormattedDate(parsed) : fallbackDate();
     }
-    return dateInput.val();
+    return rawValue || fallbackDate();
   };
 
   const getSelectedContract = () => String(contractFilter.val() || '').trim();
