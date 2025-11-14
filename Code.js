@@ -1992,9 +1992,11 @@ function buildEmptyResult_(draw, includeSummary) {
     data: []
   };
 
+  // ✅ thêm summary rỗng để front-end luôn có đủ field
   if (includeSummary) {
     result.summary = { total: 0, pending: 0, approved: 0 };
   }
+
   return result;
 }
 
@@ -2015,6 +2017,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     throw new Error('Unsupported dataset for Supabase processing: ' + sheetName);
   }
 
+  // Chuẩn hoá dateString trước khi build cache key
   params.dateString = resolveVehicleRegistrationDateString_(params.dateString);
 
   const cacheKey = buildServerSideCacheKey_(sheetName, params, userRole);
@@ -2039,6 +2042,7 @@ function processServerSide(params, sheetName, headers, defaultSortColumnIndex) {
     defaultSortColumnIndex,
     includeSummary
   );
+
   return respondWithCache(result);
 }
 
@@ -2064,7 +2068,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     if (contract) filterParts.push('contract_no=eq.' + encodeURIComponent(contract));
   }
 
-  // Role filtering
+  // Lọc theo role
   if (userRole === 'user') {
     const contractor = String(userSession.contractor == null ? '' : userSession.contractor).trim();
     if (!contractor) return buildEmptyResult_(draw, includeSummary);
@@ -2073,12 +2077,14 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     filterParts.push('registration_status=eq.Approved');
   }
 
-  // SEARCH CLAUSE
+  // SEARCH
   const searchValue = params.search && params.search.value ? params.search.value : '';
   const searchClause = buildVehicleRegistrationSearchClause_(searchValue);
 
   // SORT
-  let sortColumn = defaultSortColumnIndex >= 0 ? VEHICLE_REGISTRATION_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
+  let sortColumn = defaultSortColumnIndex >= 0
+    ? VEHICLE_REGISTRATION_COLUMN_MAP[headers[defaultSortColumnIndex]]
+    : null;
   let sortDir = 'desc';
   if (Array.isArray(params.order) && params.order.length) {
     const orderInfo = params.order[0] || {};
@@ -2103,16 +2109,17 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
 
   const dataPath = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + dataQueryParts.join('&');
 
-  // TOTAL COUNT QUERY
+  // TOTAL COUNT QUERY (theo filter ngày + hợp đồng + role, KHÔNG search)
   const totalQueryParts = ['select=count:id'].concat(filterParts);
   const totalPath = SUPABASE_VEHICLE_REG_ENDPOINT + '?' + totalQueryParts.join('&');
 
+  // Batch request
   const batchRequests = [
     { path: dataPath, headers: { Prefer: 'count=exact' } },
     { path: totalPath }
   ];
 
-  // FIX SUMMARY COUNT — đúng trạng thái thực tế trong DB
+  // ===== FIX: query đếm Pending / Approved trên TOÀN bộ dữ liệu lọc =====
   function buildStatusCountQueryParts(statusValue) {
     const statusFilters = filterParts.slice();
     if (searchClause) statusFilters.push(searchClause);
@@ -2158,7 +2165,6 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   const rows = Array.isArray(dataResponse && dataResponse.data) ? dataResponse.data : [];
   const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
 
-  // Chuẩn hoá để luôn là số, tránh NaN
   let recordsFiltered = filteredTotal != null ? parseInt(filteredTotal, 10) : rows.length;
   if (!isFinite(recordsFiltered) || isNaN(recordsFiltered) || recordsFiltered < 0) {
     recordsFiltered = rows.length;
@@ -2173,13 +2179,9 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
       recordsTotal = parsedTotal;
     }
   }
-
-  // Nếu vì lý do gì đó vẫn không phải số hợp lệ → fallback
   if (!isFinite(recordsTotal) || isNaN(recordsTotal) || recordsTotal < 0) {
     recordsTotal = rows.length;
   }
-
-  // Đồng bộ lại recordsFiltered 1 lần nữa cho chắc
   if (!isFinite(recordsFiltered) || isNaN(recordsFiltered) || recordsFiltered < 0) {
     recordsFiltered = recordsTotal;
   }
@@ -2187,7 +2189,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   const mappedRows = rows.map(r => mapVehicleRegistrationRowToArray_(r, headers));
   const data = mappedRows.map(r => formatRowForClient_(r, headers));
 
-  // === TÍNH SUMMARY TRỰC TIẾP TỪ DỮ LIỆU ĐÃ LỌC ===
+  // === TÍNH SUMMARY TỪ FULL DATASET ===
   let summary = null;
   if (includeSummary) {
     const fallbackCounts = { pending: 0, approved: 0 };
@@ -2203,20 +2205,48 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
 
     const extractStatusCount = function (response) {
       if (!response) return null;
-      const payload = Array.isArray(response)
-        ? response
-        : (Array.isArray(response.data) ? response.data : null);
+
+      let payload = null;
+
+      // 1) Nếu response là array trực tiếp
+      if (Array.isArray(response)) {
+        payload = response;
+      }
+      // 2) Nếu response.data là array
+      else if (response && Array.isArray(response.data)) {
+        payload = response.data;
+      }
+      // 3) Nếu response.data là object đơn { count: ... }
+      else if (response && response.data && typeof response.data === 'object') {
+        payload = [response.data];
+      }
+      // 4) Nếu response bản thân là object { count: ... }
+      else if (response && typeof response === 'object' && response.count != null) {
+        payload = [response];
+      }
+
       if (payload && payload.length) {
-        const first = payload[0];
-        if (first && first.count != null) {
+        const first = payload[0] || {};
+
+        if (first.count != null) {
           const parsed = Number(first.count);
-          if (isFinite(parsed)) return parsed;
+          if (isFinite(parsed) && !isNaN(parsed)) return parsed;
+        }
+        if (first.count_id != null) {
+          const parsed = Number(first.count_id);
+          if (isFinite(parsed) && !isNaN(parsed)) return parsed;
         }
       }
+
+      // 5) Thử đọc từ header Content-Range (khi dùng Prefer: count=exact)
       if (response && response.headers) {
         const totalFromHeader = parseContentRangeTotal_(response.headers);
-        if (totalFromHeader != null) return totalFromHeader;
+        if (totalFromHeader != null) {
+          const parsed = Number(totalFromHeader);
+          if (isFinite(parsed) && !isNaN(parsed)) return parsed;
+        }
       }
+
       return null;
     };
 
@@ -2230,7 +2260,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     };
   }
 
-  // Đảm bảo draw luôn là số nguyên không âm
+  // Đảm bảo draw là số hợp lệ
   let safeDraw = parseInt(draw, 10);
   if (!isFinite(safeDraw) || isNaN(safeDraw) || safeDraw < 0) {
     safeDraw = 0;
@@ -2244,6 +2274,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     summary: summary
   };
 }
+
 
 
 function getRegisteredDataServerSide(params) {
