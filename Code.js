@@ -1982,12 +1982,16 @@ function getCustomersByContracts(contracts, sessionToken) {
 }
 
 function buildEmptyResult_(draw, includeSummary) {
-  const result = {
-    draw: parseInt(draw, 10),
+  var d = parseInt(draw, 10);
+  if (!isFinite(d) || isNaN(d)) d = 0;
+
+  var result = {
+    draw: d,
     recordsTotal: 0,
     recordsFiltered: 0,
     data: []
   };
+
   if (includeSummary) {
     result.summary = { total: 0, pending: 0, approved: 0 };
   }
@@ -2153,13 +2157,31 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
 
   const rows = Array.isArray(dataResponse && dataResponse.data) ? dataResponse.data : [];
   const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
-  const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
+
+  // Chuẩn hoá để luôn là số, tránh NaN
+  let recordsFiltered = filteredTotal != null ? parseInt(filteredTotal, 10) : rows.length;
+  if (!isFinite(recordsFiltered) || isNaN(recordsFiltered) || recordsFiltered < 0) {
+    recordsFiltered = rows.length;
+  }
 
   // TOTAL RECORDS
   let recordsTotal = recordsFiltered;
   const totalData = Array.isArray(totalResponse && totalResponse.data) ? totalResponse.data : [];
   if (totalData.length && totalData[0].count != null) {
-    recordsTotal = Number(totalData[0].count);
+    const parsedTotal = Number(totalData[0].count);
+    if (isFinite(parsedTotal) && !isNaN(parsedTotal) && parsedTotal >= 0) {
+      recordsTotal = parsedTotal;
+    }
+  }
+
+  // Nếu vì lý do gì đó vẫn không phải số hợp lệ → fallback
+  if (!isFinite(recordsTotal) || isNaN(recordsTotal) || recordsTotal < 0) {
+    recordsTotal = rows.length;
+  }
+
+  // Đồng bộ lại recordsFiltered 1 lần nữa cho chắc
+  if (!isFinite(recordsFiltered) || isNaN(recordsFiltered) || recordsFiltered < 0) {
+    recordsFiltered = recordsTotal;
   }
 
   const mappedRows = rows.map(r => mapVehicleRegistrationRowToArray_(r, headers));
@@ -2206,6 +2228,12 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
       pending: pendingCount != null ? pendingCount : fallbackCounts.pending,
       approved: approvedCount != null ? approvedCount : fallbackCounts.approved
     };
+  }
+
+  // Đảm bảo draw luôn là số nguyên không âm
+  let safeDraw = parseInt(draw, 10);
+  if (!isFinite(safeDraw) || isNaN(safeDraw) || safeDraw < 0) {
+    safeDraw = 0;
   }
 
   return {
