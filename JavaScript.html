@@ -3342,20 +3342,60 @@ function initializeDataTable(config) {
         processing: true,
         serverSide: true,
         ajax: function(data, callback, settings) {
-            let params = {
-                draw: data.draw,
-                start: data.start,
-                length: data.length,
+            // Chuẩn hoá draw/start/length từ DataTables
+            const safeDraw   = Number.parseInt(data.draw, 10);
+            const safeStart  = Number.parseInt(data.start, 10);
+            const safeLength = Number.parseInt(data.length, 10);
+
+            const baseParams = {
+                draw: Number.isFinite(safeDraw)   ? safeDraw   : 0,
+                start: Number.isFinite(safeStart) ? safeStart  : 0,
+                // Nếu length bị NaN/0 → dùng pageLength mặc định
+                length: (Number.isFinite(safeLength) && safeLength > 0) ? safeLength : pageLength,
                 search: data.search,
                 order: data.order,
-                sessionToken: userSession.token,
-                ...getExtraParams()
+                sessionToken: userSession && userSession.token
+            };
+
+            const extraParams = (typeof getExtraParams === 'function') ? getExtraParams() : {};
+            const params = { ...baseParams, ...extraParams };
+
+            // Wrap callback để chuẩn hoá lại dữ liệu từ server trước khi trả cho DataTables
+            const wrappedCallback = function(resp) {
+                const result = resp || {
+                    draw: 0,
+                    recordsTotal: 0,
+                    recordsFiltered: 0,
+                    data: []
+                };
+
+                // Chuẩn hoá recordsTotal
+                let total = Number.parseInt(result.recordsTotal, 10);
+                if (!Number.isFinite(total) || isNaN(total) || total < 0) {
+                    total = Array.isArray(result.data) ? result.data.length : 0;
+                    result.recordsTotal = total;
+                }
+
+                // Chuẩn hoá recordsFiltered
+                let filtered = Number.parseInt(result.recordsFiltered, 10);
+                if (!Number.isFinite(filtered) || isNaN(filtered) || filtered < 0) {
+                    filtered = total;
+                    result.recordsFiltered = filtered;
+                }
+
+                // Chuẩn hoá draw
+                const d = Number.parseInt(result.draw, 10);
+                result.draw = (Number.isFinite(d) && !isNaN(d) && d >= 0) ? d : 0;
+
+                callback(result);
             };
 
             if (pendingState.active) {
-                pendingState.queued = { params, callback };
+                // Nếu đang có request pending → xếp request này vào hàng đợi, dùng wrappedCallback
+                pendingState.queued = { params, callback: wrappedCallback };
             } else {
-                executeAjax(params, callback);
+                // Gửi request ngay
+                executeAjax(params, wrappedCallback);
             }
         },
         columns: columns,
