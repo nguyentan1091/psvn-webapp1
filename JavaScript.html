@@ -3772,6 +3772,7 @@ function initViewPage() {
 
   const handleRegisteredSummaryUpdate = json => {
     try {
+      // ✅ ưu tiên dùng summary server trả về (đã đếm trên toàn bộ bộ lọc)
       if (json && json.summary) {
         updateSummaryValues(
           typeof json.summary.total === 'number' ? json.summary.total : 0,
@@ -3780,6 +3781,8 @@ function initViewPage() {
         );
         return;
       }
+
+      // Fallback: nếu vì lý do gì đó không có summary
       const rows = (json && Array.isArray(json.data)) ? json.data : [];
       const { pending, approved } = countStatuses(rows);
       const totalValue = (json && typeof json.recordsFiltered === 'number')
