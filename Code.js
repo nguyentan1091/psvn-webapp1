@@ -1030,33 +1030,13 @@ function getWeighResultSearchColumns_() {
     const header = XPPL_DB_HEADERS[i];
     const column = XPPL_DB_FIELD_MAP[header];
     if (!column) continue;
-    let expr = column;
     const type = XPPL_DB_COLUMN_TYPES[header];
     if (type === 'date' || type === 'time') {
-      expr = column + '::text';
+      continue;
     }
-    if (seen.has(expr)) continue;
-    seen.add(expr);
-    columns.push(expr);
-  }
-  return columns;
-}
-
-function getWeighResultSearchColumns_() {
-  const seen = new Set();
-  const columns = [];
-  for (let i = 0; i < XPPL_DB_HEADERS.length; i++) {
-    const header = XPPL_DB_HEADERS[i];
-    const column = XPPL_DB_FIELD_MAP[header];
-    if (!column) continue;
-    let expr = column;
-    const type = XPPL_DB_COLUMN_TYPES[header];
-    if (type === 'date' || type === 'time') {
-      expr = column + '::text';
-    }
-    if (seen.has(expr)) continue;
-    seen.add(expr);
-    columns.push(expr);
+    if (seen.has(column)) continue;
+    seen.add(column);
+    columns.push(column);
   }
   return columns;
 }
