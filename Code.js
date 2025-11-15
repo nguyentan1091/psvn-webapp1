@@ -964,6 +964,64 @@ function buildVehicleRegistrationSearchClause_(searchValue) {
   return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
 }
 
+function buildTruckListTotalSearchClause_(searchValue) {
+  if (!Array.isArray(TRUCK_LIST_TOTAL_SEARCH_FIELDS) || !TRUCK_LIST_TOTAL_SEARCH_FIELDS.length) {
+    return '';
+  }
+  const sanitized = sanitizeHistorySearchTerm_(searchValue);
+  if (!sanitized) return '';
+  const likeValue = `%${sanitized}%`;
+  const numericTerm = parseVehicleRegistrationSearchNumber_(sanitized);
+
+  const dateKey = _toDateKey ? _toDateKey(sanitized) : '';
+  let isoDateValue = '';
+  if (dateKey) {
+    isoDateValue = toSupabaseDateString_(dateKey) || '';
+  }
+  if (!isoDateValue) {
+    isoDateValue = toSupabaseDateString_(sanitized) || '';
+  }
+  if (!isoDateValue) {
+    const parsedDate = parseSupabaseTimestamp_(sanitized);
+    isoDateValue = parsedDate ? toSupabaseDateString_(parsedDate) : '';
+  }
+
+  const timestampValue = (() => {
+    const parsed = parseSupabaseTimestamp_(sanitized);
+    return parsed ? parsed.toISOString() : '';
+  })();
+
+  const conditions = [];
+
+  for (let i = 0; i < TRUCK_LIST_TOTAL_SEARCH_FIELDS.length; i++) {
+    const field = TRUCK_LIST_TOTAL_SEARCH_FIELDS[i];
+    if (!field || !field.column) continue;
+
+    if (field.type === 'text') {
+      conditions.push(`${field.column}.ilike.${likeValue}`);
+      continue;
+    }
+
+    if (field.type === 'number' && numericTerm != null) {
+      conditions.push(`${field.column}.eq.${numericTerm}`);
+      continue;
+    }
+
+    if (field.type === 'date' && isoDateValue) {
+      conditions.push(`${field.column}.eq.${isoDateValue}`);
+      continue;
+    }
+
+    if (field.type === 'timestamp' && timestampValue) {
+      conditions.push(`${field.column}.eq.${timestampValue}`);
+      continue;
+    }
+  }
+
+  if (!conditions.length) return '';
+  return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
+}
+
 function getWeighResultSearchColumns_() {
   const seen = new Set();
   const columns = [];
@@ -1355,27 +1413,27 @@ const TRUCK_LIST_TOTAL_COLUMN_MAP = {
   'Updated By': 'updated_by'
 };
 
-const TRUCK_LIST_TOTAL_SEARCH_COLUMNS = [
-  'truck_plate',
-  'country',
-  'wheel::text',
-  'trailer_plate',
-  'truck_weight::text',
-  'pay_load::text',
-  'container_no1',
-  'container_no2',
-  'driver_name',
-  'id_passport',
-  'phone_number',
-  'transportation_company',
-  'subcontractor',
-  'vehicle_status',
-  'activity_status',
-  'register_date::text',
-  'time::text',
-  'created_by',
-  'updated_at::text',
-  'updated_by'
+const TRUCK_LIST_TOTAL_SEARCH_FIELDS = [
+  { column: 'truck_plate', type: 'text' },
+  { column: 'country', type: 'text' },
+  { column: 'wheel', type: 'number' },
+  { column: 'trailer_plate', type: 'text' },
+  { column: 'truck_weight', type: 'number' },
+  { column: 'pay_load', type: 'number' },
+  { column: 'container_no1', type: 'text' },
+  { column: 'container_no2', type: 'text' },
+  { column: 'driver_name', type: 'text' },
+  { column: 'id_passport', type: 'text' },
+  { column: 'phone_number', type: 'text' },
+  { column: 'transportation_company', type: 'text' },
+  { column: 'subcontractor', type: 'text' },
+  { column: 'vehicle_status', type: 'text' },
+  { column: 'activity_status', type: 'text' },
+  { column: 'register_date', type: 'date' },
+  { column: 'time', type: 'text' },
+  { column: 'created_by', type: 'text' },
+  { column: 'updated_at', type: 'timestamp' },
+  { column: 'updated_by', type: 'text' }
 ];
 
 function coerceNumericRegisterFields_(record) {
@@ -2333,7 +2391,7 @@ function processTruckListTotalServerSide_(params, headers, userSession, defaultS
   }
 
   const searchValue = params.search && params.search.value ? params.search.value : '';
-  const searchClause = buildSupabaseSearchOr_(TRUCK_LIST_TOTAL_SEARCH_COLUMNS, searchValue);
+  const searchClause = buildTruckListTotalSearchClause_(searchValue);
 
   let sortColumn = defaultSortColumnIndex >= 0 ? TRUCK_LIST_TOTAL_COLUMN_MAP[headers[defaultSortColumnIndex]] : null;
   let sortDir = 'desc';
@@ -2353,46 +2411,62 @@ function processTruckListTotalServerSide_(params, headers, userSession, defaultS
   const filteredParts = filterParts.slice();
   if (searchClause) filteredParts.push(searchClause);
 
-  const dataQueryParts = ['select=' + encodeURIComponent(TRUCK_LIST_TOTAL_SELECT_FIELDS.join(','))]
+  const baseDataQueryParts = ['select=' + encodeURIComponent(TRUCK_LIST_TOTAL_SELECT_FIELDS.join(','))]
     .concat(filteredParts);
-  dataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
-  dataQueryParts.push('limit=' + Math.max(length, 10));
-  dataQueryParts.push('offset=' + start);
+  baseDataQueryParts.push('order=' + encodeURIComponent(sortColumn + '.' + sortDir));
 
-  const dataPath = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + dataQueryParts.join('&');
-  const totalQueryParts = ['select=' + encodeURIComponent('count:id')].concat(filterParts);
-  const totalPath = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalQueryParts.join('&');
-
-  let dataResponse;
-  let totalResponse;
-
-  try {
-    const [dataRes, totalRes] = executeSupabaseBatchRequests_([
-      { path: dataPath, headers: { Prefer: 'count=exact' } },
-      { path: totalPath }
+  let rows = [];
+  let recordsFiltered = 0;
+  let recordsTotal = 0;
+  if (params.exportAll) {
+    rows = fetchAllSupabaseRows_(
+      SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT,
+      baseDataQueryParts,
+      Math.max(length, 100)
+    );
+    recordsFiltered = rows.length;
+    recordsTotal = rows.length;
+  } else {
+    const dataQueryParts = baseDataQueryParts.concat([
+      'limit=' + Math.max(length, 10),
+      'offset=' + start
     ]);
-    dataResponse = dataRes;
-    totalResponse = totalRes;
-  } catch (batchError) {
-    Logger.log('processTruckListTotalServerSide_ batch error: ' + batchError);
-    dataResponse = supabaseRequest_(dataPath, {
-      headers: { Prefer: 'count=exact' },
-      returnResponse: true
-    });
-    totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
-  }
 
-  const rows = Array.isArray(dataResponse && dataResponse.data) ? dataResponse.data : [];
-  const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
-  const recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
+    const dataPath = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + dataQueryParts.join('&');
+    const totalQueryParts = ['select=' + encodeURIComponent('count:id')].concat(filterParts);
+    const totalPath = SUPABASE_TRUCK_LIST_TOTAL_ENDPOINT + '?' + totalQueryParts.join('&');
 
-  let recordsTotal = recordsFiltered;
-  const totalData = Array.isArray(totalResponse && totalResponse.data) ? totalResponse.data : [];
-  if (totalData.length) {
-    const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
-    const parsedCount = rawCount == null ? NaN : Number(rawCount);
-    if (!isNaN(parsedCount)) {
-      recordsTotal = parsedCount;
+    let dataResponse;
+    let totalResponse;
+
+    try {
+      const [dataRes, totalRes] = executeSupabaseBatchRequests_([
+        { path: dataPath, headers: { Prefer: 'count=exact' } },
+        { path: totalPath }
+      ]);
+      dataResponse = dataRes;
+      totalResponse = totalRes;
+    } catch (batchError) {
+      Logger.log('processTruckListTotalServerSide_ batch error: ' + batchError);
+      dataResponse = supabaseRequest_(dataPath, {
+        headers: { Prefer: 'count=exact' },
+        returnResponse: true
+      });
+      totalResponse = supabaseRequest_(totalPath, { returnResponse: true });
+    }
+
+    rows = Array.isArray(dataResponse && dataResponse.data) ? dataResponse.data : [];
+    const filteredTotal = parseContentRangeTotal_(dataResponse && dataResponse.headers);
+    recordsFiltered = filteredTotal != null ? filteredTotal : rows.length;
+
+    recordsTotal = recordsFiltered;
+    const totalData = Array.isArray(totalResponse && totalResponse.data) ? totalResponse.data : [];
+    if (totalData.length) {
+      const rawCount = totalData[0] && (totalData[0].count != null ? totalData[0].count : totalData[0].count_id);
+      const parsedCount = rawCount == null ? NaN : Number(rawCount);
+      if (!isNaN(parsedCount)) {
+        recordsTotal = parsedCount;
+      }
     }
   }
 
