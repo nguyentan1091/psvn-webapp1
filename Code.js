@@ -998,7 +998,8 @@ function buildTruckListTotalSearchClause_(searchValue) {
     if (!field || !field.column) continue;
 
     if (field.type === 'text') {
-      conditions.push(`${field.column}.ilike.${likeValue}`);
+      const columnExpr = field.castToText ? `${field.column}::text` : field.column;
+      conditions.push(`${columnExpr}.ilike.${likeValue}`);
       continue;
     }
 
@@ -1430,10 +1431,6 @@ const TRUCK_LIST_TOTAL_SEARCH_FIELDS = [
   { column: 'vehicle_status', type: 'text' },
   { column: 'activity_status', type: 'text' },
   { column: 'register_date', type: 'date' },
-  { column: 'time', type: 'text' },
-  { column: 'created_by', type: 'text' },
-  { column: 'updated_at', type: 'timestamp' },
-  { column: 'updated_by', type: 'text' }
 ];
 
 function coerceNumericRegisterFields_(record) {
