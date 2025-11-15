@@ -7719,16 +7719,17 @@ function initWeighResultPage() {
     if (this.value !== normalized) {
       this.value = normalized;
     }
-    scheduleWrSearch(isAdmin);
-    scheduleWrSearch();
+    scheduleWrSearch({ resetPaging: true });
   });
 
   $('#wr-date-from, #wr-date-to').off('change').on('change', function(){
     if (validateWrDateRange({ changedInput: this })) {
-      reloadWrTables();
+      reloadWrTables({ resetPaging: true });
     }
   });
-  $('#wr-contracts, #wr-customers').off('change').on('change', reloadWrTables);
+  $('#wr-contracts, #wr-customers').off('change').on('change', function(){
+    reloadWrTables({ resetPaging: true });
+  });
 
   $('#wr-reload').off('click').on('click', function(e){ e.preventDefault(); wrResultTable.ajax.reload(); });
   if (isAdmin) $('#wr-unknown-reload').off('click').on('click', function(e){ e.preventDefault(); wrUnknownTable.ajax.reload(); });
@@ -7994,6 +7995,32 @@ function renderWrAdvancedSelect(selector, values, t) {
   }
 }
 
+function deriveWrOptionsFromRows(rows) {
+  const result = { contracts: [], customers: [] };
+  if (!Array.isArray(rows) || !rows.length) return result;
+
+  const addValue = (set, value) => {
+    const str = String(value == null ? '' : value).trim();
+    if (str) set.add(str);
+  };
+
+  const contractSet = new Set();
+  const customerSet = new Set();
+
+  rows.forEach(row => {
+    if (!row || typeof row !== 'object') return;
+    addValue(contractSet, row.ContractNo || row['ContractNo']);
+    addValue(customerSet, row['Customer Name'] || row.CustomerName);
+  });
+
+  const sortList = list => list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+  result.contracts = sortList(Array.from(contractSet));
+  result.customers = sortList(Array.from(customerSet));
+  return result;
+}
+
+
 function applyWrAdvancedFilters(tOverride) {
   const t = tOverride || translations[currentLang] || translations.vi || {};
   renderWrAdvancedSelect('#wr-contracts', wrAdvancedFilterOptions.contracts, t);
@@ -8025,8 +8052,22 @@ function fetchWrAdvancedFilterOptions() {
     initialDelay: 400,
     onSuccess: res => {
       wrAdvancedFiltersLoading = false;
-      if (res && res.options) {
-        updateWrAdvancedFilters(res.options);
+      const serverOptions = res && res.options && typeof res.options === 'object' ? res.options : null;
+      const fallbackOptions = deriveWrOptionsFromRows(res && res.data);
+      const serverHasData = serverOptions && (
+        (Array.isArray(serverOptions.contracts) && serverOptions.contracts.length)
+        || (Array.isArray(serverOptions.customers) && serverOptions.customers.length)
+      );
+      const fallbackHasData = fallbackOptions.contracts.length || fallbackOptions.customers.length;
+      if (serverHasData) {
+        updateWrAdvancedFilters(serverOptions);
+      } else if (fallbackHasData) {
+        updateWrAdvancedFilters(fallbackOptions);
+      } else if (serverOptions) {
+        updateWrAdvancedFilters({
+          contracts: Array.isArray(serverOptions.contracts) ? serverOptions.contracts : [],
+          customers: Array.isArray(serverOptions.customers) ? serverOptions.customers : []
+        });
       }
     },
     onFailure: err => {
@@ -8089,13 +8130,15 @@ function getWrSearchKeyword() {
   return wrSearchKeyword;
 }
 
-function scheduleWrSearch() {
+function scheduleWrSearch(options = {}) {
+  const normalizedOptions = options && typeof options === 'object' ? options : {};
+  const resetPaging = Boolean(normalizedOptions.resetPaging);
   if (wrSearchTimer) {
     clearTimeout(wrSearchTimer);
     wrSearchTimer = null;
   }
   wrSearchTimer = setTimeout(() => {
-    reloadWrTables({ immediate: true });
+    reloadWrTables({ immediate: true, resetPaging });
     wrSearchTimer = null;
   }, 200);
 }
@@ -8175,60 +8218,29 @@ function updateWrAdvancedFilters(options){
     customers: sanitizeWrAdvancedList(options.customers)
   };
   wrAdvancedFiltersLoaded = true;
-  applyWrAdvancedFilters();
-				 
-
-									  
-									   
-		   
-
-					   
-																
-																	  
-				   
-								  
-			 
+  applyWrAdvancedFilters();	 
 }
 
 function reloadWrTables(options = {}) {
   const isEventObject = options && typeof options === 'object' && typeof options.preventDefault === 'function';
   const normalizedOptions = isEventObject ? {} : (options || {});
   const immediate = Boolean(normalizedOptions.immediate);
+  const resetPaging = Boolean(normalizedOptions.resetPaging);
   if (!validateWrDateRange({ showAlert: false })) return;
   const runReload = () => {
 
-    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
-    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload();
+    if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload(null, resetPaging);
+    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload(null, resetPaging);
   };
 
   if (immediate) {
     if (wrReloadTimer) {
       clearTimeout(wrReloadTimer);
       wrReloadTimer = null;
-																										
-																						
-								 
-			  
-												
-							 
-																	
-																									  
-																					
-								   
-				
-					   
-		 
-	   
     }
     runReload();
     return;
-  }
-
-													
-													
- 
-
-						  
+  }			  
   if (wrReloadTimer) clearTimeout(wrReloadTimer);
   wrReloadTimer = setTimeout(() => {
     runReload();
@@ -8504,7 +8516,23 @@ function buildWeighResultTables(isAdmin) {
         initialDelay: 700,
         onSuccess: res => {
           updateWrSummary(res && res.counts, res && res.summary);
-          if (res && res.options) updateWrAdvancedFilters(res.options);
+          const serverOptions = res && res.options && typeof res.options === 'object' ? res.options : null;
+          const fallbackOptions = deriveWrOptionsFromRows(res && res.data);
+          const serverHasData = serverOptions && (
+            (Array.isArray(serverOptions.contracts) && serverOptions.contracts.length)
+            || (Array.isArray(serverOptions.customers) && serverOptions.customers.length)
+          );
+          const fallbackHasData = fallbackOptions.contracts.length || fallbackOptions.customers.length;
+          if (serverHasData) {
+            updateWrAdvancedFilters(serverOptions);
+          } else if (fallbackHasData) {
+            updateWrAdvancedFilters(fallbackOptions);
+          } else if (serverOptions) {
+            updateWrAdvancedFilters({
+              contracts: Array.isArray(serverOptions.contracts) ? serverOptions.contracts : [],
+              customers: Array.isArray(serverOptions.customers) ? serverOptions.customers : []
+            });
+          }
           const dtRes = {
             draw: Number(res && res.draw) || dtReq.draw || 0,
             recordsTotal: Number(res && res.recordsTotal) || 0,
