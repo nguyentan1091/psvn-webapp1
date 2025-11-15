@@ -2260,12 +2260,6 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
     };
   }
 
-  // Đảm bảo draw là số hợp lệ
-  let safeDraw = parseInt(draw, 10);
-  if (!isFinite(safeDraw) || isNaN(safeDraw) || safeDraw < 0) {
-    safeDraw = 0;
-  }
-
   return {
     draw: draw,
     recordsTotal: recordsTotal,
