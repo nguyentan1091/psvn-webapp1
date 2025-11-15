@@ -5932,7 +5932,8 @@ function exportTotalListExcel() {
         length: 100000, // đủ lớn
         search: { value: table ? table.search() : '' },
         order: [], // để server không reorder cột/field
-        sessionToken: userSession.token
+        sessionToken: userSession.token,
+        exportAll: true
     };
 
     showLoading('Đang chuẩn bị dữ liệu...');
