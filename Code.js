@@ -5873,19 +5873,38 @@ function getWeighResultData(params) {
     }
   }
 
-  const baseFilterParts = [];
+  const addFilterPart = function(target, clause) {
+    if (!Array.isArray(target) || !clause) return;
+    if (target.indexOf(clause) === -1) target.push(clause);
+  };
+
+  const dateFilterParts = [];
   if (from) {
     const isoFrom = toSupabaseDateString_(from);
-    if (isoFrom) baseFilterParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
+    if (isoFrom) dateFilterParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
   }
   if (to) {
     const isoTo = toSupabaseDateString_(to);
-    if (isoTo) baseFilterParts.push('date_out=lte.' + encodeURIComponent(isoTo));
+    if (isoTo) dateFilterParts.push('date_out=lte.' + encodeURIComponent(isoTo));
   }
   const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
-  if (contractIn) baseFilterParts.push(contractIn);
   const customerIn = buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
-  if (customerIn) baseFilterParts.push(customerIn);
+  const assignedCustomerFilter = assignedCustomerNames.length
+    ? buildSupabaseInFilter_('customer_name', assignedCustomerNames)
+    : '';
+
+  const baseFilterParts = dateFilterParts.slice();
+  addFilterPart(baseFilterParts, contractIn);
+  addFilterPart(baseFilterParts, customerIn);
+
+  const contractOptionFilterParts = dateFilterParts.slice();
+  addFilterPart(contractOptionFilterParts, assignedCustomerFilter);
+  addFilterPart(contractOptionFilterParts, customerIn);
+
+  const customerOptionFilterParts = dateFilterParts.slice();
+  addFilterPart(customerOptionFilterParts, assignedCustomerFilter);
+  addFilterPart(customerOptionFilterParts, contractIn);
+  
 
   const start = Math.max(0, Number(params.start || 0));
   let length = Number(params.length);
@@ -5929,12 +5948,12 @@ function getWeighResultData(params) {
     .concat(baseFilterParts);
   const totalPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + totalQueryParts.join('&');
   const contractQueryParts = ['select=' + encodeURIComponent('contract_no')]
-    .concat(baseFilterParts);
+    .concat(contractOptionFilterParts);
   contractQueryParts.push('group=contract_no');
   contractQueryParts.push('order=contract_no.asc');
   const contractPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + contractQueryParts.join('&');
   const customerQueryParts = ['select=' + encodeURIComponent('customer_name')]
-    .concat(baseFilterParts);
+    .concat(customerOptionFilterParts);
   customerQueryParts.push('group=customer_name');
   customerQueryParts.push('order=customer_name.asc');
   const customerPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + customerQueryParts.join('&');
