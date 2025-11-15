@@ -3772,7 +3772,7 @@ function initViewPage() {
 
   const handleRegisteredSummaryUpdate = json => {
     try {
-      // ✅ ưu tiên dùng summary server trả về (đã đếm trên toàn bộ bộ lọc)
+      // ✅ ƯU TIÊN dùng summary server trả về (đã đếm trên toàn bộ bộ lọc)
       if (json && json.summary) {
         updateSummaryValues(
           typeof json.summary.total === 'number' ? json.summary.total : 0,
@@ -3782,12 +3782,13 @@ function initViewPage() {
         return;
       }
 
-      // Fallback: nếu vì lý do gì đó không có summary
+      // 🔁 Fallback: nếu vì lý do gì đó không có summary
       const rows = (json && Array.isArray(json.data)) ? json.data : [];
       const { pending, approved } = countStatuses(rows);
       const totalValue = (json && typeof json.recordsFiltered === 'number')
-        ? json.recordsFiltered
-        : rows.length;
+        ? json.recordsFiltered          // ✅ tổng theo toàn bộ records đã lọc
+        : rows.length;                  // (fallback cuối cùng)
+
       updateSummaryValues(totalValue, pending, approved);
     } catch (err) {
       if (console && console.warn) console.warn('registered summary update error:', err);
@@ -3821,7 +3822,7 @@ function initViewPage() {
     selectAllCheckbox: showSelectActions ? '#selectAllCheckbox' : null,
     enableSelect: showSelectActions,
     pageLength: parseInt($('#page-length-select').val() || '10', 10),
-    onDataLoaded: handleRegisteredSummaryUpdate
+    onDataLoaded: handleRegisteredSummaryUpdate   // ✅ GẮN VÀO ĐÂY
   });
 
   // ----- Phần còn lại giữ nguyên -----
