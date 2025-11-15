@@ -26,6 +26,7 @@ let wrAdvancedFiltersLoaded = false;
 let wrAdvancedFiltersLoading = false;
 let wrSearchKeyword = '';
 let wrSearchTimer = null;
+const WR_SEARCH_INPUT_SELECTORS = ['#wr-search', '#wr-result-table_filter input', '#wr-unknown-table_filter input'];
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
@@ -7714,11 +7715,13 @@ function initWeighResultPage() {
   if ($wrSearch.length && String($wrSearch.val() || '') !== initialKeyword) {
     $wrSearch.val(initialKeyword);
   }
+  syncWrSearchInputs(initialKeyword, $wrSearch.length ? $wrSearch.get(0) : null);
   $wrSearch.off('input keyup change').on('input keyup change', function(){
     const normalized = setWrSearchKeyword(this.value);
     if (this.value !== normalized) {
       this.value = normalized;
     }
+    syncWrSearchInputs(normalized, this);
     scheduleWrSearch({ resetPaging: true });
   });
 
@@ -8121,6 +8124,36 @@ function setWrSearchKeyword(value) {
   const normalized = normalizeWrSearchValue(value);
   wrSearchKeyword = normalized;
   return normalized;
+}
+
+function syncWrSearchInputs(value, sourceElement) {
+  const normalized = typeof value === 'string'
+    ? value
+    : (value == null ? '' : String(value));
+  WR_SEARCH_INPUT_SELECTORS.forEach(selector => {
+    const $input = $(selector);
+    if (!$input.length) return;
+    if (sourceElement && $input.get(0) === sourceElement) return;
+    if ($input.val() !== normalized) {
+      $input.val(normalized);
+    }
+  });
+  return normalized;
+}
+
+function attachWrSearchMirrorHandlers() {
+  WR_SEARCH_INPUT_SELECTORS
+    .filter(selector => selector !== '#wr-search')
+    .forEach(selector => {
+      const $input = $(selector);
+      if (!$input.length) return;
+      $input.off('.wrSearchSync').on('input.wrSearchSync change.wrSearchSync', function(){
+        const normalized = setWrSearchKeyword(this.value);
+        if (this.value !== normalized) this.value = normalized;
+        syncWrSearchInputs(normalized, this);
+        scheduleWrSearch({ resetPaging: true });
+      });
+    });
 }
 
 function getWrSearchKeyword() {
@@ -8735,6 +8768,9 @@ function buildWeighResultTables(isAdmin) {
 
     updateUnknownSelectionState();
   }
+
+  attachWrSearchMirrorHandlers();
+  syncWrSearchInputs(getWrSearchKeyword());
 
   const currentKeyword = getWrSearchKeyword();
   if (currentKeyword) {
