@@ -23,6 +23,7 @@ let loginHistoryTable, vehicleHistoryTable;
 let wrResultTable, wrUnknownTable;
 let wrAdvancedFilterOptions = { contracts: [], customers: [] };
 let wrAdvancedFiltersLoaded = false;
+let wrAdvancedFiltersLoading = false;
 let wrSearchKeyword = '';
 let wrSearchTimer = null;
 let previewDataTable, totalListPreviewTable;
@@ -1563,6 +1564,22 @@ function loadLoginPage() {
   }
 
   showError(new Error('Không tìm thấy template đăng nhập.'));
+								 
+													  
+									   
+			 
+									 
+					   
+																 
+																				  
+			 
+		 
+						  
+								  
+				  
+	  
+								  
+					  
 }
 
 function loadDashboard() {
@@ -1572,7 +1589,18 @@ function loadDashboard() {
   if (!dashboardHtml) {
       showError(new Error('Không tìm thấy template Dashboard.'));
       return;
+									   
+											
+						  
+										
+																					 
+																   
+													 
+																										
+										
+												  
   }
+			
 
   document.body.className = '';
   $('#app-container').html(dashboardHtml);
@@ -1730,6 +1758,9 @@ function loadPage(pageName, pageTitleKey, isInitialLoad = false) {
 
     cachePageHtml(pageName, templateHtml);
     renderPageContent(pageName, templateHtml, isInitialLoad);
+		  
+									  
+						   
 }
 
 function setupDashboardListeners() {
@@ -1908,6 +1939,23 @@ async function handleLogin(e) {
     loginBtn.find('.spinner-border').removeClass('d-none');
     loginBtn.prop('disabled', true);
 
+					 
+		 
+											 
+							  
+									
+										   
+		   
+				   
+														 
+					 
+	 
+
+										   
+										  
+									  
+	 
+
     // 1. Chỉ lấy thông tin đăng nhập cốt lõi
     const credentials = {
         username: $('#username').val(),
@@ -1974,6 +2022,8 @@ async function handleLogin(e) {
                 clearStoredSession();
                 clearSessionFlag();
                 showError({ message: translations[currentLang].login_failed });
+																							   
+									 
                 loginBtn.find('.spinner-border').addClass('d-none');
                 loginBtn.prop('disabled', false);                
             }
@@ -2525,6 +2575,49 @@ function initRegisterPage() {
     contentCards.find('input, select, button').prop('disabled', false);
     refreshUploadSaveButtonState();
   };
+
+												
+													
+												 
+
+						 
+															   
+			   
+														 
+					
+								   
+								  
+			   
+	   
+	 
+
+																	   
+																
+																								 
+					  
+								
+								 
+	
+
+				   
+								 
+																	
+													   
+																								  
+																												 
+
+										 
+										  
+			  
+									   
+	   
+
+											
+													
+									 
+	  
+								  
+												
 
   refreshUploadSaveButtonState();
 }
@@ -3624,6 +3717,7 @@ function initViewPage() {
     const fallbackDate = () => getFormattedDate(getVietnamNowClient());
     const rawValue = (dateInput.val() || '').trim();
     if (useDateInput) {
+												 
       const parsed = parseDateValue(rawValue);
       return parsed ? getFormattedDate(parsed) : fallbackDate();
     }
@@ -3699,12 +3793,16 @@ function initViewPage() {
   function handleDateChange() {
     refreshContractOptions({ resetSelection: true });
     reloadRegisteredVehicleTable(true);
+									
+	 
   }
 
   dateInput.off('change.view').on('change.view', handleDateChange);
 
   contractFilter.off('change.view').on('change.view', function () {
     reloadRegisteredVehicleTable(true);
+									
+	 
   });
 
   refreshContractOptions({ resetSelection: true });
@@ -3823,6 +3921,81 @@ function initViewPage() {
     enableSelect: showSelectActions,
     pageLength: parseInt($('#page-length-select').val() || '10', 10),
     onDataLoaded: handleRegisteredSummaryUpdate   // ✅ GẮN VÀO ĐÂY
+													
+							 
+
+														   
+															   
+																	 
+																		
+  
+
+							   
+				  
+				   
+					   
+																		  
+								
+					
+											   
+				   
+	 
+	 
+							   
+  
+
+
+							
+							   
+														
+		 
+								 
+								
+							
+																		  
+																			  
+																			   
+		  
+
+			  
+								 
+																			  
+														  
+																			 
+								
+						
+														   
+	   
+				   
+																			  
+	 
+	 
+
+							
+							  
+										   
+		 
+								   
+
+																	  
+												  
+			   
+				
+									 
+			   
+	   
+
+																   
+								  
+									 
+			   
+	   
+
+														
+														  
+					
+																					 
+	 
   });
 
   // ----- Phần còn lại giữ nguyên -----
@@ -7467,6 +7640,7 @@ function initWeighResultPage() {
     .getContractorOptions();
 
   buildWeighResultTables(isAdmin);
+  fetchWrAdvancedFilterOptions();
 
   if (isAdmin) {
     $('#wr-unknown-btn').off('click').on('click', function(){
@@ -7503,6 +7677,7 @@ function initWeighResultPage() {
     if (!isHidden) {
       if (!wrAdvancedFiltersLoaded) {
         reloadWrTables();
+        fetchWrAdvancedFilterOptions();
       }
       applyWrAdvancedFilters(t);
     }
@@ -7545,6 +7720,7 @@ function initWeighResultPage() {
       this.value = normalized;
     }
     scheduleWrSearch(isAdmin);
+    scheduleWrSearch();
   });
 
   $('#wr-date-from, #wr-date-to').off('change').on('change', function(){
@@ -7824,6 +8000,42 @@ function applyWrAdvancedFilters(tOverride) {
   renderWrAdvancedSelect('#wr-customers', wrAdvancedFilterOptions.customers, t);
 }
 
+function fetchWrAdvancedFilterOptions() {
+  if (wrAdvancedFiltersLoaded || wrAdvancedFiltersLoading) return;
+  if (!userSession || !userSession.token) return;
+
+  wrAdvancedFiltersLoading = true;
+  const keyword = getWrSearchKeyword();
+  const filter = getWrFilters();
+  filter.keyword = keyword;
+
+  const req = {
+    draw: 0,
+    start: 0,
+    length: 1,
+    search: { value: keyword, regex: false },
+    order: [],
+    sessionToken: userSession.token,
+    filter,
+    excludeUnknown: true
+  };
+
+  callServerWithRetry('getWeighResultData', [req], {
+    attempts: 2,
+    initialDelay: 400,
+    onSuccess: res => {
+      wrAdvancedFiltersLoading = false;
+      if (res && res.options) {
+        updateWrAdvancedFilters(res.options);
+      }
+    },
+    onFailure: err => {
+      wrAdvancedFiltersLoading = false;
+      showError(err);
+    }
+  });
+}
+
 function getWrAllowedCustomers() {
   if (!userSession || !isRole('user')) return [];
   const raw = userSession.customerName || userSession.customerNames || '';
@@ -7877,19 +8089,13 @@ function getWrSearchKeyword() {
   return wrSearchKeyword;
 }
 
-function scheduleWrSearch(isAdmin) {
+function scheduleWrSearch() {
   if (wrSearchTimer) {
     clearTimeout(wrSearchTimer);
     wrSearchTimer = null;
   }
   wrSearchTimer = setTimeout(() => {
-    const keyword = getWrSearchKeyword();
-    if ($.fn.DataTable.isDataTable('#wr-result-table')) {
-      wrResultTable.search(keyword, false, false).draw();
-    }
-    if (isAdmin && $.fn.DataTable.isDataTable('#wr-unknown-table')) {
-      wrUnknownTable.search(keyword, false, false).draw();
-    }
+    reloadWrTables({ immediate: true });
     wrSearchTimer = null;
   }, 200);
 }
@@ -7939,6 +8145,8 @@ function updateWrSummary(counts, overview){
 
   const formatNumber = value => {
     const num = parseNumber(value);
+																				
+																		
     return num.toLocaleString('en-US');
   };
 
@@ -7961,20 +8169,70 @@ function updateWrSummary(counts, overview){
 
 function updateWrAdvancedFilters(options){
   if (!options || typeof options !== 'object') return;
+  wrAdvancedFiltersLoading = false;
   wrAdvancedFilterOptions = {
     contracts: sanitizeWrAdvancedList(options.contracts),
     customers: sanitizeWrAdvancedList(options.customers)
   };
   wrAdvancedFiltersLoaded = true;
   applyWrAdvancedFilters();
+				 
+
+									  
+									   
+		   
+
+					   
+																
+																	  
+				   
+								  
+			 
 }
 
-function reloadWrTables(){
+function reloadWrTables(options = {}) {
+  const isEventObject = options && typeof options === 'object' && typeof options.preventDefault === 'function';
+  const normalizedOptions = isEventObject ? {} : (options || {});
+  const immediate = Boolean(normalizedOptions.immediate);
   if (!validateWrDateRange({ showAlert: false })) return;
-  if (wrReloadTimer) clearTimeout(wrReloadTimer);
-  wrReloadTimer = setTimeout(() => {
+  const runReload = () => {
+
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload();
     if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload();
+  };
+
+  if (immediate) {
+    if (wrReloadTimer) {
+      clearTimeout(wrReloadTimer);
+      wrReloadTimer = null;
+																										
+																						
+								 
+			  
+												
+							 
+																	
+																									  
+																					
+								   
+				
+					   
+		 
+	   
+    }
+    runReload();
+    return;
+  }
+
+													
+													
+ 
+
+						  
+  if (wrReloadTimer) clearTimeout(wrReloadTimer);
+  wrReloadTimer = setTimeout(() => {
+    runReload();
+																					  
     wrReloadTimer = null;
   }, 200);
 }
@@ -8452,7 +8710,7 @@ function buildWeighResultTables(isAdmin) {
 
   const currentKeyword = getWrSearchKeyword();
   if (currentKeyword) {
-    scheduleWrSearch(isAdmin);
+    scheduleWrSearch();
   }
 }
 
