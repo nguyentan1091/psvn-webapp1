@@ -24,6 +24,7 @@ let wrResultTable, wrUnknownTable;
 let wrAdvancedFilterOptions = { contracts: [], customers: [] };
 let wrAdvancedFiltersLoaded = false;
 let wrAdvancedFiltersLoading = false;
+let wrOptionsEpoch = 0;
 let wrSearchKeyword = '';
 let wrSearchTimer = null;
 const WR_SEARCH_INPUT_SELECTORS = ['#wr-search', '#wr-result-table_filter input', '#wr-unknown-table_filter input'];
@@ -68,6 +69,7 @@ const MAX_RETRY_DELAY = 5000;
 const VIETNAM_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 let wrReloadTimer = null;
+window.__wrOptionsEpoch = 0;
 let wrLastValidDateRange = { from: null, to: null };
 
 let serverBusyToastEl = null;
@@ -8025,6 +8027,7 @@ function deriveWrOptionsFromRows(rows) {
 
 
 function applyWrAdvancedFilters(tOverride) {
+
   const t = tOverride || translations[currentLang] || translations.vi || {};
   renderWrAdvancedSelect('#wr-contracts', wrAdvancedFilterOptions.contracts, t);
   renderWrAdvancedSelect('#wr-customers', wrAdvancedFilterOptions.customers, t);
@@ -8035,6 +8038,9 @@ function fetchWrAdvancedFilterOptions() {
   if (!userSession || !userSession.token) return;
 
   wrAdvancedFiltersLoading = true;
+
+  // Chụp "đợt" hiện tại để loại response lỗi thời
+  const epoch = wrOptionsEpoch;
   const keyword = getWrSearchKeyword();
   const filter = getWrFilters();
   filter.keyword = keyword;
@@ -8058,19 +8064,19 @@ function fetchWrAdvancedFilterOptions() {
       const serverOptions = res && res.options && typeof res.options === 'object' ? res.options : null;
       const fallbackOptions = deriveWrOptionsFromRows(res && res.data);
       const serverHasData = serverOptions && (
-        (Array.isArray(serverOptions.contracts) && serverOptions.contracts.length)
-        || (Array.isArray(serverOptions.customers) && serverOptions.customers.length)
+        (Array.isArray(serverOptions.contracts) && serverOptions.contracts.length) ||
+        (Array.isArray(serverOptions.customers) && serverOptions.customers.length)
       );
       const fallbackHasData = fallbackOptions.contracts.length || fallbackOptions.customers.length;
       if (serverHasData) {
-        updateWrAdvancedFilters(serverOptions);
+        updateWrAdvancedFilters(serverOptions, epoch);
       } else if (fallbackHasData) {
-        updateWrAdvancedFilters(fallbackOptions);
+        updateWrAdvancedFilters(fallbackOptions, epoch);
       } else if (serverOptions) {
         updateWrAdvancedFilters({
           contracts: Array.isArray(serverOptions.contracts) ? serverOptions.contracts : [],
           customers: Array.isArray(serverOptions.customers) ? serverOptions.customers : []
-        });
+        }, epoch);
       }
     },
     onFailure: err => {
@@ -8177,7 +8183,7 @@ function scheduleWrSearch(options = {}) {
 }
 
 function getWrFilters(){
-  const keyword = setWrSearchKeyword($('#wr-search').val());
+  const keyword = getWrSearchKeyword();   // <-- KHÔNG đọc DOM để set lại state
   const filter = {
     dateFrom: $('#wr-date-from').val(),
     dateTo: $('#wr-date-to').val(),
@@ -8202,7 +8208,6 @@ function getWrFilters(){
       }
     }
   }
-
   return filter;  
 }
 
@@ -8243,15 +8248,19 @@ function updateWrSummary(counts, overview){
   $('#wr-summary-weight').text(formatNumber(totalWeight));
 }
 
-function updateWrAdvancedFilters(options){
+function updateWrAdvancedFilters(options, epoch){
   if (!options || typeof options !== 'object') return;
+
+  // Nếu có truyền epoch và khác "đợt" hiện tại -> bỏ qua để tránh dropdown "nhảy"
+  if (epoch != null && epoch !== wrOptionsEpoch) return;
+
   wrAdvancedFiltersLoading = false;
   wrAdvancedFilterOptions = {
     contracts: sanitizeWrAdvancedList(options.contracts),
     customers: sanitizeWrAdvancedList(options.customers)
   };
   wrAdvancedFiltersLoaded = true;
-  applyWrAdvancedFilters();	 
+  applyWrAdvancedFilters();
 }
 
 function reloadWrTables(options = {}) {
@@ -8261,6 +8270,9 @@ function reloadWrTables(options = {}) {
   const resetPaging = Boolean(normalizedOptions.resetPaging);
   if (!validateWrDateRange({ showAlert: false })) return;
   const runReload = () => {
+
+   // Mỗi lần reload là 1 "đợt" mới -> các request cũ sẽ bị bỏ qua khi trả về
+   wrOptionsEpoch++;
 
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload(null, resetPaging);
     if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload(null, resetPaging);
@@ -8403,7 +8415,8 @@ function exportWrTable(table, name){
     order: order,
     sessionToken: userSession.token,
     filter: getWrFilters(),
-    ...extra
+    ...extra,
+    ignoreDateFilter: !!searchValue
   };
 
   callServerWithRetry('getWeighResultData', [req], {
@@ -8531,9 +8544,15 @@ function buildWeighResultTables(isAdmin) {
     deferRender:true,
     columnDefs:[{ targets:'_all', className:'text-nowrap' }],
     ajax: function(dtReq, callback){
-      const keyword = getWrSearchKeyword();
+      // Tạo epoch cho lần request này để chống đè bởi response chậm
+      const localEpoch = ++window.__wrOptionsEpoch;
+
+      const keyword = getWrSearchKeyword();     // LUÔN dùng trạng thái chung đã được cập nhật
+      syncWrSearchInputs(keyword);              // chỉ đồng bộ hiển thị, không ghi đè state từ dtReq
+
       const filter = getWrFilters();
       filter.keyword = keyword;
+
       const req = {
         draw: dtReq.draw,
         start: dtReq.start,
@@ -8542,46 +8561,56 @@ function buildWeighResultTables(isAdmin) {
         order: dtReq.order,
         sessionToken: userSession.token,
         filter,
-        excludeUnknown: true
+        excludeUnknown: true,
+        // <-- thêm dòng này
+        ignoreDateFilter: !!keyword
       };
+
       callServerWithRetry('getWeighResultData', [req], {
         attempts: 3,
         initialDelay: 700,
         onSuccess: res => {
-          updateWrSummary(res && res.counts, res && res.summary);
-          const serverOptions = res && res.options && typeof res.options === 'object' ? res.options : null;
-          const fallbackOptions = deriveWrOptionsFromRows(res && res.data);
-          const serverHasData = serverOptions && (
-            (Array.isArray(serverOptions.contracts) && serverOptions.contracts.length)
-            || (Array.isArray(serverOptions.customers) && serverOptions.customers.length)
-          );
-          const fallbackHasData = fallbackOptions.contracts.length || fallbackOptions.customers.length;
-          if (serverHasData) {
-            updateWrAdvancedFilters(serverOptions);
-          } else if (fallbackHasData) {
-            updateWrAdvancedFilters(fallbackOptions);
-          } else if (serverOptions) {
-            updateWrAdvancedFilters({
-              contracts: Array.isArray(serverOptions.contracts) ? serverOptions.contracts : [],
-              customers: Array.isArray(serverOptions.customers) ? serverOptions.customers : []
-            });
+          const rows = Array.isArray(res && res.data) ? res.data : [];
+          const opts = res && res.options && typeof res.options === 'object' ? res.options : null;
+
+          // ✅ Summary dùng đúng field server trả về: "summary"
+          updateWrSummary(res && res.counts, res && res.summary); // server trả {counts, summary}
+
+          // ✅ Chỉ cập nhật Advanced filters nếu đây là response mới nhất
+          if (localEpoch === window.__wrOptionsEpoch) {
+            if (opts && ((Array.isArray(opts.contracts) && opts.contracts.length) ||
+                        (Array.isArray(opts.customers) && opts.customers.length))) {
+              updateWrAdvancedFilters(opts);
+            } else if (rows.length) {
+              updateWrAdvancedFilters(deriveWrOptionsFromRows(rows));
+            } else if (opts) {
+              updateWrAdvancedFilters({
+                contracts: Array.isArray(opts.contracts) ? opts.contracts : [],
+                customers: Array.isArray(opts.customers) ? opts.customers : []
+              });
+            }
           }
-          const dtRes = {
-            draw: Number(res && res.draw) || dtReq.draw || 0,
+
+          callback({
+            draw: req.draw,
             recordsTotal: Number(res && res.recordsTotal) || 0,
             recordsFiltered: Number(res && res.recordsFiltered) || 0,
-            data: (res && res.data) || []
-          };
-          callback(dtRes);
+            data: rows
+          });
+
+          // Căn cột sau khi render
+          requestAnimationFrame(() => {
+            try { wrResultTable.columns.adjust(); } catch (_) {}
+          });
         },
         onFailure: err => {
+          callback({ draw: req.draw, recordsTotal: 0, recordsFiltered: 0, data: [] });
           showError(err);
-          callback({ draw: dtReq.draw || 0, recordsTotal: 0, recordsFiltered: 0, data: [] });
         }
       });
     },
     columns: cols,
-    drawCallback:function(){ this.api().columns.adjust(); }    
+    drawCallback:function(){ this.api().columns.adjust(); }
   });
   wrResultTable.columns.adjust();
 
@@ -8669,17 +8698,22 @@ function buildWeighResultTables(isAdmin) {
     $('#wr-unknown-table').data('wrColumns', uCols);
 
     wrUnknownTable = $('#wr-unknown-table').DataTable({
-      processing:true,
-      serverSide:true,
-      pageLength:10,
-      autoWidth:false,
-      deferRender:true,
-      columnDefs:[{ targets:'_all', className:'text-nowrap' }],
-  
-      ajax: function(dtReq, callback){
+      processing: true,
+      serverSide: true,
+      pageLength: 10,
+      autoWidth: false,
+      deferRender: true,
+      columnDefs: [{ targets: '_all', className: 'text-nowrap' }],
+
+      ajax: function (dtReq, callback) {
+        // Luôn dùng trạng thái chung làm nguồn sự thật cho từ khoá
         const keyword = getWrSearchKeyword();
+        // Đồng bộ hiển thị các ô tìm kiếm (không kích hoạt event)
+        syncWrSearchInputs(keyword);
+
         const filter = getWrFilters();
         filter.keyword = keyword;
+
         const req = {
           draw: dtReq.draw,
           start: dtReq.start,
@@ -8688,19 +8722,26 @@ function buildWeighResultTables(isAdmin) {
           order: dtReq.order,
           sessionToken: userSession.token,
           filter,
-          onlyUnknown: true
+          onlyUnknown: true,
+          // <-- thêm
+          ignoreDateFilter: !!keyword
         };
+
         callServerWithRetry('getWeighResultData', [req], {
           attempts: 3,
           initialDelay: 700,
           onSuccess: res => {
+            // Giữ nguyên cập nhật summary
             updateWrSummary(res && res.counts, res && res.summary);
-            if (res && res.options) updateWrAdvancedFilters(res.options);
+
+            // ❌ KHÔNG cập nhật Advanced filters từ bảng Unknown nữa
+            // if (res && res.options) updateWrAdvancedFilters(res.options);
+
             const dtRes = {
               draw: Number(res && res.draw) || dtReq.draw || 0,
               recordsTotal: Number(res && res.recordsTotal) || 0,
               recordsFiltered: Number(res && res.recordsFiltered) || 0,
-              data: (res && res.data) || []
+              data: Array.isArray(res && res.data) ? res.data : []
             };
             callback(dtRes);
           },
@@ -8710,8 +8751,9 @@ function buildWeighResultTables(isAdmin) {
           }
         });
       },
+
       columns: uCols,
-      drawCallback:function(){ this.api().columns.adjust(); }
+      drawCallback: function () { this.api().columns.adjust(); }
     });
     wrUnknownTable.columns.adjust();
 
