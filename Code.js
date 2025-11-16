@@ -913,18 +913,59 @@ function sanitizeHistorySearchTerm_(value) {
 
 
 function buildSupabaseSearchOr_(columns, searchValue) {
+  // 1) Lấy raw term (giữ nguyên Unicode), và sanitized (có thể ASCII)
+  const raw = String(searchValue == null ? '' : searchValue).trim();
   if (!Array.isArray(columns) || !columns.length) return '';
-  const sanitized = sanitizeHistorySearchTerm_(searchValue);
-  if (!sanitized) return '';
-  const likeValue = `%${sanitized}%`;
-  const conditions = [];
-  for (let i = 0; i < columns.length; i++) {
-    const column = String(columns[i] || '').trim();
-    if (!column) continue;
-    conditions.push(`${column}.ilike.${likeValue}`);
+  if (!raw) return '';
+
+  // Nếu sanitize làm rỗng (ví dụ loại ký tự Lào), fallback về raw
+  let sanitized = '';
+  try {
+    sanitized = String(sanitizeHistorySearchTerm_(raw) || '').trim();
+  } catch (e) {
+    sanitized = '';
   }
+  const term = sanitized || raw;
+
+  // 2) Chuẩn bị các biến thể keyword để tăng xác suất match
+  // - nguyên bản (Unicode)
+  // - chữ số rút ra (để match truck_no theo phần số, ví dụ "5176")
+  // - bản trimming khoảng trắng
+  const digitsOnly = raw.replace(/[^\d]/g, '');
+  const noSpaces = raw.replace(/\s+/g, '');
+
+  // 3) Encode chỉ giá trị tìm kiếm (đúng chuẩn Supabase)
+  const likeMain   = encodeURIComponent('%' + term + '%');       // main keyword (Unicode/ASCII)
+  const likeRaw    = encodeURIComponent('%' + raw + '%');        // original raw
+  const likeDigits = digitsOnly ? encodeURIComponent('%' + digitsOnly + '%') : '';
+  const likeNoSp   = noSpaces ? encodeURIComponent('%' + noSpaces + '%') : '';
+
+  const conditions = [];
+  const seenCols = new Set();
+
+  for (let i = 0; i < columns.length; i++) {
+    const col = String(columns[i] || '').trim();
+    if (!col || seenCols.has(col)) continue;
+    seenCols.add(col);
+
+    // Điều kiện mặc định: tìm theo main keyword
+    conditions.push(`${col}.ilike.${likeMain}`);
+
+    // Với truck_no, thêm biến thể tăng xác suất match:
+    // - raw (nếu khác term)
+    // - chỉ số (nếu có)
+    // Chú ý: không thể gọi hàm replace/translate trên cột ở REST filter, nên ta thêm nhiều điều kiện ilike khác nhau.
+    if (col === 'truck_no') {
+      if (likeDigits) conditions.push(`${col}.ilike.${likeDigits}`);
+      if (term !== raw) conditions.push(`${col}.ilike.${likeRaw}`);
+      // Không thể remove spaces từ dữ liệu trên server qua filter URL,
+      // nhưng nếu người dùng gõ đã bỏ khoảng trắng (noSpaces), thêm điều kiện này cũng giúp khi dữ liệu vốn không có khoảng trắng.
+      if (likeNoSp) conditions.push(`${col}.ilike.${likeNoSp}`);
+    }
+  }
+
   if (!conditions.length) return '';
-  return 'or=' + encodeURIComponent('(' + conditions.join(',') + ')');
+  return 'or=(' + conditions.join(',') + ')';
 }
 
 function parseVehicleRegistrationSearchNumber_(value) {
@@ -1026,18 +1067,19 @@ function buildTruckListTotalSearchClause_(searchValue) {
 function getWeighResultSearchColumns_() {
   const seen = new Set();
   const columns = [];
+
   for (let i = 0; i < XPPL_DB_HEADERS.length; i++) {
     const header = XPPL_DB_HEADERS[i];
     const column = XPPL_DB_FIELD_MAP[header];
     if (!column) continue;
-    const type = XPPL_DB_COLUMN_TYPES[header];
-    if (type === 'date' || type === 'time') {
-      continue;
-    }
     if (seen.has(column)) continue;
     seen.add(column);
     columns.push(column);
   }
+
+  // Đảm bảo truck_no có trong danh sách (phòng trường hợp map/headers bị chỉnh)
+  if (!seen.has('truck_no')) columns.push('truck_no');
+
   return columns;
 }
 
@@ -2179,6 +2221,7 @@ function processVehicleRegistrationsServerSide_(params, headers, userSession, de
   let approvedSummaryResponse = null;
 
   try {
+    Logger.log('Supabase query: ' + dataPath);
     const batchResponses = executeSupabaseBatchRequests_(batchRequests);
     dataResponse = batchResponses[0];
     totalResponse = batchResponses[1];
@@ -5878,14 +5921,19 @@ function getWeighResultData(params) {
     if (target.indexOf(clause) === -1) target.push(clause);
   };
 
+  // Cho phép client yêu cầu bỏ qua lọc ngày khi đang search
+  var skipDate = !!(params && params.ignoreDateFilter === true);
+
   const dateFilterParts = [];
-  if (from) {
-    const isoFrom = toSupabaseDateString_(from);
-    if (isoFrom) dateFilterParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
-  }
-  if (to) {
-    const isoTo = toSupabaseDateString_(to);
-    if (isoTo) dateFilterParts.push('date_out=lte.' + encodeURIComponent(isoTo));
+  if (!skipDate) {
+    if (from) {
+      const isoFrom = toSupabaseDateString_(from);
+      if (isoFrom) dateFilterParts.push('date_out=gte.' + encodeURIComponent(isoFrom));
+    }
+    if (to) {
+      const isoTo = toSupabaseDateString_(to);
+      if (isoTo) dateFilterParts.push('date_out=lte.' + encodeURIComponent(isoTo));
+    }
   }
   const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
   const customerIn = buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
