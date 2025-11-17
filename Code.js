@@ -615,9 +615,9 @@ function buildSupabaseInFilter_(column, values) {
   if (!column || !Array.isArray(values) || !values.length) return '';
   const sanitized = values
     .map(function (value) {
-      return String(value == null ? '' : value).trim();
+      return String(value == null ? '' : value);
     })
-    .filter(function (value) { return value.length > 0; })
+    .filter(function (value) { return value && value.trim().length > 0; })
     .map(function (value) { return value.replace(/"/g, '""'); });
   if (!sanitized.length) return '';
   const quoted = sanitized.map(function (value) { return '"' + value + '"'; });
@@ -5811,10 +5811,10 @@ function getWeighResultData(params) {
   const normalizeListInput = function(value) {
     if (value == null) return [];
     if (Array.isArray(value)) {
-      return value.map(function(v){ return String(v == null ? '' : v).trim(); }).filter(function(v){ return v; });
+      return value.map(function(v){ return String(v == null ? '' : v); }).filter(function(v){ return v && v.trim(); });
     }
-    const str = String(value == null ? '' : value).trim();
-    return str ? [str] : [];
+    const str = String(value == null ? '' : value);
+    return str && str.trim() ? [str] : [];
   };
 
   const contractFilter = normalizeListInput(f.contracts);
@@ -5839,8 +5839,8 @@ function getWeighResultData(params) {
     const seen = new Set();
     const out = [];
     for (var i = 0; i < list.length; i++) {
-      var val = String(list[i] == null ? '' : list[i]).trim();
-      if (!val) continue;
+      var val = String(list[i] == null ? '' : list[i]);
+      if (!val || !val.trim()) continue;
       var key = val.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -5938,9 +5938,16 @@ function getWeighResultData(params) {
   }
   const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
   const customerIn = buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
-  const assignedCustomerFilter = assignedCustomerNames.length
-    ? buildSupabaseInFilter_('customer_name', assignedCustomerNames)
-    : '';
+  let assignedCustomerFilter = '';
+    if (assignedCustomerNames.length) {
+      // SỬ DỤNG ILIKE (TÌM KIẾM GẦN ĐÚNG) THAY VÌ IN (CHÍNH XÁC)
+      // Để khắc phục lỗi tên bị cắt ngắn trong app_users vẫn khớp được với tên đầy đủ trong xppl_database
+      const conditions = assignedCustomerNames.map(function(name) {
+        // Thêm % bao quanh để tìm chuỗi con (contains)
+        return 'customer_name.ilike.%' + encodeURIComponent(String(name).trim()) + '%';
+      });
+      assignedCustomerFilter = 'or=(' + conditions.join(',') + ')';
+    }
 
   const baseFilterParts = dateFilterParts.slice();
   addFilterPart(baseFilterParts, contractIn);
