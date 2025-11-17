@@ -69,7 +69,6 @@ const MAX_RETRY_DELAY = 5000;
 const VIETNAM_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 let wrReloadTimer = null;
-window.__wrOptionsEpoch = 0;
 let wrLastValidDateRange = { from: null, to: null };
 
 let serverBusyToastEl = null;
@@ -2309,7 +2308,8 @@ function handleEditUser(rowData) {
             </div>
             <div class="swal-form-group">
                 <label for="swal-customer-name">Customer Name</label>
-                <input id="swal-customer-name" class="swal2-input" value="${rowData.CustomerName || ''}" placeholder="Nhập tên khách hàng">
+                <input id="swal-customer-name" class="swal2-input" value="${esc(rowData.CustomerName || '')}" placeholder="Nhập tên khách hàng">
+            </div>
             </div>            
             <div class="swal-form-group">
                 <label for="swal-contractor">Nhà thầu chính</label>
@@ -7933,8 +7933,8 @@ function uniqueCasePreserveOrder(list) {
   const seen = new Set();
   const out = [];
   (Array.isArray(list) ? list : []).forEach(val => {
-    const str = String(val == null ? '' : val).trim();
-    if (!str) return;
+    const str = String(val == null ? '' : val);
+    if (!str || !str.trim()) return;
     const key = str.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -7947,7 +7947,7 @@ function sanitizeWrAdvancedList(values) {
   const arr = Array.isArray(values) ? values : [];
   return uniqueCasePreserveOrder(arr.map(val => {
     if (val == null) return '';
-    return String(val).trim();
+    return String(val);
   }));
 }
 
@@ -8005,8 +8005,8 @@ function deriveWrOptionsFromRows(rows) {
   if (!Array.isArray(rows) || !rows.length) return result;
 
   const addValue = (set, value) => {
-    const str = String(value == null ? '' : value).trim();
-    if (str) set.add(str);
+    const str = String(value == null ? '' : value);
+    if (str && str.trim()) set.add(str);
   };
 
   const contractSet = new Set();
@@ -8282,10 +8282,27 @@ function updateWrAdvancedFilters(options, epoch){
   if (epoch != null && epoch !== wrOptionsEpoch) return;
 
   wrAdvancedFiltersLoading = false;
-  wrAdvancedFilterOptions = {
+  const nextOptions = {
     contracts: sanitizeWrAdvancedList(options.contracts),
     customers: sanitizeWrAdvancedList(options.customers)
   };
+
+  const hasNewData =
+    nextOptions.contracts.length > 0 || nextOptions.customers.length > 0;
+  const hasExistingData =
+    (wrAdvancedFilterOptions.contracts?.length || 0) > 0 ||
+    (wrAdvancedFilterOptions.customers?.length || 0) > 0;
+
+  // Nếu server trả rỗng nhưng đã có dữ liệu cũ => giữ nguyên dropdown, chỉ tắt loading
+  if (!hasNewData && hasExistingData) {
+    wrAdvancedFiltersLoading = false;
+    wrAdvancedFiltersLoaded = true;
+    return;
+  }
+
+  // Có data mới, hoặc lần đầu tiên chưa có gì cả
+  wrAdvancedFilterOptions = nextOptions;
+  wrAdvancedFiltersLoading = false;
   wrAdvancedFiltersLoaded = true;
   applyWrAdvancedFilters();
 }
@@ -8573,7 +8590,7 @@ function buildWeighResultTables(isAdmin) {
     columnDefs:[{ targets:'_all', className:'text-nowrap' }],
     ajax: function(dtReq, callback){
       // Tạo epoch cho lần request này để chống đè bởi response chậm
-      const localEpoch = ++window.__wrOptionsEpoch;
+      const localEpoch = wrOptionsEpoch;
 
       const filter = getWrFilters(); // getWrFilters() đã đọc global wrSearchKeyword [cite: 2925]
       const keyword = filter.keyword || '';
@@ -8602,7 +8619,7 @@ function buildWeighResultTables(isAdmin) {
           updateWrSummary(res && res.counts, res && res.summary); // server trả {counts, summary}
 
           // ✅ Chỉ cập nhật Advanced filters nếu đây là response mới nhất
-          if (localEpoch === window.__wrOptionsEpoch) {
+          if (localEpoch === wrOptionsEpoch) {
             if (opts && ((Array.isArray(opts.contracts) && opts.contracts.length) ||
                         (Array.isArray(opts.customers) && opts.customers.length))) {
               updateWrAdvancedFilters(opts);
