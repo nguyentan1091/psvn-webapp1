@@ -949,18 +949,19 @@ function buildSupabaseSearchOr_(columns, searchValue) {
     seenCols.add(col);
 
     // Điều kiện mặc định: tìm theo main keyword
-    conditions.push(`${col}.ilike.${likeMain}`);
+    conditions.push(`${col}::text.ilike.${likeMain}`); // Ép kiểu text
 
     // Với truck_no, thêm biến thể tăng xác suất match:
     // - raw (nếu khác term)
     // - chỉ số (nếu có)
     // Chú ý: không thể gọi hàm replace/translate trên cột ở REST filter, nên ta thêm nhiều điều kiện ilike khác nhau.
     if (col === 'truck_no') {
-      if (likeDigits) conditions.push(`${col}.ilike.${likeDigits}`);
-      if (term !== raw) conditions.push(`${col}.ilike.${likeRaw}`);
+      if (likeDigits) conditions.push(`${col}::text.ilike.${likeDigits}`);
+      if (term !== raw) conditions.push(`${col}::text.ilike.${likeRaw}`);
       // Không thể remove spaces từ dữ liệu trên server qua filter URL,
       // nhưng nếu người dùng gõ đã bỏ khoảng trắng (noSpaces), thêm điều kiện này cũng giúp khi dữ liệu vốn không có khoảng trắng.
       if (likeNoSp) conditions.push(`${col}.ilike.${likeNoSp}`);
+      if (likeNoSp) conditions.push(`${col}::text.ilike.${likeNoSp}`);
     }
   }
 
