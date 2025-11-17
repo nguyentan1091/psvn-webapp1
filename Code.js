@@ -624,6 +624,18 @@ function buildSupabaseInFilter_(column, values) {
   return column + '=in.' + encodeURIComponent('(' + quoted.join(',') + ')');
 }
 
+function buildSupabaseContainsFilter_(column, values) {
+  if (!column || !Array.isArray(values) || !values.length) return '';
+  const sanitized = values
+    .map(function(value) { return String(value == null ? '' : value).trim(); })
+    .filter(function(value) { return value; });
+  if (!sanitized.length) return '';
+  const clauses = sanitized.map(function(value) {
+    return column + '.ilike.%' + encodeURIComponent(value) + '%';
+  });
+  return 'or=(' + clauses.join(',') + ')';
+}
+
 function buildSupabaseUserCacheKey_(username) {
   const normalized = String(username == null ? '' : username).trim().toLowerCase();
   return normalized ? SUPABASE_USER_CACHE_PREFIX + normalized : '';
@@ -5937,7 +5949,9 @@ function getWeighResultData(params) {
     }
   }
   const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
-  const customerIn = buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
+  const customerFilterClause = isUser
+    ? buildSupabaseContainsFilter_('customer_name', effectiveCustomerFilter)
+    : buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
   let assignedCustomerFilter = '';
     if (assignedCustomerNames.length) {
       // SỬ DỤNG ILIKE (TÌM KIẾM GẦN ĐÚNG) THAY VÌ IN (CHÍNH XÁC)
@@ -5951,11 +5965,11 @@ function getWeighResultData(params) {
 
   const baseFilterParts = dateFilterParts.slice();
   addFilterPart(baseFilterParts, contractIn);
-  addFilterPart(baseFilterParts, customerIn);
+  addFilterPart(baseFilterParts, customerFilterClause);
 
   const contractOptionFilterParts = dateFilterParts.slice();
   addFilterPart(contractOptionFilterParts, assignedCustomerFilter);
-  addFilterPart(contractOptionFilterParts, customerIn);
+  addFilterPart(contractOptionFilterParts, customerFilterClause);
 
   const customerOptionFilterParts = dateFilterParts.slice();
   addFilterPart(customerOptionFilterParts, assignedCustomerFilter);
