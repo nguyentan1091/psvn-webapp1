@@ -27,7 +27,7 @@ let wrAdvancedFiltersLoading = false;
 let wrOptionsEpoch = 0;
 let wrSearchKeyword = '';
 let wrSearchTimer = null;
-const WR_SEARCH_INPUT_SELECTORS = ['#wr-search', '#wr-result-table_filter input', '#wr-unknown-table_filter input'];
+const WR_SEARCH_INPUT_SELECTORS = ['#wr-search', '#wr-result-table_filter input']; // <-- Xóa wrUnknownTable
 let previewDataTable, totalListPreviewTable;
 let previewTableData = [], totalListPreviewData = [];
 let allowedCompanies = [];
@@ -8132,6 +8132,33 @@ function setWrSearchKeyword(value) {
   return normalized;
 }
 
+function resolveWrSearchKeywordFromRequest(dtReq, filterSelector) {
+  const stateKeyword = getWrSearchKeyword();
+  const dtValue = dtReq && dtReq.search && typeof dtReq.search.value === 'string'
+    ? normalizeWrSearchValue(dtReq.search.value)
+    : '';
+
+  if (!dtValue && stateKeyword) return stateKeyword;
+  if (!dtValue && !stateKeyword) return '';
+
+  const activeEl = (typeof document !== 'undefined' && document.activeElement)
+    ? document.activeElement
+    : null;
+  const isFilterFocused = filterSelector && activeEl
+    ? $(activeEl).is(filterSelector)
+    : false;
+
+  if (isFilterFocused && dtValue !== stateKeyword) {
+    return setWrSearchKeyword(dtValue);
+  }
+
+  if (!stateKeyword && dtValue) {
+    return setWrSearchKeyword(dtValue);
+  }
+
+  return stateKeyword;
+}
+
 function syncWrSearchInputs(value, sourceElement) {
   const normalized = typeof value === 'string'
     ? value
@@ -8275,7 +8302,7 @@ function reloadWrTables(options = {}) {
    wrOptionsEpoch++;
 
     if ($.fn.DataTable.isDataTable('#wr-result-table')) wrResultTable.ajax.reload(null, resetPaging);
-    if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload(null, resetPaging);
+    // if ($.fn.DataTable.isDataTable('#wr-unknown-table')) wrUnknownTable.ajax.reload(null, resetPaging); // <-- Tách khỏi tìm kiếm chung
   };
 
   if (immediate) {
@@ -8539,6 +8566,7 @@ function buildWeighResultTables(isAdmin) {
   wrResultTable = $('#wr-result-table').DataTable({
     processing:true,
     serverSide:true,
+    searching: false,
     pageLength:10,
     autoWidth:false,
     deferRender:true,
@@ -8547,11 +8575,8 @@ function buildWeighResultTables(isAdmin) {
       // Tạo epoch cho lần request này để chống đè bởi response chậm
       const localEpoch = ++window.__wrOptionsEpoch;
 
-      const keyword = getWrSearchKeyword();     // LUÔN dùng trạng thái chung đã được cập nhật
-      syncWrSearchInputs(keyword);              // chỉ đồng bộ hiển thị, không ghi đè state từ dtReq
-
-      const filter = getWrFilters();
-      filter.keyword = keyword;
+      const filter = getWrFilters(); // getWrFilters() đã đọc global wrSearchKeyword [cite: 2925]
+      const keyword = filter.keyword || '';
 
       const req = {
         draw: dtReq.draw,
@@ -8700,6 +8725,7 @@ function buildWeighResultTables(isAdmin) {
     wrUnknownTable = $('#wr-unknown-table').DataTable({
       processing: true,
       serverSide: true,
+      searching: false,
       pageLength: 10,
       autoWidth: false,
       deferRender: true,
@@ -8707,12 +8733,8 @@ function buildWeighResultTables(isAdmin) {
 
       ajax: function (dtReq, callback) {
         // Luôn dùng trạng thái chung làm nguồn sự thật cho từ khoá
-        const keyword = getWrSearchKeyword();
-        // Đồng bộ hiển thị các ô tìm kiếm (không kích hoạt event)
-        syncWrSearchInputs(keyword);
-
-        const filter = getWrFilters();
-        filter.keyword = keyword;
+        const filter = getWrFilters(); // getWrFilters đã chứa keyword
+        const keyword = filter.keyword || '';
 
         const req = {
           draw: dtReq.draw,
