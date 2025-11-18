@@ -611,6 +611,34 @@ function chunkArray_(array, size) {
   return chunks;
 }
 
+function normalizeCustomerNameForMatch_(value) {
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
+function buildSupabaseCustomerMatchFilter_(values) {
+  if (!Array.isArray(values) || !values.length) return '';
+
+  const clauses = [];
+  const seen = new Set();
+
+  values.forEach(function(value) {
+    const raw = String(value == null ? '' : value).trim();
+    if (!raw) return;
+
+    const clean = raw.replace(/\s+/g, ' ');
+    const key = clean.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    clauses.push('customer_name.ilike.' + encodeURIComponent(clean));
+  });
+
+  if (!clauses.length) return '';
+  return 'or=(' + clauses.join(',') + ')';
+}
+
 function buildSupabaseInFilter_(column, values) {
   if (!column || !Array.isArray(values) || !values.length) return '';
   const sanitized = values
@@ -631,7 +659,8 @@ function buildSupabaseContainsFilter_(column, values) {
     .filter(function(value) { return value; });
   if (!sanitized.length) return '';
   const clauses = sanitized.map(function(value) {
-    return column + '.ilike.%' + encodeURIComponent(value) + '%';
+    // PostgREST dùng * làm wildcard cho like/ilike, ví dụ: name=ilike.*john*
+    return column + '.ilike.*' + encodeURIComponent(value) + '*';
   });
   return 'or=(' + clauses.join(',') + ')';
 }
@@ -5888,11 +5917,12 @@ function getWeighResultData(params) {
     return buildEmpty(isUser ? assignedCustomerNames : null);
   }
 
+  const normalizeCustomer = function(name) {
+    return normalizeCustomerNameForMatch_(name) || String(name == null ? '' : name).trim().toLowerCase();
+  };
+
   const assignedCustomerLowerSet = assignedCustomerNames.length
-    ? new Set(assignedCustomerNames.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
-    : null;
-  const requestedCustomerLowerSet = customerFilter.length
-    ? new Set(customerFilter.map(function(v){ return String(v == null ? '' : v).trim().toLowerCase(); }))
+      ? new Set(assignedCustomerNames.map(normalizeCustomer).filter(function(v){ return v; }))
     : null;
 
   let accessibleCustomerNamesForOptions = [];
@@ -5911,7 +5941,8 @@ function getWeighResultData(params) {
     if (assignedCustomerNames.length) {
       if (customerFilter.length) {
         const intersection = customerFilter.filter(function(name) {
-          return assignedCustomerLowerSet.has(String(name || '').trim().toLowerCase());
+          const normalized = normalizeCustomer(name);
+          return normalized && assignedCustomerLowerSet.has(normalized);
         });
         if (!intersection.length) {
           const fallback = accessibleCustomerNamesForOptions.length
@@ -5949,19 +5980,22 @@ function getWeighResultData(params) {
     }
   }
   const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
-  const customerFilterClause = isUser
-    ? buildSupabaseContainsFilter_('customer_name', effectiveCustomerFilter)
-    : buildSupabaseInFilter_('customer_name', effectiveCustomerFilter);
+
+  // Lọc customer_name trực tiếp bằng IN(...) trên Supabase.
+  // app_users.customer_name và xppl_database.customer_name đã trùng nên
+  // không cần dùng or/ilike phức tạp (tránh lỗi "failed to parse filter (...)" với tên dài).
+  const customerFilterClause = buildSupabaseInFilter_(
+    'customer_name',
+    effectiveCustomerFilter
+  );
+
   let assignedCustomerFilter = '';
-    if (assignedCustomerNames.length) {
-      // SỬ DỤNG ILIKE (TÌM KIẾM GẦN ĐÚNG) THAY VÌ IN (CHÍNH XÁC)
-      // Để khắc phục lỗi tên bị cắt ngắn trong app_users vẫn khớp được với tên đầy đủ trong xppl_database
-      const conditions = assignedCustomerNames.map(function(name) {
-        // Thêm % bao quanh để tìm chuỗi con (contains)
-        return 'customer_name.ilike.%' + encodeURIComponent(String(name).trim()) + '%';
-      });
-      assignedCustomerFilter = 'or=(' + conditions.join(',') + ')';
-    }
+  if (assignedCustomerNames.length) {
+    assignedCustomerFilter = buildSupabaseInFilter_(
+      'customer_name',
+      assignedCustomerNames
+    );
+  }
 
   const baseFilterParts = dateFilterParts.slice();
   addFilterPart(baseFilterParts, contractIn);
