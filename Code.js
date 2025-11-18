@@ -6208,6 +6208,31 @@ function getWeighResultData(params) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   });
 
+  // Nếu user không thấy Contract No do dữ liệu cân nặng chưa có, thử lấy từ contract_data
+  if (isUser && !availableContracts.length && accessibleCustomerNamesForOptions.length) {
+    try {
+      const contractFilters = [];
+      const customerFilter = buildSupabaseInFilter_('customer_name', accessibleCustomerNamesForOptions);
+      if (customerFilter) contractFilters.push(customerFilter);
+
+      const contractDataRows = fetchContractDataRows_(['contract_no', 'customer_name', 'status'], contractFilters) || [];
+      contractDataRows.forEach(function(row){
+        const status = String((row && row.status) || '').trim().toLowerCase();
+        if (status && status !== 'active') return;
+        const contractNo = String((row && row.contract_no) || '').trim();
+        if (contractNo) contractSet.add(contractNo);
+      });
+
+      if (contractSet.size) {
+        availableContracts = Array.from(contractSet).sort(function(a, b) {
+          return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+        });
+      }
+    } catch (fallbackContractErr) {
+      Logger.log('getWeighResultData contract fallback from contract_data error: ' + fallbackContractErr);
+    }
+  }
+
   let availableCustomers = [];
   const customerSet = new Set();
   for (var k = 0; k < customerRows.length; k++) {
