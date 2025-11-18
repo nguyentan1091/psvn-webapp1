@@ -5981,20 +5981,35 @@ function getWeighResultData(params) {
   }
   const contractIn = buildSupabaseInFilter_('contract_no', contractFilter);
 
-  // Lọc customer_name trực tiếp bằng IN(...) trên Supabase.
-  // app_users.customer_name và xppl_database.customer_name đã trùng nên
-  // không cần dùng or/ilike phức tạp (tránh lỗi "failed to parse filter (...)" với tên dài).
-  const customerFilterClause = buildSupabaseInFilter_(
-    'customer_name',
-    effectiveCustomerFilter
-  );
+  // Lọc customer_name. Với danh sách một phần tử dùng eq để tránh lỗi
+  // phân tích cú pháp khi tên chứa ký tự đặc biệt/ngoặc kép (ví dụ: THANH CONG
+  // MECHANICAL AND EQUIPMENT JSC ("Thanh Cong")).
+  const customerFilterClause = (function() {
+    if (effectiveCustomerFilter.length === 1) {
+      const value = String(effectiveCustomerFilter[0] == null ? '' : effectiveCustomerFilter[0]);
+      return value.trim()
+        ? 'customer_name=eq.' + encodeURIComponent(value)
+        : '';
+    }
+    return buildSupabaseInFilter_(
+      'customer_name',
+      effectiveCustomerFilter
+    );
+  })();
 
   let assignedCustomerFilter = '';
   if (assignedCustomerNames.length) {
-    assignedCustomerFilter = buildSupabaseInFilter_(
-      'customer_name',
-      assignedCustomerNames
-    );
+    if (assignedCustomerNames.length === 1) {
+      const value = String(assignedCustomerNames[0] == null ? '' : assignedCustomerNames[0]);
+      assignedCustomerFilter = value.trim()
+        ? 'customer_name=eq.' + encodeURIComponent(value)
+        : '';
+    } else {
+      assignedCustomerFilter = buildSupabaseInFilter_(
+        'customer_name',
+        assignedCustomerNames
+      );
+    }
   }
 
   const baseFilterParts = dateFilterParts.slice();
