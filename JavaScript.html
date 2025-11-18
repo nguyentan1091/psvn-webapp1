@@ -34,7 +34,8 @@ let allowedCompanies = [];
 let registrationTimerInterval = null;
 let registrationStatusFetchInFlight = false;
 let lastRegistrationStatusFetch = 0;
-const REGISTRATION_STATUS_REFRESH_MS = 5000;
+// Giảm tần suất ping server trạng thái đăng ký để tránh quá tải
+const REGISTRATION_STATUS_REFRESH_MS = 15000;
 let registrationCountdownTargets = { close: null, open: null };
 let currentLang = 'en'; // Ngôn ngữ mặc định
 let $loaderWrapper = null;
