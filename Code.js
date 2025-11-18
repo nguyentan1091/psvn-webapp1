@@ -128,6 +128,9 @@ const MAX_LOGIN_ATTEMPTS = 10;
 const LOCKOUT_DURATION_1 = 10 * 60 * 1000; // 10 minutes
 const LOCKOUT_DURATION_2 = 60 * 60 * 1000; // 1 hour
 const SESSION_TIMEOUT_SECONDS = 30 * 60; // 30 minutes
+// Kiểm tra giờ đăng ký: cache ngắn hạn để tránh gọi Apps Script liên tục
+const REGISTRATION_TIME_CACHE_KEY = 'registration_time_status';
+const REGISTRATION_TIME_CACHE_TTL_SECONDS = 30;
 
 // Default supervision account configuration
 const SUPERVISION_DEFAULT_USERNAME = 'LA';
@@ -1986,6 +1989,16 @@ function deleteUser(username, sessionToken) {
 // =================================================================
 
 function checkRegistrationTime() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(REGISTRATION_TIME_CACHE_KEY);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (err) {
+      // Nếu cache hỏng thì tính lại
+    }
+  }
+
   const now = new Date();
   const nowVn = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
   const hour = nowVn.getHours();
@@ -2029,6 +2042,12 @@ function checkRegistrationTime() {
 
   status.serverEpochMillis = now.getTime();
   status.generatedAt = now.toISOString();
+
+  try {
+    cache.put(REGISTRATION_TIME_CACHE_KEY, JSON.stringify(status), REGISTRATION_TIME_CACHE_TTL_SECONDS);
+  } catch (err) {
+    // Nếu cache lỗi thì bỏ qua, không ảnh hưởng luồng chính
+  }
 
   return status;
 }
