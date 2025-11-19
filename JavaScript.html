@@ -3924,85 +3924,9 @@ function initViewPage() {
     selectAllCheckbox: showSelectActions ? '#selectAllCheckbox' : null,
     enableSelect: showSelectActions,
     pageLength: parseInt($('#page-length-select').val() || '10', 10),
-    onDataLoaded: handleRegisteredSummaryUpdate   // ✅ GẮN VÀO ĐÂY
-													
-							 
-
-														   
-															   
-																	 
-																		
-  
-
-							   
-				  
-				   
-					   
-																		  
-								
-					
-											   
-				   
-	 
-	 
-							   
-  
-
-
-							
-							   
-														
-		 
-								 
-								
-							
-																		  
-																			  
-																			   
-		  
-
-			  
-								 
-																			  
-														  
-																			 
-								
-						
-														   
-	   
-				   
-																			  
-	 
-	 
-
-							
-							  
-										   
-		 
-								   
-
-																	  
-												  
-			   
-				
-									 
-			   
-	   
-
-																   
-								  
-									 
-			   
-	   
-
-														
-														  
-					
-																					 
-	 
+    onDataLoaded: handleRegisteredSummaryUpdate
   });
 
-  // ----- Phần còn lại giữ nguyên -----
   if (isUser) {
     const notice = $('#edit-rules-notice');
     notice.removeClass('d-none');
