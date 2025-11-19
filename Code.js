@@ -2962,16 +2962,35 @@ function _fetchWithRetry_(url, options) {
 
 // Tạo 1 time-based trigger chạy cleanupXpplTempFiles mỗi 5 phút (chỉ tạo 1 lần)
 function ensureXpplSweeper() {
-  var key = 'XPPL_SWEEPER_CREATED';
-  var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(key)) return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    return;
+  }
 
-  ScriptApp.newTrigger('cleanupXpplTempFiles')
-    .timeBased()
-    .everyMinutes(5)   // 5 phút/lần
-    .create();
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    var cleanupTriggers = triggers.filter(function (t) {
+      return t.getHandlerFunction && t.getHandlerFunction() === 'cleanupXpplTempFiles';
+    });
 
-  props.setProperty(key, '1');
+    // Nếu đã có trigger hợp lệ => chỉ cần giữ 1, xoá phần còn lại để tránh spam
+    if (cleanupTriggers.length > 0) {
+      for (var i = 1; i < cleanupTriggers.length; i++) {
+        try {
+          ScriptApp.deleteTrigger(cleanupTriggers[i]);
+        } catch (e) {}
+      }
+      return;
+    }
+
+    // Không có trigger nào => tạo mới
+    ScriptApp.newTrigger('cleanupXpplTempFiles')
+      .timeBased()
+      .everyMinutes(5)   // 5 phút/lần
+      .create();
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 // Hàm dọn rác: xóa các file có tên bắt đầu bằng XPPL_TEMP_PREFIX và cũ > 3 phút
@@ -2981,16 +3000,20 @@ function cleanupXpplTempFiles() {
 
   var it = DriveApp.searchFiles('title contains "' + prefix + '" and trashed = false');
   var removed = 0;
-  while (it.hasNext()) {
-    try {
-      var f = it.next();
-      if (f.getName().indexOf(prefix) === 0 && f.getDateCreated() < cutoff) {
-        f.setTrashed(true);
-        removed++;
-      }
-    } catch (e) {}
+  try {
+    while (it.hasNext()) {
+      try {
+        var f = it.next();
+        if (f.getName().indexOf(prefix) === 0 && f.getDateCreated() < cutoff) {
+          f.setTrashed(true);
+          removed++;
+        }
+      } catch (e) {}
+    }
+    return removed;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-  return removed;
 }
 
 // (Khuyến nghị) Bảo đảm sweeper tồn tại ngay khi mở project
@@ -6087,12 +6110,10 @@ function getWeighResultData(params) {
   const totalPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + totalQueryParts.join('&');
   const contractQueryParts = ['select=' + encodeURIComponent('contract_no')]
     .concat(contractOptionFilterParts);
-  contractQueryParts.push('group=contract_no');
   contractQueryParts.push('order=contract_no.asc');
   const contractPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + contractQueryParts.join('&');
   const customerQueryParts = ['select=' + encodeURIComponent('customer_name')]
     .concat(customerOptionFilterParts);
-  customerQueryParts.push('group=customer_name');
   customerQueryParts.push('order=customer_name.asc');
   const customerPath = SUPABASE_XPPL_DATABASE_ENDPOINT + '?' + customerQueryParts.join('&');
 
