@@ -8517,8 +8517,12 @@ function buildWeighResultTables(isAdmin) {
       // Tạo epoch cho lần request này để chống đè bởi response chậm
       const localEpoch = wrOptionsEpoch;
 
+      const resolvedKeyword = resolveWrSearchKeywordFromRequest(dtReq, '#wr-result-table_filter input');
+      const keyword = typeof resolvedKeyword === 'string' ? resolvedKeyword : '';
+      syncWrSearchInputs(keyword);
+
       const filter = getWrFilters(); // getWrFilters() đã đọc global wrSearchKeyword [cite: 2925]
-      const keyword = filter.keyword || '';
+      filter.keyword = keyword;
 
       const req = {
         draw: dtReq.draw,
@@ -8675,8 +8679,12 @@ function buildWeighResultTables(isAdmin) {
 
       ajax: function (dtReq, callback) {
         // Luôn dùng trạng thái chung làm nguồn sự thật cho từ khoá
+        const resolvedKeyword = resolveWrSearchKeywordFromRequest(dtReq, '#wr-result-table_filter input');
+        const keyword = typeof resolvedKeyword === 'string' ? resolvedKeyword : '';
+        syncWrSearchInputs(keyword);
+
         const filter = getWrFilters(); // getWrFilters đã chứa keyword
-        const keyword = filter.keyword || '';
+        filter.keyword = keyword;
 
         const req = {
           draw: dtReq.draw,
